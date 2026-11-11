@@ -126,7 +126,7 @@ test("prerelease suffixes must match exactly and never publish as latest", () =>
         ...manifest,
         version,
       }).distTag,
-      "next",
+      "rc",
     );
   }
 });

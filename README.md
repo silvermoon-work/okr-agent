@@ -48,7 +48,7 @@ silvermoon check --worktree --audience agent --language zh-CN
 的 `main`，保留完整历史及 `.git-lineage.yaml`。工作区干净时可运行
 `git-lineage update` 合并上游更新。以下保留 preset 的工作区与发布说明；Check
 Task 两包使用单包 RC 发布流程，版本从 `0.1.0-rc.0` 开始，后续递增
-`.1`、`.2`，使用 npm `next` dist-tag，不更新 `latest`。
+`.1`、`.2`，使用 npm `rc` dist-tag，不更新 `latest`。
 
 ## pnpm monorepo baseline
 
