@@ -65,13 +65,14 @@ try {
     assert.ok(run.reclaimedAt, JSON.stringify(run));
     if (fault) {
       assert.equal(run.stage, "failed", JSON.stringify(run));
-      assert.equal(run.outputCid, undefined);
+      assert.equal(run.output, undefined);
       results.push({ kind: "failed", reclaimed: true });
       continue;
     }
     assert.equal(run.stage, "completed", JSON.stringify(run));
-    const result = run.result;
-    const outputCid = run.outputCid;
+    assert.ok(run.output);
+    const result = run.output.result;
+    const outputCid = run.output.cid;
     assert.ok(outputCid);
     assert.equal(typeof result.pass, "boolean");
     assert.equal(result.documentation, "references/check.md");
@@ -101,7 +102,7 @@ try {
     results.push({
       kind: "completed",
       pass: result.pass,
-      outputCid,
+      output: run.output,
       documentation: paths,
       resources: ancillary,
       reclaimed: true,

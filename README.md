@@ -8,7 +8,7 @@
 - [`@silvermoon-work/check-task-builder`](packages/check-task-builder/README.md)：
   `check-task-builder init/build`，一次构建交付标准 Task Bundle/CAR。
 
-两包基于已发布上游 Task SDK/Builder 0.1.0，不复制运行时或编译器。先运行
+两包基于已发布上游 Task SDK/Builder 0.2.0-rc.0，不复制运行时或编译器。先运行
 `check-task-builder init text-check`，编辑逻辑、契约与
 `references/`，再运行生成项目中的 `pnpm build`。
 

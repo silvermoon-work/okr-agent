@@ -1,6 +1,6 @@
 # Check Task SDK
 
-基于 `@silvermoon-work/task-sdk@0.1.0`
+基于 `@silvermoon-work/task-sdk@0.2.0-rc.0`
 的检查领域组合；不包含第二套运行时或构建器。
 
 ```ts
@@ -58,9 +58,13 @@ runCheck(contract, async (input, context, reportProblem) => {
 
 Builder 将完整有效参考资源放入 Bundle 的 `resources/references/`；SDK 使用 Space
 `link` 将此目录链接到输出 `references/`。整体文档和问题文档均为普通非空 UTF-8
-Markdown，无 frontmatter 要求。消费者从 Engine Run 的 `outputCid`
-及业务结果中的相对路径读取文档；SDK 不生成
+Markdown，无 frontmatter 要求。消费者从 Engine Run 的 `output.cid` 及
+`output.result` 业务结果中的相对路径读取文档；SDK 不生成
 `result.json`，也不把 CID 写进业务结果。
+
+上游 0.2.0 将宿主的结果与文件包身份统一到
+`output: { cid, result }`；Check 回调仍只生成业务结果，不自行添加这层信封。
+`invokeTask` 仍返回子任务业务 JSON，CheckContext 的作者接口不变。
 
 Node.js >=22.13。使用配套 Check Task
 Builder 构建，不能直接把未绑定的源码作为 Worker 执行。

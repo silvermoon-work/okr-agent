@@ -247,7 +247,7 @@ describe("CLI and actual published Engine", () => {
       "0.1.0-rc.0",
     );
     expect(manifest.devDependencies["@silvermoon-work/task-builder-cli"]).toBe(
-      "0.1.0",
+      "0.2.0-rc.0",
     );
     expect(manifest.scripts.car).toContain("dist/example-text-check/task.yaml");
     expect(await readdir(join(scratch, "example"))).not.toContain(
@@ -288,7 +288,15 @@ describe("CLI and actual published Engine", () => {
     );
     const smoke = JSON.parse(stdout) as {
       ok: boolean;
-      results: { pass: boolean; reclaimed: boolean; resources: string[] }[];
+      results: {
+        pass: boolean;
+        reclaimed: boolean;
+        resources: string[];
+        output: {
+          cid: string;
+          result: { pass: boolean; documentation: string };
+        };
+      }[];
     };
     expect(smoke.ok).toBe(true);
     expect(smoke.results.map((result) => result.pass).sort()).toEqual([
@@ -296,6 +304,15 @@ describe("CLI and actual published Engine", () => {
       true,
     ]);
     expect(smoke.results.every((result) => result.reclaimed)).toBe(true);
+    for (const result of smoke.results) {
+      expect(result.output.cid).toMatch(/^b[a-z2-7]+$/u);
+      expect(result.output).toMatchObject({
+        result: {
+          pass: result.pass,
+          documentation: "references/check.md",
+        },
+      });
+    }
     expect(
       smoke.results.every((result) =>
         result.resources.includes("references/assets/standard.txt"),

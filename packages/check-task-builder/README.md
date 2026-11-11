@@ -1,7 +1,7 @@
 # Check Task Builder
 
 把 Check 项目只读文件树转换为标准 Task Builder 输入，再复用
-`@silvermoon-work/task-builder@0.1.0`
+`@silvermoon-work/task-builder@0.2.0-rc.0`
 编译、绑定、校验和编码 CAR。不复制上游编译器，不生成编辑器类型文件，不保留完整中间项目。
 
 ## CLI
@@ -22,8 +22,8 @@ check-task-builder build [build-file] [--out-dir <directory>] [--no-car]
 `init` 创建实际读取 `assets/expected.txt` 并判断输入文本的可编辑项目。输入
 `{"text":"hello"}` 通过，`{"text":"other"}`
 正常不通过。目标目录必须不存在且父目录存在；不交互、不安装、不覆盖。模板固定本包/SDK版本，并显式声明
-`task-builder-cli@0.1.0` 开发依赖； `pnpm car` 调用上游 CLI，本 CLI **没有**
-`car` 命令。
+`task-builder-cli@0.2.0-rc.0` 开发依赖； `pnpm car` 调用上游 CLI，本 CLI
+**没有** `car` 命令。
 
 ```yaml
 # check.build.yaml
@@ -115,12 +115,14 @@ try {
 位于 `/cli`，不退出进程、不注册信号处理器。
 
 开发验证：`pnpm check`。`scripts/smoke.mjs`
-可复制到独立安装目录，使用已发布 Task Engine
-0.1.0 执行 Bundle，验证 pass/fail、真实输出文档和资源回收；第三参数 `fault`
+可复制到独立安装目录，使用已发布 Task Engine 0.2.0-rc.0 执行 Bundle，通过
+`run.output.result` 验证 pass/fail，通过 `run.output.cid`
+读取真实输出文档，并验证资源回收；第三参数 `fault`
 验证抛错制品。若 Bundle 包含参考附属资源（例如
 `references/assets/standard.txt`），还会验证输出资源的字节与 Bundle 一致。需要显式安装
-`@silvermoon-work/task-engine@0.1.0`、`@silvermoon-work/task-builder@0.1.0`、
-`@silvermoon-work/task-builder-cli@0.1.0` 和 `ipfs-unixfs-exporter@16.2.3`。
+`@silvermoon-work/task-engine@0.2.0-rc.0`、`@silvermoon-work/task-builder@0.2.0-rc.0`、
+`@silvermoon-work/task-builder-cli@0.2.0-rc.0` 和
+`ipfs-unixfs-exporter@16.2.3`。
 
 ```sh
 node smoke.mjs path/to/dist/text-check

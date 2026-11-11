@@ -46,7 +46,7 @@ export async function createCheckProject(options: CheckProjectOptions = {}) {
         devDependencies: {
           ...manifest.devDependencies,
           "@silvermoon-work/check-task-builder": release,
-          "@silvermoon-work/task-builder-cli": "0.1.0",
+          "@silvermoon-work/task-builder-cli": "0.2.0-rc.0",
         },
         scripts: {
           typecheck: "tsc --project tsconfig.json",
