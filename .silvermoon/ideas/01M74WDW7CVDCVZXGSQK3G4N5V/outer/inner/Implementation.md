@@ -1,9 +1,9 @@
 # Implementation
 
 构想 revision
-36a7d1745406 已按用户明确要求进入实施。用户授权一个 subagent 实现，由主 Agent 负责集成、实现与部署门限决策，完成 canary 发布和 office-ubuntu 安装后 smoke
-test，不再逐项询问明确的实现选择。这项授权不允许将未验证结果勾选为通过，也不授权修改历史文档或发布上游。用户另行明确：本项目发布 0.1.0-canary 系列，npm
-dist-tag 使用 canary，不更新 latest。
+36a7d1745406 已按用户明确要求进入实施。用户授权一个 subagent 实现，由主 Agent 负责集成、实现与部署门限决策，完成预发布和 office-ubuntu 安装后 smoke
+test，不再逐项询问明确的实现选择。这项授权不允许将未验证结果勾选为通过，也不授权修改历史文档或发布上游。用户后续修订发布要求：本项目不发布 canary，两包均使用 0.1.0-rc.0，后续按 -rc.1、-rc.2 递增；沿用仓库预发布 next
+dist-tag，不更新 latest。
 
 上游依赖改用已发布的正式版 0.1.0，替代准备阶段的 canary 基线；本机已核实 SDK、Builder、Builder
 CLI、Engine
@@ -42,6 +42,6 @@ SDK 的实际作者代码与聚焦测试证明公共能力减少重复检查代�
 ### I-AC03: 仓库质量与交付说明完整
 
 pnpm
-check 成功；作者文档可复现初始化、安装前提、编辑、构建和执行，证据分别注明本地源码、打包依赖与 registry 来源及版本。发布映射和 canary 标签规则测试通过，实际发布留在部署阶段执行；不执行旧包 deprecation 或任何上游发布。
+check 成功；作者文档可复现初始化、安装前提、编辑、构建和执行，证据分别注明本地源码、打包依赖与 registry 来源及版本。发布映射和 RC 标签规则测试通过，实际发布留在部署阶段执行；不执行旧包 deprecation 或任何上游发布。
 
 实现与验证结果见 [Verification](Verification.md)，部署消费验证另见外层契约。

@@ -47,7 +47,8 @@ silvermoon check --worktree --audience agent --language zh-CN
 [`shazhou-ww/preset-pnpm-monorepo`](https://github.com/shazhou-ww/preset-pnpm-monorepo)
 的 `main`，保留完整历史及 `.git-lineage.yaml`。工作区干净时可运行
 `git-lineage update` 合并上游更新。以下保留 preset 的工作区与发布说明；Check
-Task 两包使用单包 canary 发布流程。
+Task 两包使用单包 RC 发布流程，版本从 `0.1.0-rc.0` 开始，后续递增
+`.1`、`.2`，使用 npm `next` dist-tag，不更新 `latest`。
 
 ## pnpm monorepo baseline
 
@@ -170,8 +171,7 @@ tarball must match its exact name and version; the root version is irrelevant.
 Unknown package IDs, private/placeholder names, invalid versions, mismatches,
 unresolved local dependencies, and already-published versions block release.
 Canonical stable and prerelease SemVer versions are supported (without build
-metadata); stable versions use npm's `latest` tag, `canary` prereleases use
-`canary`, and other prereleases use `next`.
+metadata); stable versions use npm's `latest` tag and prereleases use `next`.
 
 The pinned `github-ci-verify` CLI requires the latest `ci.yaml` main push run
 for the exact checked-out SHA and its successful versioned aggregate job and

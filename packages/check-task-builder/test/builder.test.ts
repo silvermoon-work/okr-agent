@@ -228,7 +228,7 @@ describe("CLI and actual published Engine", () => {
     await mkdir(scratch, { recursive: true });
     expect((await cli([], scratch)).stdout).toContain("Usage:");
     expect((await cli(["--version"], scratch)).stdout.trim()).toBe(
-      "0.1.0-canary-261111-1",
+      "0.1.0-rc.0",
     );
     const result = await cli(
       ["init", "example", "--package-name", "@example/text-check"],
@@ -244,7 +244,7 @@ describe("CLI and actual published Engine", () => {
       scripts: Record<string, string>;
     };
     expect(manifest.dependencies["@silvermoon-work/check-task-sdk"]).toBe(
-      "0.1.0-canary-261111-1",
+      "0.1.0-rc.0",
     );
     expect(manifest.devDependencies["@silvermoon-work/task-builder-cli"]).toBe(
       "0.1.0",
