@@ -1,5 +1,5 @@
 {
-  "name": "@workspace/example-app",
+  "name": "@silvermoon-work/example-app",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -13,6 +13,6 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@workspace/core": "workspace:*"
+    "@silvermoon-work/core": "workspace:*"
   }
 }

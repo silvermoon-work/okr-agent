@@ -1,3 +1,3 @@
 export const releasePackages = [
-  { id: "core", directory: "packages/core", name: "@workspace/core" },
+  { id: "core", directory: "packages/core", name: "@silvermoon-work/core" },
 ];

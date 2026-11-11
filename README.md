@@ -12,7 +12,9 @@ pnpm check
 ```
 
 可执行项目放在 `apps/`，共享库放在
-`packages/`。当前保留 preset 示例，用于验证工作区依赖、类型检查、测试和构建链路。
+`packages/`。当前保留 preset 示例，用于验证工作区依赖、类型检查、测试和构建链路。所有工作区包（包括私有根包）统一使用
+`@silvermoon-work/*` 命名，内部依赖使用
+`workspace:*`，共享第三方依赖版本集中在 pnpm catalog。
 
 ## Silvermoon
 
@@ -72,9 +74,10 @@ pnpm-workspace.yaml
 turbo.json
 ```
 
-The example app depends on `@workspace/core` through `workspace:*`. Replace both
-examples as soon as the real workspace shape is known; they exist to keep
-dependency ordering, type resolution, tests, and builds continuously verified.
+The example app depends on `@silvermoon-work/core` through `workspace:*`.
+Replace both examples as soon as the real workspace shape is known; they exist
+to keep dependency ordering, type resolution, tests, and builds continuously
+verified.
 
 ## Workspace conventions
 
@@ -89,14 +92,14 @@ dependency ordering, type resolution, tests, and builds continuously verified.
 Add a dependency from the repository root:
 
 ```sh
-pnpm --filter @workspace/example-app add some-package
-pnpm --filter @workspace/core add --save-dev some-dev-tool
+pnpm --filter @silvermoon-work/example-app add some-package
+pnpm --filter @silvermoon-work/core add --save-dev some-dev-tool
 ```
 
 Run a command for one workspace:
 
 ```sh
-pnpm --filter @workspace/core test
+pnpm --filter @silvermoon-work/core test
 ```
 
 ## Commands

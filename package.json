@@ -1,5 +1,5 @@
 {
-  "name": "okr-agent",
+  "name": "@silvermoon-work/okr-agent",
   "version": "0.0.0",
   "description": "OKR agent monorepo built with pnpm workspaces and Turborepo.",
   "keywords": [

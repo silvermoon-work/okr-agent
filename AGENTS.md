@@ -9,6 +9,9 @@
 - Run `pnpm check` before submitting changes.
 - Keep shared third-party versions in the pnpm catalog and internal workspace
   dependencies on `workspace:*`.
+- Name every workspace package, including the private root, under
+  `@silvermoon-work/*`. Keep imports, workspace dependencies, release mappings,
+  and documentation consistent when renaming packages.
 - Keep each workspace's build, lint, test, and typecheck scripts aligned with
   `turbo.json`.
 
