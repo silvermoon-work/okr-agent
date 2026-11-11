@@ -27,6 +27,10 @@ CLI 及其 Node 运行时。URL 结构化规范化，拒绝凭据和重复等价
 定向检测器测试与真实 CAR/Engine smoke 已执行；后者发现上游环境阻塞，详细证据见
 [Verification.md](./Verification.md)。在根因解决且补全真实平台证据前，不得完成实施验收或提交门限。
 
+续查已确认当前公共 Engine/SDK 没有环境能力；已提出只影响本 Check、兼容已发布 Engine
+0.2.0-rc.0 的
+[执行上下文最小提案](./ExecutionContextProposal.md)。父级已选定闭合、宿主授权的显式环境方案，并更新理想世界契约；同步并重新验收后实施，不放宽真实 CAR 验收。
+
 ## Acceptance criteria
 
 ### I-AC01: 要求语义可验证
