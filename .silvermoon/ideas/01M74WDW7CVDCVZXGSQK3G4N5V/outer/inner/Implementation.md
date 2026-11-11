@@ -6,7 +6,7 @@
 
 ### I-S01: 确认最小领域与作者契约
 
-结合[来源与待定项](ideal/Sources-and-decisions.md)，确认 Task/Check 差异、结果/finding/证据/ 上下文的最小抽象、正常不通过与执行故障边界，以及契约生成、目录和资源映射。沿用已确认作者角色与初始化、外部编辑、构建场景，逐步确认 CLI 参数、输出、错误和安全行为；明确首版是否仅 init/build。包名按仓库约定提出
+结合[需求与待确认设计](ideal/Requirements.md)，确认 Task/Check 差异、结果/finding/证据/ 上下文的最小抽象、正常不通过与执行故障边界，以及契约生成、目录和资源映射。沿用已确认作者角色与初始化、外部编辑、构建场景，逐步确认 CLI 参数、输出、错误和安全行为；明确首版是否仅 init/build。包名按仓库约定提出
 `@silvermoon-work/check-task-sdk`、`@silvermoon-work/check-task-builder`，版本和最终发布配置另行确认，不沿用旧 scope。
 
 ### I-S02: 实现组合式 SDK 与一次构建工具
