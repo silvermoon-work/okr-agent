@@ -10,12 +10,13 @@ document，实际消费需另行验证。
 ### I-S01: 确认最小领域与作者契约
 
 结合[需求与讨论结论](ideal/Requirements.md)，细化 code/brief/documentation、reportProblem 回调、受限 CheckContext 与 JSON/输出文档包的组合方式，不重新引入 evidence/observation、target/actual 或多语言机制。首版已确定仅 init/build，项目 pnpm
-car 使用上游命令。基于已发布 Space 确认目录、契约生成与 CLI 参数、输出、错误和安全行为。包名按仓库约定提出
+car 使用上游命令。问题码已改为作者 TypeBox 字符串字面量集合的唯一来源，不在 YAML 声明，也不生成落盘类型文件。CheckContext 开放只读 space 和上游子任务调用，不开放 output；契约与 CLI 交付协议按 supporting
+document 已确认规则细化，不再逐项询问明确的内部选择。包名按仓库约定提出
 `@silvermoon-work/check-task-sdk`、`@silvermoon-work/check-task-builder`，版本和最终发布配置另行确认，不沿用旧 scope。
 
 ### I-S02: 实现组合式 SDK 与一次构建工具
 
-在 packages 下实现两个职责包，SDK 不依赖 builder，构建工具不进入任务运行时。Builder 将领域树转换成上游可消费树并组合构建，不强制中间树落盘。验证嵌套依赖的真实 task-sdk
+在 packages 下实现两个职责包，SDK 不依赖 builder，构建工具不进入任务运行时。Builder 将领域树转换成上游可消费树并组合构建，中间树默认不落盘、不进入 dist；dist 只放最终 Bundle/CAR，不引入 .check/generated 作者类型目录。验证嵌套依赖的真实 task-sdk
 binding，不用替换 source.sdk 规避。复用上游能力，不重写编译器、Worker、IPC、ACK、取消生命周期或资源传输。初始化最小真实 check，完成编辑到 Bundle/CAR 的单命令闭环。
 
 ### I-S03: 验证并记录可复现交付
