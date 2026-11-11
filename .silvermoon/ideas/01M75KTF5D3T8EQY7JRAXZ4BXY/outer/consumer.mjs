@@ -8,7 +8,6 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readTaskBundleCar } from "@silvermoon-work/task-builder/car";
@@ -35,14 +34,13 @@ const within = (root, path) => {
 };
 assert.ok(within(directory, carPath), "Copy the CAR into the consumer tree.");
 if (forbiddenRoot) assert.equal(within(forbiddenRoot, directory), false);
-const require = createRequire(import.meta.url);
 for (const name of [
   "@silvermoon-work/check.nodejs-toolchain",
   "@silvermoon-work/check-task-sdk",
 ]) {
   assert.throws(
-    () => require.resolve(name),
-    (error) => error.code === "MODULE_NOT_FOUND",
+    () => import.meta.resolve(name),
+    (error) => error.code === "ERR_MODULE_NOT_FOUND",
     `${name} must not be installed in this independent consumer.`,
   );
 }
@@ -52,7 +50,7 @@ for (const name of [
   "@silvermoon-work/task-builder",
   "ipfs-unixfs-exporter",
 ]) {
-  const path = await realpath(require.resolve(name));
+  const path = await realpath(fileURLToPath(import.meta.resolve(name)));
   if (forbiddenRoot) assert.equal(within(forbiddenRoot, path), false);
   dependencies[name] = "published dependency outside author repository";
 }
