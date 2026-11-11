@@ -2,15 +2,15 @@
 
 本文件是准备阶段的轻量实施种子，不是已批准的 API 或实施证据。构想方向获验收后细化；实施前确认领域数据/API 与 CLI 交互，不把旧实现当作新契约。
 
-当前按用户要求暂停实施，等待上游 Task
-Engine 的 IPFS 文件包/Space 支持完成。不提前编写替代实现；恢复时先核对接口、依赖来源与版本。
+上游 IPFS 文件包/Space 支持已核实发布于相关包的 0.1.0-canary-261111-2，此前外部等待前提解除。当前仍处 preparing，须先完成构想验收，不自动开始实施。依赖基线、发布证据与破坏性接口变化见 supporting
+document，实际消费需另行验证。
 
 ## Steps
 
 ### I-S01: 确认最小领域与作者契约
 
 结合[需求与讨论结论](ideal/Requirements.md)，细化 code/brief/documentation、reportProblem 回调、受限 CheckContext 与 JSON/输出文档包的组合方式，不重新引入 evidence/observation、target/actual 或多语言机制。首版已确定仅 init/build，项目 pnpm
-car 使用上游命令。上游完成后再确认目录、契约生成与 CLI 参数、输出、错误和安全行为。包名按仓库约定提出
+car 使用上游命令。基于已发布 Space 确认目录、契约生成与 CLI 参数、输出、错误和安全行为。包名按仓库约定提出
 `@silvermoon-work/check-task-sdk`、`@silvermoon-work/check-task-builder`，版本和最终发布配置另行确认，不沿用旧 scope。
 
 ### I-S02: 实现组合式 SDK 与一次构建工具

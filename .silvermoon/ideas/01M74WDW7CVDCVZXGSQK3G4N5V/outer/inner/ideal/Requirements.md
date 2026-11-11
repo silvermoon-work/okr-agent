@@ -5,8 +5,7 @@
 
 ## 当前推进边界
 
-用户明确要求先记录讨论，暂不实施。等待上游 Task
-Engine 的 IPFS 文件包/Space 支持完成，再核对可用接口和依赖版本，继续本 Idea 的必要确认与实现。不以兼容旧接口、复制 Space 实现或先做替代运行时的方式绕过这个前提。此次不记录 acceptIdeal，不把单项讨论同意当作整个构想或实现的验收。
+此前用户要求等待上游 IPFS 文件包/Space 支持；2026-11-11 用户通知最新 canary 已支持，并已核实相关包发布，外部等待前提解除。接下来继续本 Idea 的必要确认与生命周期验收，不是自动进入实现。不记录 acceptIdeal，不把上游发布或单项讨论同意当作整个构想或实现的验收。不复制 Space 实现或编写替代运行时。
 
 ## 问题与作者体验
 
@@ -128,11 +127,28 @@ CheckContext 是领域受限接口，具体成员签名等上游接口稳定后�
 Bundle，再由 SDK 利用上游 Space
 link 能力放入输出包，不要求每次读取再复制 Markdown。SDK 负责定位文档、链接输出和装配结果；Engine 负责输出定稿及 outputCid。
 
-文档链接或输出定稿失败属于执行故障，不能返回声称成功但文档不可用的结果。消费者后续获取文档失败不能改写已经记录的检查事实。暂不要求输出包另存 result.json；仅在需要文件包独立携带完整结果时再讨论。以上是等待上游完成后验证的方案，不是已发布能力或端到端成功证据。
+文档链接或输出定稿失败属于执行故障，不能返回声称成功但文档不可用的结果。消费者后续获取文档失败不能改写已经记录的检查事实。暂不要求输出包另存 result.json；仅在需要文件包独立携带完整结果时再讨论。上游已提供所需 Space 能力，但上述 Check 组合方案仍须实现和端到端验证。
 
 ## 上游组合与实施前提
 
-2026-11-11 读取 task-engine 的 ipfs-task-context-discussion 工作分支，观察提交为 13e3b99；该工作树当时无未提交修改。其源码讨论的是以下破坏性接口变更，而非可直接假定已发布的依赖：
+2026-11-11 初次读取 task-engine 的 ipfs-task-context-discussion 工作分支，随后在用户通知发布后核实：以下六包的 canary 均为
+`0.1.0-canary-261111-2`，对应 release tag 均指向
+`13e3b9901b8e49eca6c457dc71b7fffbf1432ffe`：
+
+- @silvermoon-work/task-protocol
+- @silvermoon-work/task-sdk
+- @silvermoon-work/task-engine
+- @silvermoon-work/task-builder
+- @silvermoon-work/task-builder-cli
+- @silvermoon-work/task-engine-cli
+
+版本由当前设备配置的 registry 查询，对应 GitHub tag、成功发布工作流与
+[精确提交 CI](https://github.com/silvermoon-work/task-engine/actions/runs/42994187062)
+交叉核对。该提交的发布工作流均成功，
+[发布记录示例](https://github.com/silvermoon-work/task-engine/actions/runs/42995773432)
+可按同一提交追溯；版本可查询不等于本仓库已安装或消费验证通过。后续消费以精确版本为基线，不跟随 canary 标签漂移；这不是本项目自身版本或发布配置的决定。
+
+核对该发布提交的 SDK 说明，Space 是以下破坏性接口变更：
 
 - context.bundle 为不可变 ReadonlySpace，读取改用 root.resolve(...).read()。
 - context.output 为 ReadWriteSpace，提供 write、link、getCid；Engine 在正常完成前等待输出操作并定稿，将 outputCid 附加到 Run
@@ -141,7 +157,8 @@ link 能力放入输出包，不要求每次读取再复制 Markdown。SDK 负�
 - 静态 Space 具有不可变 CID，运行中 output
   Space 则使用运行身份；getCid 是当前快照，不等于最终完成的输出包身份。
 
-开始实施前须确认上游工作完成，重新核对稳定接口、精确提交、CI 与发布状态，明确实际依赖如何取得；不能把工作树源码、合并到 main 和发布到 registry 混为一谈。用户此次只授权记录和等待，不授权提前实现、本地替代或发布上游。
+上游发布前提已满足；实现时仍须用实际安装的精确版本验证接口及完整消费闭环，不能把源码、合并、发布和消费成功混为一谈。旧 Bundle 必须重建，上游宿主以 spaceProtocol:1 握手拒绝旧 SDK
+wrapper。本次只更新前提并恢复必要确认，不授权跳过构想验收或发布任何包。
 
 另外仍需遵守上游构建边界：
 
@@ -167,12 +184,12 @@ UI；不修改或删除旧讨论，不自动发布 npm、推送 release tag 或�
 历史来源为 shazhou-ww/potential-guide，参考提交 b1e3fa7806de0f8655ca164b68bc2145704cb1fe 的 check-sdk、check-environment、check-runtime-files、probe-sdk，以及 Check-alignment 与 task-composition 讨论。保留业务装配、文档标准和通用执行分责的价值，不继承旧多语言、target/actual、作者观察模型、包结构或旧审批。
 
 上游来源为
-[silvermoon-work/task-engine](https://github.com/silvermoon-work/task-engine)，Space 源码观察来自上述工作分支。此前 Windows
+[silvermoon-work/task-engine](https://github.com/silvermoon-work/task-engine)。Windows
 Node
-22.13 文件身份修复位于 cc99c27a12a5189ea41327edc51bb770de054179，当时其 exact-commit
-CI 成功，但观察到的 Builder/CLI canary
-0.1.0-canary-261111-1 对应更早提交，不包含修复；这只是历史核实记录，不能替代实施时对 Space 及 Windows 兼容版本的重新核实。
+22.13 文件身份修复位于 cc99c27a12a5189ea41327edc51bb770de054179；新发布提交 13e3b9901b8e49eca6c457dc71b7fffbf1432ffe 是其后继（GitHub
+compare 显示 ahead 7、behind 0），因此上述 Builder/CLI
+canary 已包含修复。此前 0.1.0-canary-261111-1 不含修复的限制不再适用于本次选定版本；Windows 实际消费仍须验证。
 
-## 等待后仍需细化
+## 仍需细化
 
-上游 Space 完成后再确认 CheckContext 精确成员、输入/结果 Schema 的作者 API、问题码和文档的目录与生成契约，以及 CLI 参数、默认路径、stdout/stderr、退出码、覆盖、取消和部分交付行为。本次不继续展开这些细节、不请求立即进入实施。
+基于已发布 Space 继续确认 CheckContext 精确成员、输入/结果 Schema 的作者 API、问题码和文档的目录与生成契约，以及 CLI 参数、默认路径、stdout/stderr、退出码、覆盖、取消和部分交付行为。保持已确认方向，不重新扩张领域模型；先完成当前构想版本的明确验收，再细化必要实现契约。
