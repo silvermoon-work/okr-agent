@@ -24,4 +24,4 @@
 ### Deployment acceptance criteria
 
 - [ ] **D-AC01:** 独立消费不依赖作者工作区
-- [ ] **D-AC02:** 引擎结果与资源证明完整
+- [x] **D-AC02:** 引擎结果与资源证明完整

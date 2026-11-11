@@ -1,0 +1,57 @@
+{
+  "ok": true,
+  "origin": "local-tarballs-not-registry",
+  "node": "24.22.2",
+  "engineVersion": "0.1.0",
+  "sdkVersion": "0.1.0-rc.0",
+  "builderVersion": "0.1.0-rc.0",
+  "tarballSha256": {
+    "sdk": "c02afc3f88f51e1289cc4cfe279fd45854d9e9d572fb7a5734133c655076fc70",
+    "builder": "705459d8769fde3d7166a41743e05ddc14c7d44320da8158cc248f9c6504a36a"
+  },
+  "bundleCid": "bafybeif52xg633hzxjeittc6njo2m3ckp7dzmvgglnev3thkrwffvruslm",
+  "outputCid": "bafybeicwqlsxvvcu2h4v4e34fbzz32epaythj4jmtxhxoszc6wg5edz5b4",
+  "pass": {
+    "taskId": "01M759PRD4P76JW0B7WJ1Z9AYE",
+    "status": "succeeded",
+    "result": {
+      "pass": true,
+      "documentation": "references/check.md"
+    }
+  },
+  "nonpass": {
+    "taskId": "01M759PZ8GKCC20ZM9BJ1QFFGG",
+    "status": "succeeded",
+    "result": {
+      "pass": false,
+      "documentation": "references/check.md",
+      "problems": [
+        {
+          "code": "text-mismatch",
+          "brief": "Text \"other\" must equal \"hello\".",
+          "documentation": "references/problems/text-mismatch.md"
+        }
+      ]
+    }
+  },
+  "fault": {
+    "taskId": "01M759Q4SK35QWVGTJWZT69S4Y",
+    "status": "failed",
+    "code": "run_failed",
+    "message": "Intentional smoke execution fault",
+    "outputCidAbsent": true
+  },
+  "outputReaderTasks": [
+    "01M759PWRNX32NEET2GPKG14KX",
+    "01M759Q2JR2X177P8RCJ4WDS6S"
+  ],
+  "verifiedOutputFiles": [
+    "references/check.md",
+    "references/assets/standard.txt",
+    "references/problems/text-mismatch.md"
+  ],
+  "attachmentText": "check-reference-asset\n",
+  "engineStateAfterStop": "stopped",
+  "ownedSmokeDirectoryRemoved": true,
+  "registryAcceptance": false
+}
