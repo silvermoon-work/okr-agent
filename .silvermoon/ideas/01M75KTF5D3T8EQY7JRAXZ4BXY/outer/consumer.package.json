@@ -1,0 +1,12 @@
+{
+  "name": "@silvermoon-work/toolchain-car-consumer-evidence",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "dependencies": {
+    "@silvermoon-work/task-builder": "0.2.0-rc.0",
+    "@silvermoon-work/task-engine": "0.2.0-rc.0",
+    "ipfs-unixfs-exporter": "16.2.3"
+  }
+}
