@@ -1,0 +1,63 @@
+{
+  "name": "@silvermoon-work/check-task-builder",
+  "version": "0.1.0-canary-261111-1",
+  "description": "Build Check projects into standard Task Bundles and CARs.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
+    }
+  },
+  "bin": {
+    "check-task-builder": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run --root . --config ../../vitest.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "@silvermoon-work/check-task-sdk": "workspace:*",
+    "@silvermoon-work/task-builder": "catalog:",
+    "@silvermoon-work/task-builder-cli": "catalog:",
+    "commander": "catalog:",
+    "yaml": "catalog:"
+  },
+  "devDependencies": {
+    "@silvermoon-work/task-engine": "catalog:",
+    "@silvermoon-work/task-sdk": "catalog:",
+    "@sinclair/typebox": "catalog:",
+    "ipfs-unixfs-exporter": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/silvermoon-work/okr-agent.git",
+    "directory": "packages/check-task-builder"
+  },
+  "homepage": "https://github.com/silvermoon-work/okr-agent/tree/main/packages/check-task-builder#readme",
+  "bugs": {
+    "url": "https://github.com/silvermoon-work/okr-agent/issues"
+  }
+}

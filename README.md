@@ -2,6 +2,16 @@
 
 基于 pnpm workspaces 和 Turborepo 的 OKR Agent monorepo。
 
+## Check Task 作者入口
+
+- [`@silvermoon-work/check-task-sdk`](packages/check-task-sdk/README.md)：TypeBox单一输入/问题码契约、受限检查回调、业务结果与参考文档输出。
+- [`@silvermoon-work/check-task-builder`](packages/check-task-builder/README.md)：
+  `check-task-builder init/build`，一次构建交付标准 Task Bundle/CAR。
+
+两包基于已发布上游 Task SDK/Builder 0.1.0，不复制运行时或编译器。先运行
+`check-task-builder init text-check`，编辑逻辑、契约与
+`references/`，再运行生成项目中的 `pnpm build`。
+
 ## 开发
 
 使用 Node.js 22.13+ 和 pnpm 11.22+：
@@ -36,8 +46,8 @@ silvermoon check --worktree --audience agent --language zh-CN
 本项目派生自
 [`shazhou-ww/preset-pnpm-monorepo`](https://github.com/shazhou-ww/preset-pnpm-monorepo)
 的 `main`，保留完整历史及 `.git-lineage.yaml`。工作区干净时可运行
-`git-lineage update`
-合并上游更新。以下保留 preset 的工作区与发布说明；发布功能尚未启用。
+`git-lineage update` 合并上游更新。以下保留 preset 的工作区与发布说明；Check
+Task 两包使用单包 canary 发布流程。
 
 ## pnpm monorepo baseline
 
@@ -160,7 +170,8 @@ tarball must match its exact name and version; the root version is irrelevant.
 Unknown package IDs, private/placeholder names, invalid versions, mismatches,
 unresolved local dependencies, and already-published versions block release.
 Canonical stable and prerelease SemVer versions are supported (without build
-metadata); stable versions use npm's `latest` tag and prereleases use `next`.
+metadata); stable versions use npm's `latest` tag, `canary` prereleases use
+`canary`, and other prereleases use `next`.
 
 The pinned `github-ci-verify` CLI requires the latest `ci.yaml` main push run
 for the exact checked-out SHA and its successful versioned aggregate job and

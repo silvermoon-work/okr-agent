@@ -83,10 +83,16 @@ export function validateManifest(selected, manifest) {
       "publishConfig.directory is not supported; pack the mapped package.",
     );
   }
+  const prerelease = semver.prerelease(manifest.version);
   return {
     ...selected,
     version: manifest.version,
-    distTag: semver.prerelease(manifest.version) === null ? "latest" : "next",
+    distTag:
+      prerelease === null
+        ? "latest"
+        : /^canary(?:-|$)/u.test(String(prerelease[0]))
+          ? "canary"
+          : "next",
   };
 }
 

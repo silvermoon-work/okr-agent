@@ -117,6 +117,15 @@ test("prerelease suffixes must match exactly and never publish as latest", () =>
   assert.throws(() =>
     validateManifest(selected, { ...manifest, version: "2.0.0-beta.1" }),
   );
+  for (const version of ["2.0.0-canary.1", "2.0.0-canary-261111-1"]) {
+    assert.equal(
+      validateManifest(selectRelease(packages, { tag: `core-v${version}` }), {
+        ...manifest,
+        version,
+      }).distTag,
+      "canary",
+    );
+  }
 });
 
 test("artifact name and version must match; local dependency protocols fail", () => {
