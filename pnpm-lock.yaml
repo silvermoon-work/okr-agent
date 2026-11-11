@@ -160,6 +160,31 @@ importers:
         specifier: 'catalog:'
         version: 0.34.52
 
+  packages/check.nodejs-toolchain:
+    dependencies:
+      '@silvermoon-work/check-task-sdk':
+        specifier: workspace:*
+        version: link:../check-task-sdk
+      '@sinclair/typebox':
+        specifier: 'catalog:'
+        version: 0.34.52
+    devDependencies:
+      '@silvermoon-work/check-task-builder':
+        specifier: workspace:*
+        version: link:../check-task-builder
+      '@silvermoon-work/task-builder':
+        specifier: 'catalog:'
+        version: 0.2.0-rc.0(supports-color@10.2.2)
+      '@silvermoon-work/task-builder-cli':
+        specifier: 'catalog:'
+        version: 0.2.0-rc.0(supports-color@10.2.2)
+      '@silvermoon-work/task-engine':
+        specifier: 'catalog:'
+        version: 0.2.0-rc.0(supports-color@10.2.2)
+      ipfs-unixfs-exporter:
+        specifier: 'catalog:'
+        version: 16.2.3
+
   packages/core: {}
 
 packages:
