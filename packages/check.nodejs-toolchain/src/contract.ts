@@ -1,5 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { createCheckContract } from "@silvermoon-work/check-task-sdk/contracts";
+import { ExecutionEnvironment } from "./execution-context.js";
 
 const closed = { additionalProperties: false };
 const version = Type.String({ pattern: "^[0-9]+(?:\\.[0-9]+)*$" });
@@ -16,7 +17,10 @@ const active = Type.Object(
 export const Input = Type.Object(
   {
     context: Type.Object(
-      { projectDirectory: Type.String({ minLength: 1 }) },
+      {
+        projectDirectory: Type.String({ minLength: 1 }),
+        executionEnvironment: ExecutionEnvironment,
+      },
       closed,
     ),
     requirements: Type.Object(

@@ -4,6 +4,7 @@ import { isAbsolute, join } from "node:path";
 export interface CommandResult {
   readonly code: number | null;
   readonly stdout: string;
+  readonly unsupportedInterpolation?: boolean;
 }
 
 export function errorCode(error: unknown): string | undefined {
@@ -28,7 +29,7 @@ export async function stopTree(pid: number): Promise<void> {
     execFile(
       join(root, "System32", "taskkill.exe"),
       ["/PID", String(pid), "/T", "/F"],
-      { timeout: 5000, windowsHide: true },
+      { timeout: 5000, windowsHide: true, env: { SystemRoot: root } },
       (error) => {
         if (error) reject(new Error("Process tree cleanup failed."));
         else resolve();
@@ -42,9 +43,9 @@ export async function execute(
   args: readonly string[],
   cwd: string,
   signal: AbortSignal,
+  env: NodeJS.ProcessEnv,
   timeoutMs = 10_000,
   stop: (pid: number) => Promise<void> = stopTree,
-  env: NodeJS.ProcessEnv = process.env,
 ): Promise<CommandResult> {
   signal.throwIfAborted();
   if (
@@ -79,12 +80,20 @@ export async function execute(
         ...env,
         COREPACK_ENABLE_NETWORK: "0",
         COREPACK_ENABLE_AUTO_PIN: "0",
+        COREPACK_ENABLE_PROJECT_SPEC: "0",
+        NODE_DISABLE_COMPILE_CACHE: "1",
         npm_config_manage_package_manager_versions: "false",
+        npm_config_ignore_pnpmfile: "true",
+        pnpm_config_ignore_pnpmfile: "true",
+        pnpm_config_manage_package_manager_versions: "false",
+        pnpm_config_pm_on_fail: "ignore",
         npm_config_update_notifier: "false",
+        npm_config_logs_max: "0",
         NO_UPDATE_NOTIFIER: "1",
       },
     });
     let stdout = "";
+    let stderr = "";
     let bytes = 0;
     let failure: Error | undefined;
     let cleanup: Promise<void> | undefined;
@@ -118,6 +127,7 @@ export async function execute(
         if (bytes > 262_144)
           terminate(new Error("Tool output limit exceeded."));
         else if (capture) stdout += chunk.toString("utf8");
+        else stderr += chunk.toString("utf8");
       });
     }
     let startCode: number | undefined;
@@ -134,7 +144,15 @@ export async function execute(
         if (failure) throw failure;
         if (code === null && startCode === undefined)
           throw new Error("Tool process terminated unexpectedly.");
-        resolve({ code: startCode ?? code, stdout });
+        resolve({
+          code: startCode ?? code,
+          stdout,
+          ...(/Failed to (?:replace|resolve) env|ERR_PNPM_ENV_REPLACE|Environment variable.*(?:not defined|not set)|Ignored project-level request destination "registry"[\s\S]*environment variables are not expanded/i.test(
+            stderr,
+          )
+            ? { unsupportedInterpolation: true }
+            : {}),
+        });
       })().catch(reject);
     });
   });

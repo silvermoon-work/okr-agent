@@ -16,13 +16,15 @@
   },
   "dependencies": {
     "@silvermoon-work/check-task-sdk": "workspace:*",
-    "@sinclair/typebox": "catalog:"
+    "@sinclair/typebox": "catalog:",
+    "yaml": "catalog:"
   },
   "devDependencies": {
     "@silvermoon-work/check-task-builder": "workspace:*",
     "@silvermoon-work/task-builder": "catalog:",
     "@silvermoon-work/task-builder-cli": "catalog:",
     "@silvermoon-work/task-engine": "catalog:",
-    "ipfs-unixfs-exporter": "catalog:"
+    "ipfs-unixfs-exporter": "catalog:",
+    "nrm": "catalog:"
   }
 }

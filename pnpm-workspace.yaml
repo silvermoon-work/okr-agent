@@ -15,6 +15,7 @@ catalog:
   commander: 14.0.2
   yaml: 2.8.1
   ipfs-unixfs-exporter: 16.2.3
+  nrm: 1.2.6
   "@eslint/js": ^10.0.1
   "@types/node": ^26.6.6
   "@vitest/coverage-v8": ^5.0.4

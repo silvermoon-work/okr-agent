@@ -1,5 +1,7 @@
 import { access, readFile, realpath, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import {
+  basename,
   delimiter,
   dirname,
   isAbsolute,
@@ -9,9 +11,17 @@ import {
   sep,
 } from "node:path";
 import { Value } from "@sinclair/typebox/value";
+import { isAlias, isScalar, parseDocument } from "yaml";
 import type { ProblemReporter } from "@silvermoon-work/check-task-sdk";
 import { Input, type ProblemCode, type Tool } from "./contract.js";
 import { errorCode, execute } from "./command.js";
+import {
+  absoluteHostPath,
+  executionEnvironment,
+  registryUrl,
+  validateExecutionEnvironment,
+} from "./execution-context.js";
+export { registryUrl } from "./execution-context.js";
 
 export function compareVersions(actual: string, expected: string): number {
   if (![actual, expected].every((v) => /^[0-9]+(?:\.[0-9]+)*$/.test(v)))
@@ -27,37 +37,16 @@ export function compareVersions(actual: string, expected: string): number {
   return 0;
 }
 
-export function registryUrl(value: string): string {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error("Registry URL must be an absolute HTTP(S) URL.");
-  }
-  if (
-    !/^https?:$/.test(url.protocol) ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    /[\s\\]/.test(value)
-  )
-    throw new Error(
-      "Registry URL must not contain credentials, query, fragment or whitespace.",
-    );
-  // URL normalizes host/default ports/dot segments; path case and internal slashes remain significant.
-  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
-}
-
 export function validateInput(value: unknown): asserts value is Input {
   if (!Value.Check(Input, value))
     throw new Error("Invalid Node.js toolchain input schema.");
   const { requirements: r, context } = value;
   if (
-    !isAbsolute(context.projectDirectory) ||
+    !absoluteHostPath(context.projectDirectory) ||
     /[\0\r\n]/.test(context.projectDirectory)
   )
     throw new Error("projectDirectory must be an absolute host directory.");
+  validateExecutionEnvironment(context.executionEnvironment);
   if (!Object.keys(r.tools ?? {}).length && !r.management && !r.registries)
     throw new Error("At least one actual requirement is required.");
   if (r.pairing?.npmWithNode && (!r.tools?.node || !r.tools.npm))
@@ -147,14 +136,120 @@ export interface Host {
     cwd: string,
     signal: AbortSignal,
   ): Promise<NpmLocation | undefined>;
+  assertRegistryContext(
+    name: "npm" | "pnpm",
+    entry: ToolEntry,
+    cwd: string,
+    signal: AbortSignal,
+  ): Promise<void>;
 }
 
-export function nativeHost(env: NodeJS.ProcessEnv = process.env): Host {
+async function pnpmLocalPrefix(cwd: string): Promise<string> {
+  let directory = cwd;
+  while (basename(directory) === "node_modules") {
+    const parent = dirname(directory);
+    if (parent === directory)
+      throw new Error("Cannot establish a safe pnpm local prefix.");
+    directory = parent;
+  }
+  if (directory !== cwd) return directory;
+  // pnpm 10.22/11.22 use these same local-prefix anchors before loading .npmrc.
+  for (;;) {
+    if (
+      directory === "/" ||
+      (process.platform === "win32" && /^[a-z]:[\\/]?$/i.test(directory))
+    )
+      return cwd;
+    for (const name of [
+      "node_modules",
+      "package.json",
+      "package.json5",
+      "package.yaml",
+      "pnpm-workspace.yaml",
+    ])
+      if (await exists(join(directory, name))) return directory;
+    const parent = dirname(directory);
+    if (parent === directory) return cwd;
+    directory = parent;
+  }
+}
+
+async function assertPnpmStartup(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  node?: ToolEntry,
+): Promise<void> {
+  const home =
+    (process.platform === "win32" ? env.USERPROFILE : env.HOME) ?? homedir();
+  const configDirectory = env.XDG_CONFIG_HOME
+    ? join(env.XDG_CONFIG_HOME, "pnpm")
+    : process.platform === "darwin"
+      ? join(home, "Library", "Preferences", "pnpm")
+      : process.platform === "win32" && env.LOCALAPPDATA
+        ? join(env.LOCALAPPDATA, "pnpm", "config")
+        : join(home, ".config", "pnpm");
+  const yamlPaths = [join(configDirectory, "config.yaml")];
+  const iniPaths = [
+    join(configDirectory, "rc"),
+    env.npm_config_userconfig ?? join(home, ".npmrc"),
+  ];
+  if (env.npm_config_globalconfig) iniPaths.push(env.npm_config_globalconfig);
+  else if (node?.realPath) {
+    const prefix =
+      env.npm_config_prefix ??
+      (process.platform === "win32"
+        ? dirname(node.realPath)
+        : resolve(dirname(node.realPath), ".."));
+    iniPaths.push(join(prefix, "etc", "npmrc"));
+  }
+  for (const project of new Set([cwd, await realpath(cwd)])) {
+    iniPaths.push(
+      join(project, ".npmrc"),
+      join(await pnpmLocalPrefix(project), ".npmrc"),
+    );
+    for (let directory = project; ; directory = dirname(directory)) {
+      const path = join(directory, "pnpm-workspace.yaml");
+      if (await exists(path)) {
+        yamlPaths.push(path);
+        iniPaths.push(join(directory, ".npmrc"));
+        break;
+      }
+      if (dirname(directory) === directory) break;
+    }
+  }
+  for (const path of new Set(yamlPaths)) {
+    if (!(await exists(path))) continue;
+    const document = parseDocument(await readFile(path, "utf8"));
+    if (document.errors.length)
+      throw new Error("Cannot safely inspect pnpm startup configuration.");
+    if (
+      document.has("configDependencies") ||
+      document.has("config-dependencies")
+    )
+      throw new Error(
+        "pnpm configDependencies are unsupported: inspection must not install configuration packages.",
+      );
+  }
+  for (const path of new Set(iniPaths)) {
+    if (!(await exists(path))) continue;
+    const text = await readFile(path, "utf8");
+    if (
+      /^\s*(?:config[-_]?dependencies)(?:\.[^=\r\n]+|\[[^\]\r\n]*\])?\s*=|^\s*\[config[-_]?dependencies\]\s*$/im.test(
+        text,
+      )
+    )
+      throw new Error(
+        "pnpm configDependencies are unsupported: inspection must not install configuration packages.",
+      );
+  }
+}
+
+export function nativeHost(env: NodeJS.ProcessEnv): Host {
   const host: Host = {
     platform: process.platform,
     env,
     canonical: realpath,
-    async locate(name) {
+    async locate(name, cwd) {
       if (name === "nvm" && process.platform !== "win32") {
         const home = env.NVM_DIR;
         if (!home) return undefined;
@@ -201,25 +296,62 @@ export function nativeHost(env: NodeJS.ProcessEnv = process.env): Host {
             ![".exe", ".com", ".cmd", ".bat"].includes(suffix)
           )
             throw new Error("Unsupported selected PATH executable extension.");
-          return {
+          const selected = {
             executable: entry,
             args: [],
             realPath: await realpath(entry),
           };
+          if (name === "pnpm")
+            await assertPnpmStartup(cwd, env, await host.locate("node", cwd));
+          if (name === "nrm") {
+            let cli = selected.realPath;
+            if (process.platform === "win32") {
+              const shim = await readFile(entry, "utf8");
+              const relativeCli =
+                /"%~dp0[\\/]([^"\r\n]+(?:cli\.js|dist[\\/]index\.js))"/.exec(
+                  shim,
+                )?.[1];
+              if (!relativeCli)
+                throw new Error(
+                  "Cannot establish read-only nrm entry provenance.",
+                );
+              cli = await realpath(resolve(dirname(entry), relativeCli));
+            }
+            const packageRoot = cli.endsWith(`${sep}cli.js`)
+              ? dirname(cli)
+              : dirname(dirname(cli));
+            const manifest = JSON.parse(
+              await readFile(join(packageRoot, "package.json"), "utf8"),
+            ) as {
+              name?: string;
+              version?: string;
+            };
+            // nrm 2.1.0 rewrites ~/.npmrc even for --version/ls. Never invoke it.
+            if (manifest.name !== "nrm" || manifest.version !== "1.2.6")
+              throw new Error(
+                "Unsupported nrm implementation: read-only startup is verified only for nrm 1.2.6.",
+              );
+          }
+          return selected;
         }
       }
       return undefined;
     },
-    run: (entry, args, cwd, signal) =>
-      execute(
+    async run(entry, args, cwd, signal) {
+      const result = await execute(
         entry.executable,
         [...entry.args, ...args],
         cwd,
         signal,
-        10_000,
-        undefined,
         env,
-      ),
+        10_000,
+      );
+      if (result.unsupportedInterpolation)
+        throw new Error(
+          "Tool configuration requires unsupported environment interpolation.",
+        );
+      return result;
+    },
     async npmLocation(entry, cwd, signal) {
       if (process.platform !== "win32") {
         if (!entry.realPath?.endsWith(`${sep}npm-cli.js`)) return undefined;
@@ -274,6 +406,63 @@ export function nativeHost(env: NodeJS.ProcessEnv = process.env): Host {
       }
       return { cli: await realpath(npmCli), node: node.realPath };
     },
+    async assertRegistryContext(name, entry, cwd, signal) {
+      if (name !== "pnpm") return;
+      const configurations: string[] = [];
+      for (let directory = cwd; ; directory = dirname(directory)) {
+        const path = join(directory, "pnpm-workspace.yaml");
+        if (await exists(path)) {
+          configurations.push(path);
+          break;
+        }
+        if (dirname(directory) === directory) break;
+      }
+      const global = await host.run(
+        entry,
+        ["config", "get", "globalconfig"],
+        cwd,
+        signal,
+      );
+      if (global.code !== 0)
+        throw new Error(
+          "Cannot establish effective pnpm configuration sources.",
+        );
+      const path = global.stdout.trim();
+      if (!absoluteHostPath(path))
+        throw new Error("Unknown pnpm global configuration path output.");
+      if (
+        absoluteHostPath(path) &&
+        /\.ya?ml$/i.test(path) &&
+        (await exists(path))
+      )
+        configurations.push(path);
+      for (const configuration of configurations) {
+        const document = parseDocument(await readFile(configuration, "utf8"));
+        if (document.errors.length)
+          throw new Error("Cannot inspect pnpm registry configuration safely.");
+        const selected: unknown = document.get("registry", true);
+        const registry = isAlias(selected)
+          ? selected.resolve(document)
+          : selected;
+        if (
+          registry !== undefined &&
+          (!isScalar(registry) || typeof registry.value !== "string")
+        )
+          throw new Error(
+            "Cannot establish a valid pnpm default registry value.",
+          );
+        // pnpm 11 silently ignores these placeholders. A permitted fallback URL
+        // must not conceal an unsupported intended registry requirement.
+        if (
+          isScalar(registry) &&
+          typeof registry.value === "string" &&
+          registry.value.includes("${")
+        )
+          throw new Error(
+            "Unsupported registry interpolation in pnpm configuration.",
+          );
+      }
+    },
   };
   return host;
 }
@@ -282,9 +471,12 @@ export async function inspect(
   input: Input,
   signal: AbortSignal,
   report: ProblemReporter<ProblemCode>,
-  host: Host = nativeHost(),
+  suppliedHost?: Host,
 ): Promise<void> {
   validateInput(input);
+  const host =
+    suppliedHost ??
+    nativeHost(executionEnvironment(input.context.executionEnvironment));
   signal.throwIfAborted();
   const cwd = input.context.projectDirectory;
   if (!(await stat(cwd)).isDirectory())
@@ -348,58 +540,92 @@ export async function inspect(
       );
     } else {
       const prefix = dirname(node.realPath);
-      const candidates = [
+      const candidates: string[] = [];
+      for (const candidate of [
         join(prefix, "node_modules", "npm", "bin", "npm-cli.js"),
         join(prefix, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
-      ].map(resolvePath);
+      ]) {
+        try {
+          candidates.push(await host.canonical(candidate));
+        } catch (error) {
+          if (!["ENOENT", "ENOTDIR"].includes(errorCode(error) ?? ""))
+            throw error;
+        }
+      }
       if (
         !candidates.includes(resolve(npmLocation.cli)) ||
         node.realPath !== npmLocation.node
       )
-        report(
-          "pairing-mismatch",
-          "node/npm：当前 npm 不属于当前 Node 的标准安装布局；请使两者指向同一环境。",
-        );
+        if (
+          npmLocation.node !== node.realPath ||
+          npmLocation.cli.includes(`${sep}node_modules${sep}npm${sep}bin${sep}`)
+        )
+          report(
+            "pairing-mismatch",
+            "node/npm：当前 npm 不属于当前 Node 的安装环境；请使两者指向同一环境。",
+          );
+        else
+          report(
+            "pairing-unconfirmed",
+            "node/npm：当前 npm 为非标准拆分布局，无法确认与 Node 安装环境的关系。",
+          );
     }
   }
   if (r.management && tools.has("nvm")) {
     const nvm = tools.get("nvm")!;
-    let managedRoot: string | undefined;
+    const managedRoots: string[] = [];
     if (host.platform === "win32") {
       const root = await host.run(nvm, ["root"], cwd, signal);
-      const current = await host.run(nvm, ["current"], cwd, signal);
+      const installed = await host.run(nvm, ["list"], cwd, signal);
       const rootPath = /^Current Root:\s*(.+)$/im
         .exec(root.stdout.trim())?.[1]
         ?.trim();
-      const version = /^v?(\d+\.\d+\.\d+)\s*$/.exec(current.stdout.trim())?.[1];
-      if (root.code !== 0 || current.code !== 0)
+      if (root.code !== 0 || installed.code !== 0)
         throw new Error("nvm-windows state inspection failed.");
-      if (rootPath && isAbsolute(rootPath) && version)
-        managedRoot = await host.canonical(join(rootPath, `v${version}`));
-      else if (
-        !/^(?:No current version|none|system)/i.test(current.stdout.trim())
-      )
-        throw new Error("Unknown nvm-windows state output.");
+      if (!rootPath || !absoluteHostPath(rootPath))
+        throw new Error("Unknown nvm-windows root output.");
+      if (!/^No installations recognized\.?$/i.test(installed.stdout.trim())) {
+        for (const line of installed.stdout
+          .split(/\r?\n/)
+          .filter((line) => line.trim())) {
+          const version =
+            /^\s*\*?\s*v?(\d+\.\d+\.\d+)(?:\s+\(Currently using (?:32|64)-bit executable\))?\s*$/i.exec(
+              line,
+            )?.[1];
+          if (!version)
+            throw new Error("Unknown nvm-windows installed-version output.");
+          managedRoots.push(
+            await host.canonical(join(rootPath, `v${version}`)),
+          );
+        }
+        if (!managedRoots.length)
+          throw new Error("Empty nvm-windows installed-version output.");
+      }
     } else {
-      const current = await host.run(nvm, ["current"], cwd, signal);
-      if (current.code !== 0)
-        throw new Error("Unix nvm current inspection failed.");
-      if (/^v\d+\.\d+\.\d+$/.test(current.stdout.trim())) {
-        const which = await host.run(nvm, ["which", "current"], cwd, signal);
+      const home = host.env.NVM_DIR;
+      if (!home || !absoluteHostPath(home))
+        throw new Error("NVM_DIR unavailable.");
+      const base = await host.canonical(join(home, "versions", "node"));
+      for (const toolPath of [
+        node?.realPath,
+        npmLocation?.cli,
+        npmLocation?.node,
+      ]) {
+        if (!toolPath || !within(base, toolPath)) continue;
+        const version = relative(base, toolPath).split(sep)[0];
+        if (!version || !/^v\d+\.\d+\.\d+$/.test(version))
+          throw new Error("Unknown Unix nvm installation layout.");
+        const root = await host.canonical(join(base, version));
+        if (managedRoots.includes(root)) continue;
+        const which = await host.run(nvm, ["which", version], cwd, signal);
         const path = which.stdout.trim();
         if (which.code !== 0 || !isAbsolute(path) || /[\r\n\0]/.test(path))
           throw new Error("Unknown Unix nvm which output.");
-        const home = host.env.NVM_DIR;
-        if (!home || !isAbsolute(home)) throw new Error("NVM_DIR unavailable.");
-        const root = await host.canonical(
-          join(home, "versions", "node", current.stdout.trim()),
-        );
         const actual = await host.canonical(path);
         if (!within(root, actual))
           throw new Error("Unix nvm provenance is inconsistent.");
-        managedRoot = root;
-      } else if (!/^(system|none)$/.test(current.stdout.trim()))
-        throw new Error("Unknown Unix nvm state output.");
+        managedRoots.push(root);
+      }
     }
     for (const name of r.management.appliesTo) {
       const entry = tools.get(name);
@@ -411,15 +637,14 @@ export async function inspect(
           `${name}：无法确认当前入口与 nvm 管理环境的关系。`,
         );
       else if (
-        !managedRoot ||
-        !within(managedRoot, path) ||
+        !managedRoots.some((root) => within(root, path)) ||
         (name === "npm" &&
           npmLocation &&
-          !within(managedRoot, npmLocation.node))
+          !managedRoots.some((root) => within(root, npmLocation.node)))
       )
         report(
           "management-mismatch",
-          `${name}：当前入口不属于 nvm 当前选定的版本环境。`,
+          `${name}：当前入口或其运行时不属于 nvm 已确认管理的安装环境。`,
         );
     }
   }
@@ -427,6 +652,7 @@ export async function inspect(
     const requirement = r.registries?.active?.[name];
     const entry = tools.get(name);
     if (!requirement || !entry) continue;
+    await host.assertRegistryContext(name, entry, cwd, signal);
     const result = await host.run(
       entry,
       ["config", "get", "registry"],
@@ -474,10 +700,6 @@ export async function inspect(
     }
   }
   signal.throwIfAborted();
-}
-
-function resolvePath(path: string): string {
-  return resolve(path);
 }
 
 export function parseNrm(output: string): ReadonlyMap<string, string> {

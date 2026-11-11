@@ -12,7 +12,7 @@
 `check-task-builder init text-check`，编辑逻辑、契约与
 `references/`，再运行生成项目中的 `pnpm build`。
 
-- [`@silvermoon-work/check.nodejs-toolchain`](packages/check.nodejs-toolchain/README.md)：私有 Node.js 工具链 Check 作者项目，仅交付标准 CAR/CID，不发布 npm。当前 Engine 执行环境阻塞及平台证据边界见包文档。
+- [`@silvermoon-work/check.nodejs-toolchain`](packages/check.nodejs-toolchain/README.md)：私有 Node.js 工具链 Check 作者项目，仅交付标准 CAR/CID，不发布 npm。显式执行上下文、CAR-only 消费方式与真实平台证据边界见包文档。
 
 ## 开发
 
