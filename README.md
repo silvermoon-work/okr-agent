@@ -170,8 +170,12 @@ The tag publishes only the mapped package. Both the tagged manifest and the
 tarball must match its exact name and version; the root version is irrelevant.
 Unknown package IDs, private/placeholder names, invalid versions, mismatches,
 unresolved local dependencies, and already-published versions block release.
-Canonical stable and prerelease SemVer versions are supported (without build
-metadata); stable versions use npm's `latest` tag and prereleases use `next`.
+Canonical stable SemVer versions and `x.y.z-rc.n` prerelease versions are
+supported (without build metadata). Stable versions use npm's `latest` tag;
+prereleases use `rc`. For each target `x.y.z` version, start `n` at `0` and
+increment it by one for each subsequent prerelease: `1.2.3-rc.0`, `1.2.3-rc.1`,
+and so on. Use matching package-specific Git tags, for example
+`core-v1.2.3-rc.0`.
 
 The pinned `github-ci-verify` CLI requires the latest `ci.yaml` main push run
 for the exact checked-out SHA and its successful versioned aggregate job and

@@ -44,6 +44,9 @@
   private.
 - Require the tag's package identity and exact version to match both the tagged
   commit's manifest and the packed manifest, including prerelease suffixes.
+- Publish stable versions to `latest` and prerelease versions to `rc`.
+  Prerelease versions must use `x.y.z-rc.n`, with `n` starting at `0` and
+  increasing by one for each subsequent prerelease of the same target version.
 - Publish only commits reachable from main with successful exact-commit main
   push CI. Keep the versioned CI aggregate and verifier arguments aligned.
 - Build the selected package and its dependencies, then pack the selected

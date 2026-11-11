@@ -108,14 +108,17 @@ test("the selected package, not the root, must match the tag exactly", () => {
 });
 
 test("prerelease suffixes must match exactly and never publish as latest", () => {
-  const selected = selectRelease(packages, { tag: "core-v2.0.0-beta.2" });
+  const selected = selectRelease(packages, { tag: "core-v2.0.0-rc.0" });
   assert.equal(
-    validateManifest(selected, { ...manifest, version: "2.0.0-beta.2" })
-      .distTag,
-    "next",
+    validateManifest(selected, { ...manifest, version: "2.0.0-rc.0" }).distTag,
+    "rc",
+  );
+  validateArtifact(
+    validateManifest(selected, { ...manifest, version: "2.0.0-rc.0" }),
+    { ...manifest, version: "2.0.0-rc.0" },
   );
   assert.throws(() =>
-    validateManifest(selected, { ...manifest, version: "2.0.0-beta.1" }),
+    validateManifest(selected, { ...manifest, version: "2.0.0-rc.1" }),
   );
   for (const version of ["0.1.0-rc.0", "0.1.0-rc.1", "0.1.0-rc.2"]) {
     assert.equal(
@@ -125,6 +128,33 @@ test("prerelease suffixes must match exactly and never publish as latest", () =>
       }).distTag,
       "next",
     );
+  }
+});
+
+test("only rc prereleases with a nonnegative integer suffix are supported", () => {
+  const selected = selectRelease(packages, { packageId: "core" });
+  for (const version of ["2.0.0-rc.1", "2.0.0-rc.10"]) {
+    assert.equal(
+      validateManifest(selectRelease(packages, { tag: `core-v${version}` }), {
+        ...manifest,
+        version,
+      }).distTag,
+      "rc",
+    );
+  }
+  for (const version of [
+    "2.0.0-beta.0",
+    "2.0.0-beta-rc.0",
+    "2.0.0-rc",
+    "2.0.0-rc.01",
+    "2.0.0-rc.-1",
+    "2.0.0-rc.1.0",
+    "2.0.0-rc.n",
+    "2.0.0-rc.0+build",
+  ]) {
+    assert.throws(() => selectRelease(packages, { tag: `core-v${version}` }));
+    assert.throws(() => validateManifest(selected, { ...manifest, version }));
+    assert.throws(() => validateArtifact(release, { ...manifest, version }));
   }
 });
 
