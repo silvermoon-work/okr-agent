@@ -1,100 +1,178 @@
-# 需求与待确认设计
+# 需求与讨论结论
 
 本文支持
-[Idea](Idea.md)，直接说明本次要解决的问题，不要求读者拥有其他仓库的本机副本。已确认边界、历史语义和待确认建议分别列出；历史实现及本构想的验收均不等于批准具体 API。
+[Idea](Idea.md)，直接说明本次要解决的问题，不要求读者拥有其他仓库的本机副本。2026-11-11 的讨论已收敛如下方向；本文记录不等于 Silvermoon 构想验收，也不代表代码已实现。类型签名和路径示例用于描述讨论结果，不是已经发布的 API。
+
+## 当前推进边界
+
+用户明确要求先记录讨论，暂不实施。等待上游 Task
+Engine 的 IPFS 文件包/Space 支持完成，再核对可用接口和依赖版本，继续本 Idea 的必要确认与实现。不以兼容旧接口、复制 Space 实现或先做替代运行时的方式绕过这个前提。此次不记录 acceptIdeal，不把单项讨论同意当作整个构想或实现的验收。
 
 ## 问题与作者体验
 
-通用 Task 负责执行一段受输入、结果和消息契约约束的代码；Check 在此基础上表达检查观察，帮助消费方理解被检查对象是否满足要求、发现了什么，以及如何查看相关证据或说明。领域 SDK 的价值是减少作者重复编写这类代码，而不是换个名字调用 runTask。
+通用 Task 负责执行受输入、结果和消息契约约束的代码；Check 在此基础上表达是否通过、有哪些具体问题，以及参考标准在哪里。SDK 的价值是减少作者重复编写结果装配和文档映射代码，不是换个名字调用 runTask。
 
-本次面向检查作者，完成以下连续流程：
-
-1. 用 check-task-builder
-   init 创建最小、可构建的 check 项目，示例使用 check-task-sdk。
-2. 作者在 CLI 外编辑检查逻辑、输入契约及所需资源，不必理解通用运行时内部结构。
-3. 用一次 check-task-builder build 完成领域转换与上游构建，交付标准 Task
+1. check-task-builder init 创建使用 check-task-sdk 的最小可构建项目。
+2. 作者在 CLI 外编辑检查逻辑、输入契约及参考标准文档。
+3. 一次 check-task-builder build 完成领域转换与上游构建，交付标准 Task
    Bundle/CAR。
-4. 外部 Task Engine 执行制品；消费方取得实际检查结果，并能读取打包后的资源。
+4. 外部 Task
+   Engine 执行制品，得到业务 JSON 与配套输出文件包；消费方读取问题及参考标准。
 
-只先完成一个有真实读取和判断的 check，不用常量结果或仅有文件生成替代闭环验证。
+先完成一个有真实读取和判断的 check，不用常量结果或仅生成文件替代闭环验证。
 
-## 已确认的职责与边界
+## 两包职责与命令边界
 
-### check-task-sdk
+- check-task-sdk 基于 @silvermoon-work/task-sdk 组合公共检查能力，不依赖 builder，不把构建工具带入任务运行时。
+- check-task-builder 的核心是“check 项目文件树 → 标准 task
+  builder 输入文件树”，随后组合上游完成全链路构建。中间树不必落盘，可使用上游 ReadonlyFileTree。
+- 编译、SDK
+  binding、Bundle 校验和 CAR 编码复用上游；Worker、IPC、ACK、取消生命周期和资源传输也留在上游，不重造第二套工具或运行时。
+- CLI 名称为 check-task-builder，首版提供 init/build，不提供 car 子命令。项目的 pnpm
+  car 直接调用 task-builder
+  car，并显式声明所需上游 CLI 开发依赖，不依赖传递依赖碰巧暴露命令。
+- build 是全链路入口，默认交付 Bundle/CAR，不要求作者先转换再手动调用上游。内部可以组合上游库 API，不强制使用 CLI 子进程。
+- 两包按 @silvermoon-work scope 约定命名；具体版本和最终发布配置另行确认。
 
-- 基于 @silvermoon-work/task-sdk 组合检查领域公共能力，不能仅重导出或改名包装 runTask。
-- 结果、finding、证据、检查上下文与公共辅助能力是候选抽象；选哪些以及具体形状仍需确认。
-- 不依赖 builder，任务运行时不携带构建工具。
-- 不复制 Worker、IPC、ACK、取消生命周期或资源传输；这些继续使用上游运行时。
+## 检查结果与问题
 
-### check-task-builder
+### 业务结果与执行状态
 
-- 核心转换是“check 项目文件树 → 标准 task
-  builder 输入文件树”，随后组合上游完成构建。
-- 编译、SDK binding、Bundle 校验和 CAR 编码复用上游，不重造第二个 task builder。
-- 不要求作者手动先转换再调用上游命令；中间树不必落盘，可使用上游 ReadonlyFileTree。
-- 领域目录、契约生成、定义与资源映射需要一致，避免让作者重复维护同一业务声明。
-- CLI 名称确定为 check-task-builder；init/build 必须支持。首版仅提供这两个命令是建议，car 是否加入尚未确认。若不加入，独立重新打 CAR 使用 task-builder
-  car；若加入，只代理上游。
+已确认：检查通过和检查不通过都是正常 Task 结果；不能可靠完成检查属于执行故障，不能制造问题或返回正常不通过。取消沿用上游语义。“文件不存在”等情况按检查目的判断，不能仅按异常类型分类。
 
-两包按 OKR Agent 的 @silvermoon-work scope 约定命名，不沿用 @potential-guide
-scope；具体版本和最终发布配置另行确认。
+每个问题只包含以下领域信息：
 
-## 历史材料中值得保留的语义
+- code：稳定的问题类别。
+- brief：本次具体问题的描述，可自然包含对象、位置、实际值与要求等。
+- documentation：详细参考标准文档的位置，由框架定位和装配。
 
-以下是阅读旧实现和 supporting
-documents 后提炼的设计参考，不是对旧字段或目录的兼容承诺：
+不增加 evidence、finding、observation 等公共领域概念；不保留 target/actual 字段，因为不同 check 的对象无法统一编码。作者用 brief 描述具体问题，SDK 不解析其中的自然语言。
 
-- **检查事实与执行状态分开。**
-  旧实现以问题列表表达不满足的要求，执行异常和取消直接传播，不伪造为业务问题。本次建议正常不通过仍是正常检查结果，执行故障才是任务失败；该建议及其具体数据契约仍需明确确认。
-- **作者观察与公共装配分开。**
-  旧检查函数只返回观察，公共适配器负责结果、问题码校验和说明引用。新 SDK 应讨论如何保留这种减少重复代码的价值，不必沿用 pass/problems、target/code/actual 命名。
-- **业务声明同源。**
-  旧语言和问题码声明同时用于类型、运行时允许值、结果 Schema 和文档覆盖。新设计应避免这些描述彼此漂移；是否保留语言、问题码以及生成方式仍需确认。
-- **说明不改变事实。** 旧结果及各问题可独立携带逐语言、不可变 Bundle
-  URI，不在运行时读取 Markdown 后再决定检查结果，也不因读者获取文档失败而改写事实。文档是否必需、是否支持语言回退、frontmatter、索引和 URI 形状均未定案。
-- **资源属于实际制品。**
-  旧实现使用已验证的执行 Bundle 身份，避免作者输入冒充身份；文本与二进制采用明确的字节处理规则，缺失或错误资源显式失败。新包应证明最终制品的资源可用，而非仅证明源目录或中间文件存在。
-- **所有权留在正确层。**
-  检查代码释放自身打开的文件、进程或连接，故障不能被成功形状掩盖。通用取消与子任务生命周期由 Task
-  Engine/SDK 管理；Probe 的阶段、覆盖与编排不迁入本次能力。
+当前讨论的结果形状如下；documentation 在输出包方案中表示相对包根的路径：
 
-## 上游组合必须验证的事实
+```ts
+export interface CheckProblem<Code extends string = string> {
+  readonly code: Code;
+  readonly brief: string;
+  readonly documentation: string;
+}
 
-- runTask 接收任务回调；TaskContext 已提供 signal、bundle.cid、bundle.read 等能力，领域层无需复制其执行协议。
+export type CheckResult<Code extends string = string> =
+  | {
+      readonly pass: true;
+      readonly documentation: string;
+    }
+  | {
+      readonly pass: false;
+      readonly documentation: string;
+      readonly problems: readonly [CheckProblem<Code>, ...CheckProblem<Code>[]];
+    };
+```
+
+不通过必须有问题，通过不携带 problems。当前草案保留检查整体的参考文档，包括通过时的文档；不只提供问题文档。
+
+### 参考文档不做多语言机制
+
+文档主要面向 AI
+agent，作者使用英语或自己使用的语言写一份即可。documentation 不再是语言映射，不声明 languages，不要求按语言组织目录，不做翻译覆盖校验或语言回退。若未来确有语言与模型不兼容，应评估整个 check 的 i18n，而非现在只为参考文档预建国际化体系；这不进入首版。
+
+## 作者回调与受限上下文
+
+作者回调不返回问题数组或最终结果，而是通过报告器给出 code 和 brief：
+
+```ts
+export type ProblemReporter<Code extends string> = (
+  code: Code,
+  brief: string,
+) => void;
+
+export type CheckCallback<Input, Code extends string> = (
+  input: Input,
+  context: CheckContext,
+  reportProblem: ProblemReporter<Code>,
+) => Promise<void>;
+```
+
+CheckContext 是领域受限接口，具体成员签名等上游接口稳定后确认，不是完整 TaskContext：
+
+- 作者可使用输入、取消信号、日志、进度及自身 Bundle 的只读资源。
+- SDK 显式挑选允许的能力，并在运行时创建不含 output 的新对象。不直接继承完整 TaskContext，也不只做类型上的 Omit；上游新增能力不能自动泄漏进 CheckContext。
+- 作者不能直接操控 output space，结果装配及参考文档输出由框架负责。
+- 这是 API 职责约束，不是安全沙箱。不为尚未出现的附件需求提前开放整个 output。
+
+框架收集问题，回调正常 resolve 后根据列表是否为空生成 pass。若回调抛错或 reject，即使已经报告过问题，也不能装配成正常检查结果。取消继续使用上游语义。
+
+报告器同步收集，不做文件 I/O；构建声明中的问题码与文档映射由框架生成。实现草案要求 builder 提前验证问题码对应文档，运行时拒绝未声明的问题码；回调结束后关闭报告器，迟到调用不得修改结果。这些运行时细节仍需在实施前核对具体错误和生命周期处理，不作为已经验证的保证。
+
+## JSON 与输出文件包的组合方案
+
+讨论方向是：业务 JSON 保持简单，配套 IPFS 输出文件包提供参考标准文档。消费者用 Run 的 outputCid 和 documentation 路径读取文件。outputCid 由 Engine 完成输出定稿后附加，不放进业务 JSON，也不由 check 作者伪造。
+
+示例业务结果：
+
+```json
+{
+  "pass": false,
+  "documentation": "references/check.md",
+  "problems": [
+    {
+      "code": "node-version",
+      "brief": "当前 Node.js 为 20.0.0，要求至少 22.13.0。",
+      "documentation": "references/problems/node-version.md"
+    }
+  ]
+}
+```
+
+该示例需要输出包中真实存在对应路径；具体目录名称和构建描述语法尚未定案。标准文档通常是静态内容，可由 builder 收入 Check
+Bundle，再由 SDK 利用上游 Space
+link 能力放入输出包，不要求每次读取再复制 Markdown。SDK 负责定位文档、链接输出和装配结果；Engine 负责输出定稿及 outputCid。
+
+文档链接或输出定稿失败属于执行故障，不能返回声称成功但文档不可用的结果。消费者后续获取文档失败不能改写已经记录的检查事实。暂不要求输出包另存 result.json；仅在需要文件包独立携带完整结果时再讨论。以上是等待上游完成后验证的方案，不是已发布能力或端到端成功证据。
+
+## 上游组合与实施前提
+
+2026-11-11 读取 task-engine 的 ipfs-task-context-discussion 工作分支，观察提交为 13e3b99；该工作树当时无未提交修改。其源码讨论的是以下破坏性接口变更，而非可直接假定已发布的依赖：
+
+- context.bundle 为不可变 ReadonlySpace，读取改用 root.resolve(...).read()。
+- context.output 为 ReadWriteSpace，提供 write、link、getCid；Engine 在正常完成前等待输出操作并定稿，将 outputCid 附加到 Run
+  outcome。
+- 旧 context.bundle.read 已移除；本 Idea 不再把旧接口写成目标 API。
+- 静态 Space 具有不可变 CID，运行中 output
+  Space 则使用运行身份；getCid 是当前快照，不等于最终完成的输出包身份。
+
+开始实施前须确认上游工作完成，重新核对稳定接口、精确提交、CI 与发布状态，明确实际依赖如何取得；不能把工作树源码、合并到 main 和发布到 registry 混为一谈。用户此次只授权记录和等待，不授权提前实现、本地替代或发布上游。
+
+另外仍需遵守上游构建边界：
+
 - buildTaskBundle(tree,
-  options) 返回 ReadonlyFileTree。树列举直接子项，每次读取应提供相同版本字节的新流，逻辑路径统一使用
-  `/`。依赖必须位于输入树中，不能隐式回退到构建工具自身的 node_modules。
-- 输出资源采用惰性读取；返回一棵树不代表资源字节已经全部验证。交付前必须完整消费并通过上游制品校验。
-- 上游按解析后的 SDK 包身份识别 binding；source.sdk 同时影响 callback 包装入口。不能只把 source.sdk 改为领域 SDK 就假定兼容，必须验证组合 SDK 的真实依赖解析和 binding。
+  options) 使用可重复读取的 ReadonlyFileTree，逻辑路径统一使用
+  `/`；输入树必须包含依赖，不能回退到工具自身 node_modules。
+- 输出资源为惰性流，返回树不等于字节已验证，交付前必须完整消费并通过上游校验。
+- 验证组合 SDK 的真实依赖解析及 binding，不能只改 source.sdk 就声称兼容。
 - 上游 CLI
-  runner 没有任意输入树注入口，不能假设可直接传入转换树。应在实际公开能力边界内选择组合路径，而非复制编译和打包实现。
-- TS/JS
-  contract 的求值是受信任代码执行，不是安全沙箱。上游 init/build/car 的存在不意味着新 CLI 的参数、输出、错误和覆盖规则已获确认。
+  runner 不提供任意转换树注入口，选择实际公开能力内的组合路径，不复制编译器。
+- TS/JS contract 的求值是受信任代码执行，不是安全沙箱。
 
-## 验收与不做事项
+## 验收、不做事项与来源
 
-- 从 init 项目开始，在 CLI 外修改源和资源，再以一次 build 交付标准 Bundle/CAR。
-- 外部 Task
-  Engine 实际验证检查通过、不通过和执行故障，并验证打包资源可读；记录准确的依赖来源与制品身份，不能只做 SDK 单元测试或假执行。
-- 使用项目现有工具链并通过 pnpm
-  check；SDK 不依赖 builder，构建工具不进入任务运行时。
-- 不迁入整个 Potential Guide，不扩展 objective
-  SDK/builder、调度、监管、服务端或 Web UI。
-- 不修改或删除旧讨论，不自动发布 npm、推送 release tag 或弃用旧包。
+后续验收覆盖 init → 外部编辑 → 一次 build
+→ 外部 Engine 实际执行，验证通过、不通过、执行故障以及输出包的参考文档可读，并运行 pnpm
+check。实际依赖来源、制品身份及进程/资源回收需要有证据，不以假执行或仅 SDK 单测代替。
 
-## 来源与依赖风险
+不迁入整个 Potential Guide，不扩展 objective
+SDK/builder、调度、监管、服务端或 Web
+UI；不修改或删除旧讨论，不自动发布 npm、推送 release tag 或弃用旧包。
 
-保留来源以供需要时追溯，但正文需求不依赖读者逐个打开历史链接：
+历史来源为 shazhou-ww/potential-guide，参考提交 b1e3fa7806de0f8655ca164b68bc2145704cb1fe 的 check-sdk、check-environment、check-runtime-files、probe-sdk，以及 Check-alignment 与 task-composition 讨论。保留业务装配、文档标准和通用执行分责的价值，不继承旧多语言、target/actual、作者观察模型、包结构或旧审批。
 
-- Potential Guide：shazhou-ww/potential-guide，参考提交
-  `b1e3fa7806de0f8655ca164b68bc2145704cb1fe`。阅读材料包括 check-sdk 的作者、结果和回调说明，check-environment、check-runtime-files、probe-sdk，以及历史 Idea 的 Check-alignment 与 task-composition 讨论。只吸收上述语义，不继承其包结构、旧审批或整个需求集合。
-- 通用引擎：[silvermoon-work/task-engine](https://github.com/silvermoon-work/task-engine)，参考 task-sdk、task-builder、task-builder-cli 的实际 API。2026-11-11 已核实 Windows
-  Node 22.13 文件身份修复 `cc99c27a12a5189ea41327edc51bb770de054179`
-  在 main，且该提交 CI 成功。当时 registry 的 Builder/CLI canary 均为
-  `0.1.0-canary-261111-1`，对应 tag 指向修复前的
-  `bdfbdbbb5286be34844039abd0658bf4c1c1b904`。实施时需重新核实发布状态；若仍未发布，明确记录精确源码/本地 tarball 验证的限制，不把 main 修复、打包验证和 registry 安装验证混为一谈，也不因此自行发布上游。
+上游来源为
+[silvermoon-work/task-engine](https://github.com/silvermoon-work/task-engine)，Space 源码观察来自上述工作分支。此前 Windows
+Node
+22.13 文件身份修复位于 cc99c27a12a5189ea41327edc51bb770de054179，当时其 exact-commit
+CI 成功，但观察到的 Builder/CLI canary
+0.1.0-canary-261111-1 对应更早提交，不包含修复；这只是历史核实记录，不能替代实施时对 Space 及 Windows 兼容版本的重新核实。
 
-## 实施前仍需确认
+## 等待后仍需细化
 
-收敛最小真实 check 所需的领域模型与作者 API、目录/契约/资源规则，以及 CLI 的参数、默认值、stdout/stderr、退出码、覆盖、取消和部分交付行为。构想验收后逐步完成这些必要决定并实施，不为尚无需求的未来能力无限扩展讨论。
+上游 Space 完成后再确认 CheckContext 精确成员、输入/结果 Schema 的作者 API、问题码和文档的目录与生成契约，以及 CLI 参数、默认路径、stdout/stderr、退出码、覆盖、取消和部分交付行为。本次不继续展开这些细节、不请求立即进入实施。

@@ -2,11 +2,15 @@
 
 本文件是准备阶段的轻量实施种子，不是已批准的 API 或实施证据。构想方向获验收后细化；实施前确认领域数据/API 与 CLI 交互，不把旧实现当作新契约。
 
+当前按用户要求暂停实施，等待上游 Task
+Engine 的 IPFS 文件包/Space 支持完成。不提前编写替代实现；恢复时先核对接口、依赖来源与版本。
+
 ## Steps
 
 ### I-S01: 确认最小领域与作者契约
 
-结合[需求与待确认设计](ideal/Requirements.md)，确认 Task/Check 差异、结果/finding/证据/ 上下文的最小抽象、正常不通过与执行故障边界，以及契约生成、目录和资源映射。沿用已确认作者角色与初始化、外部编辑、构建场景，逐步确认 CLI 参数、输出、错误和安全行为；明确首版是否仅 init/build。包名按仓库约定提出
+结合[需求与讨论结论](ideal/Requirements.md)，细化 code/brief/documentation、reportProblem 回调、受限 CheckContext 与 JSON/输出文档包的组合方式，不重新引入 evidence/observation、target/actual 或多语言机制。首版已确定仅 init/build，项目 pnpm
+car 使用上游命令。上游完成后再确认目录、契约生成与 CLI 参数、输出、错误和安全行为。包名按仓库约定提出
 `@silvermoon-work/check-task-sdk`、`@silvermoon-work/check-task-builder`，版本和最终发布配置另行确认，不沿用旧 scope。
 
 ### I-S02: 实现组合式 SDK 与一次构建工具
@@ -27,7 +31,7 @@ SDK 的实际作者代码与聚焦测试证明公共能力减少重复检查代�
 
 ### I-AC02: 作者流程与制品真实可用
 
-从 init 项目在 CLI 外修改源和资源，再以一次 build 产出标准 Bundle/CAR；外部 Engine 验证通过、不通过、执行故障三条路径及制品内资源可读。测试同时覆盖确认后的 CLI 参数、输出与错误协议，不能只证明内存树已返回。
+从 init 项目在 CLI 外修改源和资源，再以一次 build 产出标准 Bundle/CAR；外部 Engine 验证通过、不通过、执行故障三条路径，以及结果中的参考文档路径可从 Run 的 outputCid 对应文件包读取。测试同时覆盖受限 Context、问题报告、输出失败传播及确认后的 CLI 参数、输出与错误协议，不能只证明内存树已返回。
 
 ### I-AC03: 仓库质量与交付说明完整
 
