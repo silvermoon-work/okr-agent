@@ -1,4 +1,43 @@
-# pnpm monorepo preset
+# OKR Agent
+
+基于 pnpm workspaces 和 Turborepo 的 OKR Agent monorepo。
+
+## 开发
+
+使用 Node.js 22.13+ 和 pnpm 11.22+：
+
+```sh
+pnpm install
+pnpm check
+```
+
+可执行项目放在 `apps/`，共享库放在
+`packages/`。当前保留 preset 示例，用于验证工作区依赖、类型检查、测试和构建链路。
+
+## Silvermoon
+
+项目已接入 Silvermoon v2，默认内容语言为简体中文（`zh-CN`），主分支为
+`silvermoon-work/okr-agent` 的 `main`。
+
+使用设备级安装的 Silvermoon CLI 和个人 skill，不添加项目依赖：
+
+```sh
+silvermoon whats-next --audience agent --language zh-CN
+silvermoon check --worktree --audience agent --language zh-CN
+```
+
+按报告的下一步操作推进；只有明确需要创建新想法时才运行
+`silvermoon create-idea --audience agent --language zh-CN`。
+
+## Preset 来源
+
+本项目派生自
+[`shazhou-ww/preset-pnpm-monorepo`](https://github.com/shazhou-ww/preset-pnpm-monorepo)
+的 `main`，保留完整历史及 `.git-lineage.yaml`。工作区干净时可运行
+`git-lineage update`
+合并上游更新。以下保留 preset 的工作区与发布说明；发布功能尚未启用。
+
+## pnpm monorepo baseline
 
 A neutral TypeScript monorepo baseline built with pnpm workspaces and Turborepo.
 It provides dependency topology, caching, shared quality tooling, and examples
@@ -17,11 +56,10 @@ pnpm install
 pnpm check
 ```
 
-This preset derives from
+The upstream preset derives from
 [`preset-typescript-base`](https://github.com/shazhou-ww/preset-typescript-base).
-Its `.git-lineage.yaml` records that immediate parent. Run `git-lineage update`
-to merge future baseline changes. This preset documents its own capabilities and
-does not enumerate descendants.
+Its own `.git-lineage.yaml` records that immediate parent. This preset documents
+its own capabilities and does not enumerate descendants.
 
 ## Structure
 

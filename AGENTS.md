@@ -2,7 +2,7 @@
 
 ## Development
 
-- This preset uses pnpm workspaces and Turborepo. Keep executable apps under
+- This project uses pnpm workspaces and Turborepo. Keep executable apps under
   `apps/` and reusable packages under `packages/`.
 - Use Node.js 22.13 or newer and pnpm 11.22 or newer.
 - Install dependencies with `pnpm install`.
@@ -17,6 +17,18 @@
 - Manage project skills with `npx skills`.
 - Keep all project skills under `.agent/skills/<skill-name>/`, with each skill's
   `SKILL.md` in its directory.
+
+## Silvermoon
+
+- Use the device-level Silvermoon CLI and personal skill registration, not a
+  project dependency or repository-local Silvermoon skill.
+- Project content defaults to Simplified Chinese (`zh-CN`).
+- Start with `silvermoon whats-next --audience agent --language zh-CN` and
+  follow its reported next action.
+- Validate metadata with
+  `silvermoon check --worktree --audience agent --language zh-CN` before staging
+  and `silvermoon check --staged --audience agent --language zh-CN` before
+  committing.
 
 ## Publishing
 
