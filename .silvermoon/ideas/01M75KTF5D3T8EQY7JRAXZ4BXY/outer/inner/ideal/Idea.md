@@ -6,13 +6,14 @@
 
 ## 结果
 
-交付
-`@silvermoon-work/check.nodejs-toolchain`，通过复合 requirements 检查指定项目上下文中的工具链状态，并为实际问题提供专用参考文档。具体语义与验收场景见
+以私有作者项目 `@silvermoon-work/check.nodejs-toolchain`
+构建并交付 CAR/CID，通过复合 requirements 检查指定项目上下文中的工具链状态，并为实际问题提供专用参考文档。具体语义与验收场景见
 [Requirements.md](./Requirements.md)。
 
 ## 边界
 
-- 一个 npm 包、一个 Check Task，复用现有 SDK/Builder，不扩展多 Check 模板。
+- 一个私有 workspace 作者包、一个 Check
+  Task，交付 CAR/CID，不配置或执行 npm 发布；复用现有 SDK/Builder。
 - 覆盖工具要求、Node/npm 配对、可选 nvm 管理约束，以及当前 registry 与 nrm 注册要求。
 - 仅观察与验证，不安装、切换或修改环境；不检查网络健康、依赖完整性或实际构建。
 
