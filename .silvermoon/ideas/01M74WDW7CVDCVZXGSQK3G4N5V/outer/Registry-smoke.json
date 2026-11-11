@@ -1,0 +1,73 @@
+{
+  "ok": true,
+  "origin": "registry",
+  "node": "24.22.2",
+  "engineVersion": "0.1.0",
+  "sdkVersion": "0.1.0-rc.0",
+  "builderVersion": "0.1.0-rc.0",
+  "releaseCommit": "5b7d11cc582a715c07de87b110daf918f83f9422",
+  "publicationRuns": {
+    "sdk": 43023721100,
+    "builder": 43024218167
+  },
+  "distTags": {
+    "sdk": {
+      "latest": "0.0.0",
+      "next": "0.1.0-rc.0"
+    },
+    "builder": {
+      "latest": "0.0.0",
+      "next": "0.1.0-rc.0"
+    }
+  },
+  "registryIntegrity": {
+    "sdk": "sha512-od3Cg+OwrY72h5E5l0uM46ExPdCrryM+9tnrEVYGf7KLewXShkoGKATJLhVHyfBTxTuL3wKp8aGMhXXuq7zNdg==",
+    "builder": "sha512-+eswQSR8ei4tBKuA3kLCJBi2I4E2GZAu0o5tHPlPzdThLhjfJPbVizefb91g7/QQmsBh7ZrmC4WWVyN9icvpaA=="
+  },
+  "builderSdkDependency": "0.1.0-rc.0",
+  "bundleCid": "bafybeif52xg633hzxjeittc6njo2m3ckp7dzmvgglnev3thkrwffvruslm",
+  "outputCid": "bafybeicwqlsxvvcu2h4v4e34fbzz32epaythj4jmtxhxoszc6wg5edz5b4",
+  "pass": {
+    "taskId": "01M75AWQX79YEB2PSAAF5FSFZV",
+    "status": "succeeded",
+    "result": {
+      "pass": true,
+      "documentation": "references/check.md"
+    }
+  },
+  "nonpass": {
+    "taskId": "01M75AWYQNHV09FHB67W3Z3HKS",
+    "status": "succeeded",
+    "result": {
+      "pass": false,
+      "documentation": "references/check.md",
+      "problems": [
+        {
+          "code": "text-mismatch",
+          "brief": "Text \"other\" must equal \"hello\".",
+          "documentation": "references/problems/text-mismatch.md"
+        }
+      ]
+    }
+  },
+  "fault": {
+    "taskId": "01M75AX4AQJ6EFBEEJFE03QYE3",
+    "status": "failed",
+    "code": "run_failed",
+    "message": "Intentional smoke execution fault",
+    "outputCidAbsent": true
+  },
+  "outputReaderTasks": [
+    "01M75AWWBJXKQRFTZJ428A9YAX",
+    "01M75AX20J359KSHV15X2MR1TF"
+  ],
+  "verifiedOutputFiles": [
+    "references/check.md",
+    "references/assets/standard.txt",
+    "references/problems/text-mismatch.md"
+  ],
+  "attachmentText": "check-reference-asset\n",
+  "engineStateAfterStop": "stopped",
+  "ownedSmokeDirectoryRemoved": true,
+  "registryAcceptance": true
+}
