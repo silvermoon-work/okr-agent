@@ -28,6 +28,9 @@ x64、Node/npm、pnpm 10.22/11.22、nrm 1.2.6 与官方 portable nvm-windows
 
 证据文件只记录实际结果，不保存秘密或完整用户环境。独立消费验证的是本地离线 DAG 可获取与运行，不冒充远端 IPFS 可用；制品与复现文档须持久可用。
 
+实际交付身份、复现步骤、23 个真实 Engine 场景及支持限制见
+[Delivery.md](./Delivery.md) 与同目录三个原始 JSON 报告。
+
 ## Acceptance criteria
 
 ### D-AC01: 仓库外可独立消费

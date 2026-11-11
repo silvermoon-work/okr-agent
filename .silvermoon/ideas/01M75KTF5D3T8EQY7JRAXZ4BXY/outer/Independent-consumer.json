@@ -1,0 +1,64 @@
+{
+  "ok": true,
+  "bundleCid": "bafybeiahk52evmukio5wr7nkomvab4ujmk3yxzss4pxbaqlz57rmmc2yxe",
+  "carSha256": "4fa6defe505dbb9d4500c1aa20a748ee02b54787737b84516e6eff8e4004f8ab",
+  "platform": "win32",
+  "architecture": "x64",
+  "nodeVersion": "v26.13.0",
+  "dependencies": {
+    "@silvermoon-work/task-engine": "published dependency outside author repository",
+    "@silvermoon-work/task-builder": "published dependency outside author repository",
+    "ipfs-unixfs-exporter": "published dependency outside author repository"
+  },
+  "authorPackageInstalled": false,
+  "authorSdkInstalled": false,
+  "configurationUnchanged": true,
+  "ownedEnvironmentRemoved": true,
+  "results": [
+    {
+      "name": "independent-node",
+      "stage": "completed",
+      "pass": true,
+      "problems": [],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": ["references/check.md"],
+      "reclaimed": true
+    },
+    {
+      "name": "independent-pairing-and-user-registry",
+      "stage": "completed",
+      "pass": true,
+      "problems": [],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": ["references/check.md"],
+      "reclaimed": true
+    },
+    {
+      "name": "independent-environment-registry",
+      "stage": "completed",
+      "pass": true,
+      "problems": [],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": ["references/check.md"],
+      "reclaimed": true
+    },
+    {
+      "name": "independent-multiple-problems",
+      "stage": "completed",
+      "pass": false,
+      "problems": ["version-too-low", "version-too-low", "registry-mismatch"],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": [
+        "references/check.md",
+        "references/problems/version-too-low.md",
+        "references/problems/registry-mismatch.md"
+      ],
+      "reclaimed": true
+    },
+    {
+      "name": "independent-execution-fault",
+      "stage": "failed",
+      "reclaimed": true
+    }
+  ]
+}

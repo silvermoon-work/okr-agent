@@ -1,0 +1,75 @@
+{
+  "ok": true,
+  "bundleCid": "bafybeiahk52evmukio5wr7nkomvab4ujmk3yxzss4pxbaqlz57rmmc2yxe",
+  "nvm": {
+    "tag": "1.2.2",
+    "executableSha256": "665b0b033e88098367381e929b71cfc96dc4058a3cb6fef760a0ccc9a883dd13",
+    "release": "https://github.com/nvm-windows/nvm/releases/tag/1.2.2",
+    "archiveMd5": "d654c26a04e35a318d5939f8ceb09934",
+    "archiveSha256": "74232ea51c060ecd44ecf2cebee314ed9e3f6da56e1f9484d8d46c4e8bb6ae0e"
+  },
+  "platform": "win32",
+  "architecture": "x64",
+  "nodeVersion": "v26.13.0",
+  "nodeSha256": "14319838b3f355e0398c13569a90270bce4fc68f25189f58c59b03dadae0e6d5",
+  "npmCliSha256": "3ce7cba6f5128dd5f54c98b6a5036b0f850496878cc2e21044b675fe3c594e3e",
+  "configurationUnchanged": true,
+  "sourceToolFilesUnchanged": true,
+  "privateCurrentLinkUnchanged": true,
+  "activationCommandsInvoked": false,
+  "results": [
+    {
+      "name": "portable-nvm-managed-and-paired",
+      "pass": true,
+      "codes": [],
+      "briefs": [],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": ["references/check.md"],
+      "reclaimed": true
+    },
+    {
+      "name": "portable-nvm-unmanaged-tools",
+      "pass": false,
+      "codes": ["management-mismatch", "management-mismatch"],
+      "briefs": [
+        "node：当前入口或其运行时不属于 nvm 已确认管理的安装环境。",
+        "npm：当前入口或其运行时不属于 nvm 已确认管理的安装环境。"
+      ],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": [
+        "references/check.md",
+        "references/problems/management-mismatch.md"
+      ],
+      "reclaimed": true
+    },
+    {
+      "name": "portable-nvm-unmanaged-npm",
+      "pass": false,
+      "codes": ["pairing-mismatch", "management-mismatch"],
+      "briefs": [
+        "node/npm：当前 npm 不属于当前 Node 的安装环境；请使两者指向同一环境。",
+        "npm：当前入口或其运行时不属于 nvm 已确认管理的安装环境。"
+      ],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": [
+        "references/check.md",
+        "references/problems/pairing-mismatch.md",
+        "references/problems/management-mismatch.md"
+      ],
+      "reclaimed": true
+    },
+    {
+      "name": "portable-nvm-version-observation",
+      "pass": false,
+      "codes": ["version-too-low"],
+      "briefs": ["nvm：当前 1.2.2，要求不低于 999。"],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": [
+        "references/check.md",
+        "references/problems/version-too-low.md"
+      ],
+      "reclaimed": true
+    }
+  ],
+  "ownedEnvironmentRemoved": true
+}

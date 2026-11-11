@@ -1,0 +1,102 @@
+{
+  "ok": true,
+  "carPath": "D:\\Code\\okr-agent\\packages\\check.nodejs-toolchain\\dist\\nodejs-toolchain.car",
+  "bundleCid": "bafybeiahk52evmukio5wr7nkomvab4ujmk3yxzss4pxbaqlz57rmmc2yxe",
+  "results": [
+    {
+      "name": "pnpm-version",
+      "stage": "completed",
+      "pass": false,
+      "problems": ["version-too-low"],
+      "documents": [
+        "references/check.md",
+        "references/problems/version-too-low.md"
+      ],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "reclaimed": true
+    },
+    {
+      "name": "node-only",
+      "stage": "completed",
+      "pass": true,
+      "problems": [],
+      "documents": ["references/check.md"],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "reclaimed": true
+    },
+    {
+      "name": "multiple-problems",
+      "stage": "completed",
+      "pass": false,
+      "problems": ["version-too-low", "version-too-low", "registry-mismatch"],
+      "documents": [
+        "references/check.md",
+        "references/problems/version-too-low.md",
+        "references/problems/registry-mismatch.md"
+      ],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "reclaimed": true
+    },
+    {
+      "name": "real-tools-project",
+      "stage": "completed",
+      "pass": true,
+      "problems": [],
+      "documents": ["references/check.md"],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "reclaimed": true
+    },
+    {
+      "name": "real-tools-user",
+      "stage": "completed",
+      "pass": true,
+      "problems": [],
+      "documents": ["references/check.md"],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "reclaimed": true
+    },
+    {
+      "name": "real-tools-environment",
+      "stage": "completed",
+      "pass": true,
+      "problems": [],
+      "documents": ["references/check.md"],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "reclaimed": true
+    },
+    {
+      "name": "real-nrm-missing-and-mismatch",
+      "stage": "completed",
+      "pass": false,
+      "problems": ["nrm-registration-mismatch", "nrm-registration-missing"],
+      "documents": [
+        "references/check.md",
+        "references/problems/nrm-registration-mismatch.md",
+        "references/problems/nrm-registration-missing.md"
+      ],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "reclaimed": true
+    },
+    { "name": "directory-fault", "stage": "failed", "reclaimed": true },
+    {
+      "name": "pnpm-interpolation-fault",
+      "stage": "failed",
+      "reclaimed": true
+    },
+    {
+      "name": "pnpm-config-dependencies-fault",
+      "stage": "failed",
+      "reclaimed": true
+    },
+    {
+      "name": "standalone-pnpm-config-dependencies-fault",
+      "stage": "failed",
+      "reclaimed": true
+    },
+    { "name": "cancel", "stage": "failed", "reclaimed": true },
+    { "name": "task-timeout", "stage": "failed", "reclaimed": true },
+    { "name": "command-timeout", "stage": "failed", "reclaimed": true }
+  ],
+  "configurationUnchanged": true,
+  "fixtureChildrenReclaimed": true
+}
