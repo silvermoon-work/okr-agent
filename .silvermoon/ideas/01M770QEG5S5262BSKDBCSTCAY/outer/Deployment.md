@@ -1,5 +1,7 @@
 # TypeScript 项目配置 Check 部署验证
 
+外部结果与准确制品身份见 [Verification.md](./Verification.md)。
+
 ## Steps
 
 ### D-S01: 发布并重新下载准确 CAR
