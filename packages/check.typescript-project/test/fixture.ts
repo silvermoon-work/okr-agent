@@ -55,7 +55,7 @@ export async function put(
   path: string,
   value: string | object,
 ): Promise<void> {
-  const full = join(root, path);
+  const full = join(root, ...path.split(/[\\/]/));
   await mkdir(dirname(full), { recursive: true });
   await writeFile(
     full,
