@@ -11,7 +11,7 @@
 - 输入为 `{ "projectDirectory": "<执行机绝对目录>" }`，与其他 Project
   Check 使用统一闭合输入。没有 context 包装、projectScopes、requirements、publication.stage、moduleFormat、阈值或跳过开关；旧包装和额外字段明确拒绝。
 - 不支持的项目类别明确报告范围无法确认，不悄悄挑选一个 workspace 包或只检查根后声称整个仓库通过。
-- 不要求通过 git-lineage 继承 preset；相同当前事实得到相同结论。
+- 不要求通过 git-lineage 继承 preset；相同项目事实及相同有效发布元数据得到相同结论。后续上游发版可正常改变版本新鲜度结论。
 
 ## N-02: 继承的 TypeScript 共性
 
@@ -19,7 +19,8 @@
 Check 的准确根 CID，通过 SpaceRef 直接传递同一个 `{projectDirectory}`
 对象，不传范围筛选或任何政策参数。成员范围由项目声明与对应标准决定，不由父调用者任意枚举或排除。
 
-必须完整满足其固定标准：pnpm 至少 11.22.0 与冻结 lockfile、严格类型检查及五项安全选项、源码和测试的类型感知 lint、只检查的格式校验、非 watch 测试、四项至少 90 的覆盖率与未触达文件、传播失败的聚合门禁，以及 PR/main 冻结安装与门禁 CI。
+必须完整满足其长期标准：pnpm 精确锁定并跟进所选 major 内最新稳定 minor.patch、lockfile 与冻结安装、严格类型检查及五项安全选项、源码和测试的类型感知 lint、只检查的格式校验、非 watch 测试、四项至少 90 的覆盖率与未触达文件、传播失败的聚合门禁，以及 PR/main
+CI。pnpm 新鲜度规则直接复用子 Check，不在父级重复定义阈值或维护另一套版本查询。
 
 父标准不得关闭子领域、降低阈值、替换子实现或复制子源码来绕过组合。
 
@@ -60,7 +61,9 @@ Check 的准确根 CID，通过 SpaceRef 直接传递同一个 `{projectDirector
   `private: true`，因为私有保护可以避免开发阶段误发布；必须验证发布流程会在 private 为 true 时拒绝发布。
 - 不通过 input 选择 prepared/ready。真正的“本次可以发布”需要精确制品、权限、版本和 CI 证据，属于独立发布就绪验证，不在本 Check 范围。
 - name/version 需是项目有效身份，但不要求为了检查项目就先开放发布或在 npm 注册该名称。
-- 不运行 build、pack、publint、install、测试、CI 或 publish；不读 registry 查询结果作为线上已验证证据。静态无法确认时明确指出，不执行目标逻辑补证。
+- 不运行 build、pack、publint、install、测试、CI 或 publish；仅允许标准规定的发布元数据查询，不能由此声称目标包名可注册、版本可发布、OIDC 权限已配置或 registry 功能兼容性已实测。静态无法确认时明确指出，不执行目标逻辑补证。
+- Node 默认使用受支持 LTS 是工具链最佳实践方向，但不应机械转成“npm 库只允许 LTS 用户”的 engines 限制；项目的消费者兼容范围与开发工具链默认选择是不同事实，见
+  [维护不变量](./Maintenance-invariants.md)。
 
 ## N-05: 组合结果与参考文档
 
@@ -79,3 +82,4 @@ Check 的准确根 CID，通过 SpaceRef 直接传递同一个 `{projectDirector
 4. 开发中 private 包符合其余配置可通过，发布流程允许 private 直接发布则不满足；不连接 npm 权限或实际发布。
 5. 父子 Task 的准确 CID、导入 DAG、执行故障和取消传播，以及父子文档从真实输出读取均有真实 Engine 证据。
 6. 单独消费准确 CAR 不依赖作者仓库或隐含安装，不声称未验证平台、在线权限或真正 tarball 正确。
+7. 复用的 pnpm 维护检查随同 major 稳定版本发布而正确变化；元数据不可用不能被父级吞掉或只显示过时通过，父子证据使用同轮明确观测依据。

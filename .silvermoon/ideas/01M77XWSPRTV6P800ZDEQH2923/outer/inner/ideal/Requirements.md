@@ -10,7 +10,9 @@ document，定义业务范围与可观察结果，不指定内部文件拆分。
 - 本次先调整 `@silvermoon-work/check.typescript-project`，再实现
   [npm 包项目标准](./Npm-package-standard.md)。不把这项结论扩展为所有 Check 都禁止参数；Node.js 工具链的能力要求及授权执行上下文不在本次修改范围。
 - 标准允许已支持的等价配置，不要求继承 preset、复制模板、固定配置文件内容或提供 lineage 来源。
-- 本次固定现有完整默认标准，不重新发明或放宽 TypeScript 项目共性；需要改变规则时重建并交付新 CID。
+- 固定的是长期最佳实践规则，而非某一时点的版本快照。非版本领域保留现有完整默认标准；pnpm 改为精确锁定并跟进所选 major 内最新稳定 minor.patch，取代历史最低版本 11.22.0。具体语义见
+  [Maintenance-invariants.md](./Maintenance-invariants.md)。
+- 规则本身改变时重建新 CID；相同规则因发布元数据更新而从通过变为不通过，是正常维护信号，不要求每次上游发版都重建 Check。
 
 ## R-02: 输入只定位检查对象
 
@@ -39,22 +41,22 @@ Project Check 类 Task 统一直接描述项目位置，不保留仅包装路径
 
 ## R-03: 固定标准
 
-当前规则来源为现有 Check 的默认配置及
-[参考文档](../../../../../../packages/check.typescript-project/references/check.md)，本表将其从“可覆盖默认”明确为本次目标标准：
+非版本规则来源为现有 Check 的默认配置及
+[参考文档](../../../../../../packages/check.typescript-project/references/check.md)；旧实现的 pnpm 固定基线不再作为目标标准。本表定义不可由输入覆盖的共性规则：
 
-| 领域         | 固定要求                                                                                                                |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| 依赖管理     | pnpm，packageManager 明确版本至少 11.22.0，存在 lockfile                                                                |
-| TypeScript   | 声明 TypeScript 依赖，strict，源码与测试纳入类型检查                                                                    |
-| 类型安全选项 | noUncheckedIndexedAccess、exactOptionalPropertyTypes、noImplicitOverride、noImplicitReturns、noFallthroughCasesInSwitch |
-| lint         | 类型感知，源码与测试纳入范围                                                                                            |
-| 格式化       | 有只检查、不写入的格式校验入口                                                                                          |
-| 测试         | 非 watch，未发现测试不能被配置为成功                                                                                    |
-| 覆盖率       | 纳入未触达文件，branches/functions/lines/statements 四项阈值均不低于 90                                                 |
-| 聚合门禁     | 连接 typecheck、lint、formatting、test、coverage，并传播失败                                                            |
-| CI           | PR 与 main push 接入；同一有效检查链路包含冻结安装、质量门禁与覆盖率                                                    |
+| 领域         | 固定要求                                                                                                                     |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| 依赖管理     | packageManager 精确锁定 pnpm 稳定版本，并处于所选 major 内最新稳定 minor.patch；存在 lockfile，CI 使用同一锁定版本与冻结安装 |
+| TypeScript   | 声明 TypeScript 依赖，strict，源码与测试纳入类型检查                                                                         |
+| 类型安全选项 | noUncheckedIndexedAccess、exactOptionalPropertyTypes、noImplicitOverride、noImplicitReturns、noFallthroughCasesInSwitch      |
+| lint         | 类型感知，源码与测试纳入范围                                                                                                 |
+| 格式化       | 有只检查、不写入的格式校验入口                                                                                               |
+| 测试         | 非 watch，未发现测试不能被配置为成功                                                                                         |
+| 覆盖率       | 纳入未触达文件，branches/functions/lines/statements 四项阈值均不低于 90                                                      |
+| 聚合门禁     | 连接 typecheck、lint、formatting、test、coverage，并传播失败                                                                 |
+| CI           | PR 与 main push 接入；同一有效检查链路包含冻结安装、质量门禁与覆盖率                                                         |
 
-阈值是最低标准，不要求目标配置恰好等于 90；更高的合法阈值可满足标准。检测的是配置与连接，不是实际覆盖率成绩、编译结果或 CI 历史。
+阈值是最低标准，不要求目标配置恰好等于 90；更高的合法阈值可满足标准。项目检测的是配置与连接，不是实际覆盖率成绩、编译结果或 CI 历史；另查询 pnpm 发布元数据验证维护新鲜度，不探测本机安装版本。
 
 ## R-04: 删除配置不降低检测质量
 
@@ -63,7 +65,7 @@ Project Check 类 Task 统一直接描述项目位置，不保留仅包装路径
 - 保留现有检测支持范围及限制，包括静态 TypeScript/ESLint/Prettier/Vitest/GitHub
   Actions 语义、配置继承、脚本连接、对象发现及预算。
 - 不借本次移除可定制要求强行扩大工具、语法、平台或 monorepo 支持声明；未知动态配置仍报告无法确认，而不是猜测缺失或通过。
-- 同一输入检查期间无目标命令执行、模块加载、配置求值、安装、构建、网络或修复。
+- 不执行目标命令、模块、配置、安装、构建或修复。网络仅允许获授权发布元数据查询，不下载/执行包、不探测项目服务或发送项目源码及秘密；来源、新鲜度与故障边界见维护不变量文档。
 - 问题仍分 missing、mismatch、unconfirmed；输入非法、读取故障、取消等仍是执行故障。输出文档继续采用现有 code/brief/documentation 与 output
   CID 协议。
 
@@ -89,3 +91,5 @@ Project Check 类 Task 统一直接描述项目位置，不保留仅包装路径
    `{projectDirectory}` 对象，得到真实子业务结论；执行故障按上游语义传播。
 7. 独立于作者源码/隐藏依赖的 CAR 消费与当前仓库 `pnpm check`
    通过，交付说明准确记录新 CID、固定标准和旧输入拒绝行为。
+8. 发布元数据出现同 major 更新的稳定 minor/patch 时，旧锁定版本不通过；仅出现更高 major 或 prerelease 不因此失败，也不自动升级。元数据查询失败、过期、不完整或来源冲突不得用旧缓存或默认值判通过。
+9. 版本判断保留来源、观测时间、项目锁定版本、所选 major 与候选版本等非秘密证据；受控元数据测试验证长期规则，另以真实获授权来源验证查询链路，不把固定测试版本冒充当前最新。
