@@ -735,7 +735,32 @@ fs.writeFileSync(${JSON.stringify(marker)},String(child.pid)); setInterval(()=>{
       expect(childPid).toBeGreaterThan(0);
       if (mode === "cancel") controller.abort();
       await expected;
-      expect(() => process.kill(childPid!, 0)).toThrow();
+      let terminated = false;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        try {
+          process.kill(childPid!, 0);
+          if (process.platform === "linux") {
+            const status = await readFile(`/proc/${childPid}/stat`, "utf8");
+            // A killed orphan can await init's reap; it is no longer executing.
+            if (status.slice(status.lastIndexOf(")") + 2).startsWith("Z ")) {
+              terminated = true;
+              break;
+            }
+          }
+        } catch (error) {
+          if (
+            error instanceof Error &&
+            "code" in error &&
+            ["ESRCH", "ENOENT"].includes(String(error.code))
+          ) {
+            terminated = true;
+            break;
+          }
+          throw error;
+        }
+        await new Promise((done) => setTimeout(done, 20));
+      }
+      expect(terminated).toBe(true);
       expect(dirname(script)).toBe(directory);
     },
   );
