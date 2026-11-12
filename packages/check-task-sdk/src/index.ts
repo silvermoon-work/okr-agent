@@ -26,6 +26,9 @@ export type ProblemReporter<Code extends string> = (
   code: Code,
   brief: string,
 ) => void;
+export interface CheckOutputOptions {
+  readonly assets?: boolean;
+}
 export type CheckCallback<Input, Code extends string> = (
   input: Input,
   context: CheckContext,
@@ -39,8 +42,12 @@ export function createCheckCallback<
 >(
   contract: CheckContract<Input, Code>,
   callback: CheckCallback<Static<Input>, Extract<Static<Code>, string>>,
+  options: CheckOutputOptions = {},
 ): TaskCallback<Static<Input>, CheckResult<Extract<Static<Code>, string>>> {
   type ProblemCode = Extract<Static<Code>, string>;
+  const assets = options.assets ?? false;
+  if (typeof assets !== "boolean")
+    throw new Error("Check output assets option must be a boolean.");
   const codes = new Set(problemCodes(contract.schemas["check-problem-code"]));
   return async (input, context) => {
     const problems: CheckProblem<ProblemCode>[] = [];
@@ -86,6 +93,13 @@ export function createCheckCallback<
       "references",
       context.bundle.root.resolve("resources/references"),
     );
+    if (assets) {
+      context.signal.throwIfAborted();
+      await context.output.link(
+        "assets",
+        context.bundle.root.resolve("resources/assets"),
+      );
+    }
     context.signal.throwIfAborted();
     const documentation = "references/check.md";
     if (!problems.length) return Object.freeze({ pass: true, documentation });
@@ -103,6 +117,7 @@ export function createCheckCallback<
 export function runCheck<Input extends TSchema, Code extends TSchema>(
   contract: CheckContract<Input, Code>,
   callback: CheckCallback<Static<Input>, Extract<Static<Code>, string>>,
+  options: CheckOutputOptions = {},
 ): void {
-  runTask(createCheckCallback(contract, callback));
+  runTask(createCheckCallback(contract, callback, options));
 }

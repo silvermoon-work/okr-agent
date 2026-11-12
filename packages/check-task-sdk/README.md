@@ -56,6 +56,25 @@ runCheck(contract, async (input, context, reportProblem) => {
   `references/problems/<code>.md`。不通过必有问题，通过没有 `problems`。
 - 抛错、子任务故障、取消或文档链接失败保持上游执行故障，不转为正常不通过；已报告的问题不改变这一点。回调结束即关闭报告器，结果及问题列表冻结，迟到调用不能修改结果。
 
+## 固定文档 assets
+
+作者可通过第三参数 `{ assets: true }` 为 `runCheck` 或 `createCheckCallback`
+启用标准资产交付。默认关闭，已有 Check 输出不变。
+
+```ts
+runCheck(contract, inspectProject, { assets: true });
+```
+
+Builder 配置通过 `include: [{ from: "assets/**", to: "resources/assets/" }]`
+收录作者资产。SDK 在正常通过和不通过时，分别将 Bundle 的 `resources/references`
+与 `resources/assets` 链接到 output 的
+`references/`、`assets/`；不向回调暴露可写 output 或任意输出路径映射。启用资产交付却缺失资源或链接失败时保持执行故障，不返回正常 Check 结果。
+
+例如 `references/problems/document-mismatch.md` 使用
+`[标准 AGENTS.md](../../assets/AGENTS.md)`，消费者从本 Run 的 `output.cid`
+读取完整修复内容，无需编码 Check
+CID。资产是标准唯一副本，检测与修复读取相同字节；不能把作者源码、秘密或不应公开的资源放入该目录。
+
 Builder 将完整有效参考资源放入 Bundle 的 `resources/references/`；SDK 使用 Space
 `link` 将此目录链接到输出 `references/`。整体文档和问题文档均为普通非空 UTF-8
 Markdown，无 frontmatter 要求。消费者从 Engine Run 的 `output.cid` 及

@@ -14,6 +14,7 @@ const contract = createCheckContract(Input, Code);
 
 function context() {
   const link = vi.fn().mockResolvedValue(undefined);
+  const resolve = vi.fn().mockReturnValue({ path: "/resources/references" });
   const signal = new AbortController().signal;
   const value = {
     signal,
@@ -21,7 +22,7 @@ function context() {
     progress: vi.fn(),
     bundle: {
       root: {
-        resolve: vi.fn().mockReturnValue({ path: "/resources/references" }),
+        resolve,
       },
     },
     space: vi.fn(),
@@ -36,10 +37,54 @@ function context() {
     log: value.log,
     space: value.space,
     invokeTask: value.invokeTask,
+    resolve,
   };
 }
 
 describe("Check callbacks", () => {
+  it.each([false, true])(
+    "links standard assets on normal completion (reported problem: %s)",
+    async (nonpassing) => {
+      const host = context();
+      const options = { assets: true };
+      const callback = createCheckCallback(
+        contract,
+        async (_input, _check, report) => {
+          options.assets = false;
+          if (nonpassing) report("mismatch", "Restore the standard asset.");
+          await Promise.resolve();
+        },
+        options,
+      );
+      const result = await callback({ text: "hello" }, host.value);
+      expect(result.pass).toBe(!nonpassing);
+      expect(host.link.mock.calls.map((call: unknown[]) => call[0])).toEqual([
+        "references",
+        "assets",
+      ]);
+      expect(host.resolve).toHaveBeenCalledWith("resources/assets");
+    },
+  );
+
+  it("keeps an asset link failure a Run fault even after reporting a problem", async () => {
+    const host = context();
+    host.link
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("Standard assets unavailable."));
+    const callback = createCheckCallback(
+      contract,
+      async (_input, check, report) => {
+        expect("output" in check).toBe(false);
+        report("missing", "A real problem.");
+        await Promise.resolve();
+      },
+      { assets: true },
+    );
+    await expect(callback({ text: "hello" }, host.value)).rejects.toThrow(
+      "Standard assets unavailable.",
+    );
+  });
+
   it("infers input/codes, explicitly restricts capabilities and links documentation on pass", async () => {
     const host = context();
     const callback = createCheckCallback(

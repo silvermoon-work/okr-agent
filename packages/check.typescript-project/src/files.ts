@@ -1,7 +1,14 @@
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { parseDocument } from "yaml";
 
 export class Unconfirmed extends Error {}
+export function dataYaml(text: string): Record<string, unknown> {
+  const parsed = parseDocument(text, { uniqueKeys: true });
+  if (parsed.errors.length || parsed.warnings.length)
+    throw new Unconfirmed("invalid or unsupported YAML");
+  return record(parsed.toJS({ maxAliasCount: 32 }) as unknown);
+}
 export function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Unconfirmed("expected a static object");
@@ -56,8 +63,7 @@ export class Files {
     root: string,
     private readonly signal: AbortSignal,
   ) {
-    if (!isAbsolute(root))
-      throw new Error("context.projectDirectory must be absolute");
+    if (!isAbsolute(root)) throw new Error("projectDirectory must be absolute");
     this.root = resolve(root);
   }
   path(base: string, child: string): string {
@@ -165,6 +171,15 @@ export class Files {
     } catch (error) {
       if (error instanceof SyntaxError)
         throw new Unconfirmed(`${path}: invalid JSON`);
+      throw error;
+    }
+  }
+  async optionalText(path: string): Promise<string | undefined> {
+    try {
+      return await this.text(path);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT")
+        return undefined;
       throw error;
     }
   }

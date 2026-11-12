@@ -3,29 +3,11 @@ import { createCheckContract } from "@silvermoon-work/check-task-sdk/contracts";
 
 export const Input = Type.Object(
   {
-    context: Type.Object(
-      {
-        projectDirectory: Type.String({ minLength: 1 }),
-        projectScopes: Type.Optional(
-          Type.Array(Type.String({ minLength: 1 }), {
-            minItems: 1,
-            uniqueItems: true,
-            maxItems: 128,
-          }),
-        ),
-      },
-      { additionalProperties: false },
-    ),
-    // Semantic validation belongs to the pure normalizer, not a second default engine.
-    requirements: Type.Optional(
-      Type.Object({}, { additionalProperties: true }),
-    ),
+    projectDirectory: Type.String({ minLength: 1 }),
   },
   { additionalProperties: false },
 );
-export type Input = Omit<Static<typeof Input>, "requirements"> & {
-  requirements?: unknown;
-};
+export type Input = Static<typeof Input>;
 export const codes = [
   "dependency-missing",
   "dependency-mismatch",
@@ -52,6 +34,18 @@ export const codes = [
   "ci-mismatch",
   "ci-unconfirmed",
   "scope-unconfirmed",
+  "environment-missing",
+  "environment-mismatch",
+  "environment-unconfirmed",
+  "document-missing",
+  "document-mismatch",
+  "document-unconfirmed",
+  "delivery-missing",
+  "delivery-mismatch",
+  "delivery-unconfirmed",
+  "release-missing",
+  "release-mismatch",
+  "release-unconfirmed",
 ] as const;
 export const ProblemCode = Type.Union(codes.map((code) => Type.Literal(code)));
 export type ProblemCode = (typeof codes)[number];

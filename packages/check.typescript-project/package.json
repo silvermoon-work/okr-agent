@@ -2,7 +2,7 @@
   "name": "@silvermoon-work/check.typescript-project",
   "version": "0.0.0",
   "private": true,
-  "description": "Configuration-only TypeScript project Check author package.",
+  "description": "Read-only TypeScript project convention Check with trusted release metadata.",
   "type": "module",
   "scripts": {
     "build": "node ../check-task-builder/dist/bin.js build",
@@ -18,9 +18,11 @@
     "@silvermoon-work/check-task-sdk": "workspace:*",
     "@sinclair/typebox": "catalog:",
     "acorn": "catalog:",
+    "semver": "catalog:",
     "yaml": "catalog:"
   },
   "devDependencies": {
+    "@types/semver": "catalog:",
     "@silvermoon-work/ipfs-store": "catalog:",
     "@silvermoon-work/check-task-builder": "workspace:*",
     "@silvermoon-work/task-builder": "catalog:",

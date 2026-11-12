@@ -1,5 +1,6 @@
 import { parse } from "acorn";
-import { type Files, Unconfirmed, record } from "./files.js";
+import { type Files, Unconfirmed, glob, record, slash } from "./files.js";
+import { relative, resolve } from "node:path";
 
 type Node = { type: string; [key: string]: unknown };
 function node(value: unknown): Node {
@@ -510,4 +511,35 @@ export async function tsconfig(
     ...(ownFiles ? { files: ownFiles } : {}),
     references,
   };
+}
+export function tsIncludes(
+  files: Files,
+  config: TsConfig,
+  path: string,
+): boolean {
+  for (const p of [...config.includes.patterns, ...config.excludes.patterns])
+    glob(p, "");
+  if (
+    config.files?.paths.some((p) => files.path(config.files!.base, p) === path)
+  )
+    return true;
+  if (
+    !config.explicitExclude &&
+    config.outputDirectories.some(
+      (out) => path === out || path.startsWith(`${out}/`),
+    )
+  )
+    return false;
+  const local = (base: string) => slash(relative(resolve(base), resolve(path)));
+  return (
+    config.includes.patterns.some((p) =>
+      glob(
+        p.includes("*") || /\.[cm]?tsx?$/.test(p) ? p : `${p}/**/*`,
+        local(config.includes.base),
+      ),
+    ) &&
+    !config.excludes.patterns.some((p) =>
+      glob(p.includes("*") ? p : `${p}/**/*`, local(config.excludes.base)),
+    )
+  );
 }

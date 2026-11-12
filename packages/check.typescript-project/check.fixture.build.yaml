@@ -1,0 +1,10 @@
+name: TypeScript Project Check deterministic metadata verification
+runtime:
+  minVersion: 22.15.0
+source:
+  entry: test/worker.ts
+  contract: src/contract.ts
+include:
+  - from: assets/**
+    to: resources/assets/
+outDirectory: dist/typescript-project-fixture

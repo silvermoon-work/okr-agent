@@ -1,27 +1,26 @@
-# TypeScript Project Check
+# @silvermoon-work/check.typescript-project
 
-私有 CAR 作者包
-`@silvermoon-work/check.typescript-project`，不发布 npm。只读取目标工程配置，不执行、导入或求值目标代码，不探测宿主工具。
+唯一的 TypeScript Project Convention Check 作者包，保持 private。输入仅为：
 
 ```json
-{
-  "context": { "projectDirectory": "D:\\Projects\\example" },
-  "requirements": {
-    "testing": { "coverage": { "minimum": { "branches": 80 } } }
-  }
-}
+{ "projectDirectory": "D:\\Projects\\example" }
 ```
 
-完整输入、默认、支持语法和限制见 [检查参考](references/check.md)。
-`src/requirements.ts` 导出纯函数 `normalizeRequirements(unknown)`；非法输入返回
-`{ ok:false, error:{path,reason} }`，Check 将非法输入作为执行错误。
+固定六类规则、静态支持边界、外部元数据端点/预算和结果语义见[消费文档](references/check.md)。不接受 context、requirements 或 projectScopes，不执行目标项目。单包、pnpm
+workspace 和 npm ESM 交付只是内部适用分支。
+
+固定根 AGENTS.md 的唯一标准为
+[assets/AGENTS.md](assets/AGENTS.md)，完整 UTF-8/LF 正文随 Bundle 与 Run
+output 的 assets/ 交付。自由扩展固定引用 docs/agent-project.md；README、CONTRIBUTING 与扩展不评审关键词质量。
 
 ```powershell
 pnpm --filter @silvermoon-work/check.typescript-project test
 pnpm --filter @silvermoon-work/check.typescript-project typecheck
-pnpm --filter @silvermoon-work/check.typescript-project lint
 pnpm --filter @silvermoon-work/check.typescript-project build
+pnpm check
 ```
 
-构建使用 `check-task-builder`，产物为
-`dist\typescript-project.car`。真实 CAR 测试使用标准 Builder、Engine 导入，分别验证通过、不通过和可读取的中文问题文档；不执行 fixture 的类型检查或测试。
+生产构建为 dist/typescript-project.car；check.fixture.build.yaml 使用同一 callback/检查器和实际 Bundle
+asset，但元数据为内部确定性 fixture，明确不是线上发行证明。其真实 Engine 测试覆盖通过、不通过、旧输入、I/O 故障、取消、output 文档/资产字节与回收。fixture 均在 dist 下隔离，避免与并行 ESLint 相互污染。
+
+首版提供可正向通过的[单包 npm publisher v1](references/npm-publisher-v1.md)：有限 tsc 产物与真实源映射、完整标准发布器字节/声明式 workflow、RC/CI/OIDC/同 tarball 保护。未知自定义实现仍不放行。本 CAR 的包元数据只查询明确捕获的 Tencent 源，不能证明上游完整同步时 unconfirmed，无官方回退。无需修改输入来“跳过”这些检查，不自动安装/更新/发布或远程 pin。

@@ -14,7 +14,7 @@ import {
   compilerConsistency,
   javascript,
   tsconfig,
-  type TsConfig,
+  tsIncludes,
   typeAwarePreset,
   typescriptPreset,
 } from "./static.js";
@@ -28,11 +28,13 @@ import {
 } from "./commands.js";
 import {
   metrics,
-  normalizeRequirements,
+  fixedRequirements,
   type Capability,
   type Requirements,
 } from "./requirements.js";
 import { relative, resolve } from "node:path";
+import { convention, type InspectionEvidence } from "./convention.js";
+import { repository } from "./repository.js";
 
 type Domain =
   | "dependency"
@@ -86,14 +88,18 @@ export async function inspect(
   input: Input,
   signal: AbortSignal,
   report: ProblemReporter<ProblemCode>,
+  internal: InspectionEvidence,
 ): Promise<void> {
-  const normalized = normalizeRequirements(input.requirements);
-  if (!normalized.ok)
+  if (
+    typeof input !== "object" ||
+    Object.keys(input).length !== 1 ||
+    typeof input.projectDirectory !== "string"
+  )
     throw new Error(
-      `Invalid requirements at ${normalized.error.path}: ${normalized.error.reason}`,
+      "Invalid input: only absolute projectDirectory is accepted",
     );
-  const requirements = normalized.requirements;
-  const files = new Files(input.context.projectDirectory, signal);
+  const requirements = fixedRequirements();
+  const files = new Files(input.projectDirectory, signal);
   const uncertain = new Set<Domain>();
   const issue = (domain: Domain, status: Status, evidence: string) => {
     if (status === "unconfirmed") uncertain.add(domain);
@@ -128,7 +134,7 @@ export async function inspect(
   }
   let projects: Project[];
   try {
-    projects = await discover(files, input.context.projectScopes);
+    projects = await discover(files);
   } catch (error) {
     if (!(error instanceof Unconfirmed)) throw error;
     report("scope-unconfirmed", error.message);
@@ -217,17 +223,8 @@ export async function inspect(
           "packageManager requires an exact stable pnpm version",
         );
       const actual = version.slice(1, 4).map(Number);
-      const minimum = r.minimumVersion.split(".").map(Number);
       if (actual.some((v) => !Number.isSafeInteger(v)))
         throw new Unconfirmed("packageManager version exceeds numeric bounds");
-      const delta =
-        actual.map((v, i) => v - minimum[i]!).find((v) => v !== 0) ?? 0;
-      if (delta < 0)
-        issue(
-          "dependency",
-          "mismatch",
-          `packageManager ${declared} < pnpm@${r.minimumVersion}`,
-        );
     }
     if (r.lockfile && !files.exists("pnpm-lock.yaml"))
       issue("dependency", "missing", "缺少 pnpm-lock.yaml");
@@ -764,7 +761,17 @@ export async function inspect(
       );
       return;
     }
-    const targets = projects.flatMap((p) => [...p.sources, ...p.tests]);
+    const targets = [
+      ...new Set([
+        ...projects.flatMap((p) => [...p.sources, ...p.tests]),
+        ...files.paths.filter(
+          (path) =>
+            /(?:^|\/)(?:package\.json|pnpm-(?:lock|workspace)\.yaml|turbo\.json|tsconfig[^/]*\.json|(?:eslint|vitest|vite|prettier)\.config\.[cm]?[jt]s|\.prettierrc(?:\.[^/]+)?)$/.test(
+              path,
+            ) || /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path),
+        ),
+      ]),
+    ];
     for (const project of projects) {
       if (project.manifest.prettier !== undefined) {
         const config = record(project.manifest.prettier);
@@ -909,6 +916,7 @@ export async function inspect(
     for (const name of Object.keys(
       record(root.manifest.scripts ?? {}),
     ).sort()) {
+      if (name !== "check") continue;
       const expanded = allCommands.get(`:${name}`);
       if (expanded && r.capabilities.every((c) => covers(expanded, c)))
         gateNames.push(name);
@@ -940,33 +948,31 @@ export async function inspect(
     );
   await section("ci", async () => {
     if (!requirements.ci.enabled) return;
+    const origin = await repository(files);
+    if (!origin.github) return;
+    if (origin.primary !== "main")
+      throw new Unconfirmed(
+        `首版尚不支持主分支 ${origin.primary} 的触发覆盖证明`,
+      );
     await ci(files, scripts, root, requirements, gateNames, covers, issue);
   });
+  await convention(
+    files,
+    projects,
+    scripts,
+    allCommands,
+    internal,
+    report,
+    covers,
+  );
 }
 
-async function discover(
-  files: Files,
-  scopes: string[] | undefined,
-): Promise<Project[]> {
+async function discover(files: Files): Promise<Project[]> {
   let directories = [""];
-  if (scopes) {
-    for (const scope of scopes) {
-      if (
-        scope.startsWith("/") ||
-        /^[A-Za-z]:/.test(scope) ||
-        scope.split(/[\\/]/).includes("..")
-      )
-        throw new Unconfirmed(
-          "projectScopes must be bounded root-relative directories without traversal",
-        );
-      const dir = files.path("", scope);
-      if (directories.includes(dir))
-        throw new Unconfirmed("duplicate/root project scope");
-      directories.push(dir);
-    }
-  } else if (files.exists("pnpm-workspace.yaml")) {
+  if (files.exists("pnpm-workspace.yaml")) {
     const config = yaml(await files.text("pnpm-workspace.yaml"));
-    const patterns = stringArray(config.packages);
+    const patterns =
+      config.packages === undefined ? [] : stringArray(config.packages);
     for (const pattern of patterns) glob(pattern, "");
     directories.push(
       ...files.paths
@@ -978,12 +984,21 @@ async function discover(
     );
   } else if (files.paths.some((p) => p.endsWith("/package.json"))) {
     throw new Unconfirmed(
-      "nested manifests without pnpm workspace declaration require projectScopes",
+      "nested manifests without pnpm workspace declaration have unknown ownership",
     );
   }
   directories = [...new Set(directories)].sort((a, b) =>
     a === "" ? -1 : b === "" ? 1 : a.localeCompare(b, "en"),
   );
+  const undeclared = files.paths.filter(
+    (path) =>
+      path.endsWith("/package.json") &&
+      !directories.includes(path.slice(0, -"/package.json".length)),
+  );
+  if (undeclared.length)
+    throw new Unconfirmed(
+      `未声明的嵌套 package.json 职责无法确认: ${undeclared.join(", ")}`,
+    );
   if (directories.length > 129)
     throw new Unconfirmed("workspace exceeds 128 members");
   const result: Project[] = [];
@@ -994,8 +1009,7 @@ async function discover(
     const manifest = await files.json(path);
     if (
       manifest.workspaces !== undefined &&
-      !files.exists("pnpm-workspace.yaml") &&
-      !scopes
+      !files.exists("pnpm-workspace.yaml")
     )
       throw new Unconfirmed("only pnpm workspace discovery is supported");
     const candidates = files.paths.filter((p) => {
@@ -1062,32 +1076,6 @@ async function declaredMajor(
   if (typeof value !== "string") return undefined;
   const match = /^(?:\^|~)?(\d+)\.\d+\.\d+$/.exec(value);
   return match ? Number(match[1]) : undefined;
-}
-function tsIncludes(files: Files, config: TsConfig, path: string): boolean {
-  for (const p of [...config.includes.patterns, ...config.excludes.patterns])
-    glob(p, "");
-  if (
-    config.files?.paths.some((p) => files.path(config.files!.base, p) === path)
-  )
-    return true;
-  if (
-    !config.explicitExclude &&
-    config.outputDirectories.some(
-      (out) => path === out || path.startsWith(`${out}/`),
-    )
-  )
-    return false;
-  const rel = localPath(config.includes.base, path);
-  const included = config.includes.patterns.some((p) =>
-    glob(p.includes("*") || /\.[cm]?tsx?$/.test(p) ? p : `${p}/**/*`, rel),
-  );
-  const excluded = config.excludes.patterns.some((p) =>
-    glob(
-      p.includes("*") ? p : `${p}/**/*`,
-      localPath(config.excludes.base, path),
-    ),
-  );
-  return included && !excluded;
 }
 function findConfig(
   files: Files,
@@ -1206,6 +1194,7 @@ async function ci(
     return;
   }
   let valid = false;
+  let unknown = false;
   for (const path of paths) {
     const workflow = yaml(await files.text(path));
     const on = record(workflow.on ?? {});
@@ -1260,8 +1249,17 @@ async function ci(
         j.defaults !== undefined ||
         j.uses !== undefined ||
         j.needs !== undefined
-      )
+      ) {
+        if (
+          j.if !== undefined ||
+          j.env !== undefined ||
+          j.defaults !== undefined ||
+          j.uses !== undefined ||
+          j.needs !== undefined
+        )
+          unknown = true;
         continue;
+      }
       if (j.strategy !== undefined) {
         const strategy = record(j.strategy);
         const matrix = record(strategy.matrix);
@@ -1282,9 +1280,58 @@ async function ci(
       if (!Array.isArray(j.steps)) continue;
       let installed = !r.frozenInstall;
       let checkedOut = false;
+      let selectedNode = false;
+      let selectedPnpm = false;
+      let supportedJob = true;
       let passed = !r.qualityGate && !r.coverage;
       for (const step of j.steps) {
         const s = record(step);
+        const settings = record(s.with ?? {});
+        const unconditional =
+          s.if === undefined &&
+          s["continue-on-error"] === undefined &&
+          s.env === undefined &&
+          s["working-directory"] === undefined;
+        if (!unconditional) {
+          supportedJob = false;
+          if (
+            s.if !== undefined ||
+            s.env !== undefined ||
+            s["working-directory"] !== undefined
+          )
+            unknown = true;
+        }
+        if (
+          typeof s.uses === "string" &&
+          ![
+            "actions/checkout@",
+            "actions/setup-node@",
+            "pnpm/action-setup@",
+          ].some((prefix) => (s.uses as string).startsWith(prefix))
+        ) {
+          supportedJob = false;
+          unknown = true;
+        }
+        if (
+          unconditional &&
+          checkedOut &&
+          typeof s.uses === "string" &&
+          s.uses.startsWith("actions/setup-node@") &&
+          settings["node-version-file"] === ".node-version" &&
+          settings["node-version"] === undefined
+        )
+          selectedNode = true;
+        if (
+          unconditional &&
+          checkedOut &&
+          typeof s.uses === "string" &&
+          s.uses.startsWith("pnpm/action-setup@") &&
+          settings.version === undefined &&
+          settings.run_install === undefined &&
+          (settings.package_json_file === undefined ||
+            settings.package_json_file === "package.json")
+        )
+          selectedPnpm = true;
         if (
           typeof s.uses === "string" &&
           s.uses.startsWith("actions/checkout@") &&
@@ -1318,11 +1365,24 @@ async function ci(
         try {
           tokens = words(s.run.trim());
         } catch (error) {
-          if (error instanceof Unconfirmed) continue;
+          if (error instanceof Unconfirmed) {
+            supportedJob = false;
+            unknown = true;
+            continue;
+          }
           throw error;
         }
-        if (checkedOut && tokens.join(" ") === "pnpm install --frozen-lockfile")
-          installed = true;
+        if (tokens.join(" ") === "pnpm install --frozen-lockfile") {
+          if (checkedOut && selectedNode && selectedPnpm) installed = true;
+          continue;
+        }
+        if (
+          tokens.join(" ") !== "pnpm check" &&
+          tokens.join(" ") !== "pnpm run check"
+        ) {
+          supportedJob = false;
+          unknown = true;
+        }
         if (!checkedOut || !installed || tokens[0] !== "pnpm") continue;
         const name = tokens[1] === "run" ? tokens[2] : tokens[1];
         if (!name || tokens.length !== (tokens[1] === "run" ? 3 : 2)) continue;
@@ -1331,13 +1391,21 @@ async function ci(
         if (r.coverage && !covers(expanded, "coverage")) continue;
         passed = true;
       }
-      if (installed && passed && checkedOut) valid = true;
+      if (
+        installed &&
+        passed &&
+        checkedOut &&
+        selectedNode &&
+        selectedPnpm &&
+        supportedJob
+      )
+        valid = true;
     }
   }
   if (!valid)
     issue(
       "ci",
-      "mismatch",
-      "未确认 PR/main push 同一无条件 job 在 checkout、冻结安装之后调用包含覆盖率的有效质量门禁",
+      unknown ? "unconfirmed" : "mismatch",
+      "未确认 PR/main push 同一无条件 job 在 checkout、读取根 Node/pnpm 声明和冻结安装之后调用包含覆盖率的有效 check",
     );
 }

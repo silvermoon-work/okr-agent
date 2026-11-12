@@ -11,6 +11,7 @@ import {
   vitestConfig,
   lintConfig,
   workflow,
+  testEvidence,
 } from "./fixture.js";
 import { javascript, jsonc } from "../src/static.js";
 
@@ -27,11 +28,12 @@ async function check(requirements?: unknown) {
   const problems: { code: ProblemCode; brief: string }[] = [];
   await inspect(
     {
-      context: { projectDirectory: root },
+      projectDirectory: root,
       ...(requirements === undefined ? {} : { requirements }),
     },
     new AbortController().signal,
     (code, brief) => problems.push({ code, brief }),
+    await testEvidence(),
   );
   return problems;
 }
@@ -46,7 +48,11 @@ it("recognizes JSONC comments/trailing commas without damaging strings", () => {
 it("does not mistake threshold declarations for an enabled coverage gate", async () => {
   await put(root, "package.json", {
     ...manifest,
-    scripts: { ...manifest.scripts, test: "vitest run" },
+    scripts: {
+      ...manifest.scripts,
+      test: "vitest run",
+      "test:coverage": "vitest run",
+    },
   });
   expect((await check()).map((p) => p.code)).toEqual(
     expect.arrayContaining([
@@ -137,18 +143,20 @@ it("does not follow traversal or symlinks, and keeps missing-root I/O as a fault
   expect((await check()).map((p) => p.code)).toContain("scope-unconfirmed");
   await expect(
     inspect(
-      { context: { projectDirectory: join(root, "absent") } },
+      { projectDirectory: join(root, "absent") },
       new AbortController().signal,
       () => undefined,
+      await testEvidence(),
     ),
   ).rejects.toMatchObject({ code: "ENOENT" });
   await expect(
     inspect(
-      { context: { projectDirectory: root }, requirements: null },
+      { projectDirectory: root, requirements: null } as unknown as Input,
       new AbortController().signal,
       () => undefined,
+      await testEvidence(),
     ),
-  ).rejects.toThrow("Invalid requirements");
+  ).rejects.toThrow("Invalid input");
 });
 it("requires CI failure propagation, ordering and non-filtered triggers", async () => {
   await put(
@@ -176,27 +184,46 @@ it("handles pnpm/turbo workspaces, catalog versions and inherited configuration,
     'packages: ["packages/*"]\ncatalog:\n  vitest: "^5.0.4"\n',
   );
   await put(root, "turbo.json", {
-    tasks: { typecheck: {}, lint: {}, test: {} },
+    tasks: { typecheck: {}, lint: {}, test: {}, "test:coverage": {} },
   });
   await put(root, "package.json", {
     ...manifest,
-    devDependencies: { typescript: "^6.0.3", vitest: "catalog:" },
+    devDependencies: { ...manifest.devDependencies, vitest: "catalog:" },
     scripts: {
-      format: "prettier --check .",
-      check: "pnpm format && turbo run typecheck lint test",
+      typecheck: "turbo run typecheck",
+      lint: "turbo run lint",
+      format: "prettier --write .",
+      "format:check": "prettier --check .",
+      test: "turbo run test",
+      "test:coverage": "turbo run test:coverage",
+      check: "pnpm format:check && turbo run typecheck lint test:coverage",
     },
   });
   const member = join(root, "packages", "a");
   await fixture(member);
   await put(member, "package.json", {
     name: "a",
+    private: true,
+    engines: { node: ">=22" },
     scripts: {
       typecheck: "tsc --noEmit -p tsconfig.json",
       lint: "eslint .",
       test: "vitest run --coverage --root . --config ../../vitest.config.ts",
+      "test:coverage":
+        "vitest run --coverage --root . --config ../../vitest.config.ts",
     },
   });
   await rm(join(member, "eslint.config.js"));
+  await rm(join(member, "AGENTS.md"));
+  const { readFile } = await import("node:fs/promises");
+  await put(
+    root,
+    "pnpm-lock.yaml",
+    (await readFile(join(root, "pnpm-lock.yaml"), "utf8")).replace(
+      "specifier: '^5.0.4'",
+      "specifier: 'catalog:'",
+    ),
+  );
   await put(member, "tsconfig.json", {
     extends: "../../tsconfig.base.json",
     include: ["src/**/*.ts", "test/**/*.ts"],
@@ -224,15 +251,20 @@ it("handles pnpm/turbo workspaces, catalog versions and inherited configuration,
     ]),
   );
 });
-it("bounds input scopes and file sizes", async () => {
+it("rejects input scopes and bounds file sizes", async () => {
   const input: Input = {
-    context: { projectDirectory: root, projectScopes: ["../elsewhere"] },
-  };
+    projectDirectory: root,
+    projectScopes: ["../elsewhere"],
+  } as unknown as Input;
   const codes: string[] = [];
-  await inspect(input, new AbortController().signal, (code) =>
-    codes.push(code),
-  );
-  expect(codes).toContain("scope-unconfirmed");
+  await expect(
+    inspect(
+      input,
+      new AbortController().signal,
+      (code) => codes.push(code),
+      await testEvidence(),
+    ),
+  ).rejects.toThrow("Invalid input");
   await put(root, "vitest.config.ts", " ".repeat(1_048_577));
   expect((await check()).map((p) => p.code)).toContain("testing-unconfirmed");
 });
@@ -297,15 +329,15 @@ it("detects Prettier gitignore exclusions and unsupported CommonJS config", asyn
     "formatting-unconfirmed",
   );
 });
-it("allows false capability relaxations without prohibiting stronger project config", async () => {
-  expect(
-    await check({
+it("rejects false capability relaxations", async () => {
+  await expect(
+    check({
       typescript: { strict: false },
       lint: { typeAware: false },
       testing: { nonWatch: false, failOnNoTests: false },
       formatting: { checkOnly: false },
     }),
-  ).toEqual([]);
+  ).rejects.toThrow("Invalid input");
 });
 it("does not anchor implicit inherited TypeScript include at the base config", async () => {
   await put(root, "config\\tsconfig.json", {
@@ -374,7 +406,7 @@ it("does not accept excluded main or tag-only CI triggers", async () => {
   );
   expect((await check()).map((p) => p.code)).toContain("ci-unconfirmed");
 });
-it("relaxes rather than prohibits write formatting and no-test success when requested", async () => {
+it("rejects legacy relaxations of write formatting and no-test success", async () => {
   await put(root, "package.json", {
     ...manifest,
     scripts: {
@@ -383,12 +415,12 @@ it("relaxes rather than prohibits write formatting and no-test success when requ
       test: "vitest run --coverage --passWithNoTests",
     },
   });
-  expect(
-    await check({
+  await expect(
+    check({
       formatting: { checkOnly: false },
       testing: { failOnNoTests: false },
     }),
-  ).toEqual([]);
+  ).rejects.toThrow("Invalid input");
 });
 it("does not interpret custom pnpm script shells or package hooks", async () => {
   await put(root, ".npmrc", "script-shell=./unknown-executor\n");
@@ -462,20 +494,13 @@ it.each([
     expect(await check()).toEqual([]);
   },
 );
-it("does not vacuously pass a TypeScript-only request without observable TS files", async () => {
+it("does not vacuously pass without observable TS files", async () => {
   await rm(join(root, "src"), { recursive: true });
   await rm(join(root, "test"), { recursive: true });
-  const problems = await check({
-    dependencyManagement: { enabled: false },
-    lint: { enabled: false },
-    formatting: { enabled: false },
-    testing: { enabled: false },
-    qualityGate: { enabled: false },
-    ci: { enabled: false },
-  });
-  expect(problems.map((problem) => problem.code)).toEqual([
+  const problems = await check();
+  expect(problems.map((problem) => problem.code)).toContain(
     "typescript-unconfirmed",
-  ]);
+  );
 });
 it.each(["101", "1e309"])(
   "rejects observed coverage percentages outside finite 0..100: %s",

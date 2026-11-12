@@ -1,0 +1,49 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    name: Quality default
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+  compatibility:
+    name: Node.js ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22.15.0, 24.11.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+  release-verification:
+    name: Release verification (v1)
+    needs: [check, compatibility]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm required checks succeeded
+        env:
+          CHECK_RESULT: ${{ needs.check.result }}
+          COMPATIBILITY_RESULT: ${{ needs.compatibility.result }}
+        run: |
+          if [ "$CHECK_RESULT" != success ] || [ "$COMPATIBILITY_RESULT" != success ]; then
+            echo "::error::Every required validation job and matrix must succeed."
+            exit 1
+          fi
