@@ -8,11 +8,11 @@
 
 ### D-S02: 验证对象输入与组合
 
-以独立 TypeScript/npm 项目验证通过、不通过、旧输入拒绝和真实组合调用，核对父子具体问题、输出文档与资源回收。
+以独立 TypeScript/npm 项目验证顶层 projectDirectory 输入、通过、不通过、旧 context/projectScopes/requirements 拒绝和真实组合调用，核对父子具体问题、输出文档与资源回收。
 
 ### D-S03: 记录身份与迁移边界
 
-记录新 CID、消费方法及旧 requirements 的不兼容行为；不改写旧 CAR、历史验收或未经授权的外部引用。
+记录新 CID、统一单目录输入、声明驱动范围及旧 context/projectScopes/requirements 的不兼容行为；不改写旧 CAR、历史验收或未经授权的外部引用。
 
 ## Acceptance criteria
 
@@ -22,7 +22,7 @@
 
 ### D-AC02: 标准与对象边界可观察
 
-真实 Engine 证明对象输入可用、旧政策输入失败，子调用不需要政策参数，文档可读且 Run 回收。
+真实 Engine 证明单目录输入可用、旧包装及筛选/政策输入失败，父子直接传同一对象且范围不被缩减，文档可读且 Run 回收。
 
 ### D-AC03: 交付身份与范围真实
 

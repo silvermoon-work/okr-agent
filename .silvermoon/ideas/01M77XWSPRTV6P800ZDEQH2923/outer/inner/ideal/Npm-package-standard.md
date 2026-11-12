@@ -8,15 +8,16 @@
 - 名称为
   `@silvermoon-work/check.npm-package-project`，私有作者包，仅交付标准 CAR/CID。
 - 对象为一个使用 TypeScript 编写、面向 npm 交付的单包 ESM 项目。这是本标准的类别边界，不冒充所有 JavaScript、CommonJS、双格式或 monorepo 发布模型的统一标准。
-- 输入为
-  `{ "context": { "projectDirectory": "<执行机绝对目录>" } }`。无 requirements、publication.stage、moduleFormat、阈值或跳过开关。
+- 输入为 `{ "projectDirectory": "<执行机绝对目录>" }`，与其他 Project
+  Check 使用统一闭合输入。没有 context 包装、projectScopes、requirements、publication.stage、moduleFormat、阈值或跳过开关；旧包装和额外字段明确拒绝。
 - 不支持的项目类别明确报告范围无法确认，不悄悄挑选一个 workspace 包或只检查根后声称整个仓库通过。
 - 不要求通过 git-lineage 继承 preset；相同当前事实得到相同结论。
 
 ## N-02: 继承的 TypeScript 共性
 
 父 Bundle 以 imports 固定新版 TypeScript Project
-Check 的准确根 CID，通过 SpaceRef 传同一项目目录，不传任何政策参数。
+Check 的准确根 CID，通过 SpaceRef 直接传递同一个 `{projectDirectory}`
+对象，不传范围筛选或任何政策参数。成员范围由项目声明与对应标准决定，不由父调用者任意枚举或排除。
 
 必须完整满足其固定标准：pnpm 至少 11.22.0 与冻结 lockfile、严格类型检查及五项安全选项、源码和测试的类型感知 lint、只检查的格式校验、非 watch 测试、四项至少 90 的覆盖率与未触达文件、传播失败的聚合门禁，以及 PR/main 冻结安装与门禁 CI。
 
@@ -73,7 +74,7 @@ Check 的准确根 CID，通过 SpaceRef 传同一项目目录，不传任何政
 ## N-06: 最小验收场景
 
 1. 非 lineage 派生但满足标准的单包项目通过；目录/脚本等已支持的等价变化不因不长得像模板而失败。
-2. 子 TypeScript 标准失败，父结果保留子具体问题及可读文档；不能通过 npm 层输入覆盖子标准。
+2. 子 TypeScript 标准失败，父结果保留子具体问题及可读文档；两个 Check 都只接受顶层 projectDirectory，不能通过 context、scopes 或 npm 层政策输入覆盖子标准。
 3. 分别制造入口/声明/构建路径冲突、map 交付不完整、publint 未接门禁、OIDC/token/标签/private/registry 查询保护缺陷，得到具体问题或有依据的无法确认。
 4. 开发中 private 包符合其余配置可通过，发布流程允许 private 直接发布则不满足；不连接 npm 权限或实际发布。
 5. 父子 Task 的准确 CID、导入 DAG、执行故障和取消传播，以及父子文档从真实输出读取均有真实 Engine 证据。
