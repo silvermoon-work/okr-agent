@@ -5,12 +5,12 @@
 ### I-S01: 收敛输入和标准数据
 
 统一两个 Project
-Check 为仅含顶层 projectDirectory 的闭合输入，移除 context、projectScopes、公开 requirements 及政策归一化；固定长期规则，由项目声明识别范围。pnpm 使用同 major 最新稳定规则，实施前明确元数据来源、新鲜度窗口、预算、故障分类与输出证据。
+Check 为仅含顶层 projectDirectory 的闭合输入，移除 context、projectScopes、公开 requirements 及政策归一化；按真实拓扑分配根/成员责任，实施六类长期标准。版本检查涵盖 pnpm、开发工具声明/catalog、对应 lockfile 解析与 Node 生命周期；实施前明确元数据来源、新鲜度、预算、故障分类和 0.x 边界。
 
 ### I-S02: 实现 npm 附加标准与最小组合
 
 在固定 TypeScript
-CAR 基础上实现 npm 项目的具体共性，按已确认结果/文档契约完成最小组合，不复制子规则。
+CAR 基础上实现实际 npm 交付包的共性、单/多包目标映射与 latest/rc 固定版本和发布门卫规则，按已确认结果/文档契约完成最小组合，不复制子规则。
 
 ### I-S03: 验证标准 CAR 与组合
 
@@ -24,7 +24,7 @@ CAR 基础上实现 npm 项目的具体共性，按已确认结果/文档契约�
 
 ### I-AC02: 固定标准没有退化
 
-用合规及各领域不满足 fixture 证明完整标准生效、目标代码不执行；受控同 major 发布变化会改变新鲜度结论，跨 major/prerelease 不误报，过期或失败查询不判通过。
+用合规及反例证明六类完整标准、声明与 importer 锁定、Agent 脚本、单/多包责任及 latest/rc 路由生效，目标代码不执行；同 major 发布变化正确改变结论，查询故障不判通过。
 
 ### I-AC03: 构建执行与仓库检查通过
 
