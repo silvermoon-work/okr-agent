@@ -316,6 +316,19 @@ export function nativeHost(env: NodeJS.ProcessEnv): Host {
                   "Cannot establish read-only nrm entry provenance.",
                 );
               cli = await realpath(resolve(dirname(entry), relativeCli));
+            } else if (dirname(selected.realPath).endsWith(`${sep}.bin`)) {
+              const shim = await readFile(entry, "utf8");
+              const relativeCli =
+                /"\$(?:basedir|basedir_win)\/([^"\r\n]+(?:cli\.js|dist\/index\.js))"/.exec(
+                  shim,
+                )?.[1];
+              if (!shim.startsWith("#!/bin/sh") || !relativeCli)
+                throw new Error(
+                  "Cannot establish read-only nrm entry provenance.",
+                );
+              cli = await realpath(
+                resolve(dirname(selected.realPath), relativeCli),
+              );
             }
             const packageRoot = cli.endsWith(`${sep}cli.js`)
               ? dirname(cli)

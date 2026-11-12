@@ -464,6 +464,36 @@ async function scratch() {
   return path;
 }
 describe("native read-only execution", () => {
+  it.runIf(process.platform !== "win32")(
+    "resolves a pnpm POSIX nrm shim before checking read-only package provenance",
+    async () => {
+      const directory = await scratch();
+      const bins = join(directory, "node_modules", ".bin");
+      const nrm = join(directory, "node_modules", "nrm");
+      await mkdir(bins, { recursive: true });
+      await mkdir(nrm, { recursive: true });
+      await writeFile(
+        join(bins, "nrm"),
+        '#!/bin/sh\nexec node "$basedir/../nrm/cli.js" "$@"\n',
+      );
+      await writeFile(join(nrm, "cli.js"), "// Not executed by discovery.\n");
+      await writeFile(
+        join(nrm, "package.json"),
+        '{"name":"nrm","version":"1.2.6"}',
+      );
+      const host = nativeHost({ PATH: bins });
+      expect(await host.locate("nrm", directory)).toMatchObject({
+        executable: join(bins, "nrm"),
+      });
+      await writeFile(
+        join(nrm, "package.json"),
+        '{"name":"nrm","version":"2.1.0"}',
+      );
+      await expect(host.locate("nrm", directory)).rejects.toThrow(
+        "read-only startup",
+      );
+    },
+  );
   it.each(["cwd", "parent-prefix"] as const)(
     "rejects %s .npmrc configuration dependencies before pnpm startup without local workspace YAML",
     async (location) => {
