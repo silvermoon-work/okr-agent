@@ -92,6 +92,9 @@ Check；待明确具体标准后再复用底层文件系统原语。同样，工
 
 ## 下一轮待决问题
 
+已拆出子议题
+[TypeScript 项目实践要求与输入归一化](../../../../01M770QEG5S5262BSKDBCSTCAY/outer/inner/ideal/Idea.md)。它检查的是工程基础实践配置，不是单独的 tsconfig、宿主工具链或当前 lint/测试/CI 成绩；后续首期仅涉及输入契约与 normalize，本轮先记录需求，不实施检测或组合协议。
+
 1. 从哪个实际 preset 开始抽取标准？哪些规则是必要交付目标，哪些只是模板选择？
 2. npm-package、TypeScript、monorepo 等标准的独立边界与依赖条件是什么？
 3. requirements 的最小模型及跨标准输入投影如何定义，是否需要显式配置适用性？
