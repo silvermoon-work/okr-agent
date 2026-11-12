@@ -29,6 +29,25 @@ pnpm check
 `invokeTask({ key, bundle: SpaceRef, input, timeoutMs })`，不再接受旧
 `{ cid, path }`。升级后必须重建 CAR 并更新消费者引用的准确 CID；不修改历史制品或 Silvermoon 验收证据。旧 Engine 事实库不能自动迁移，消费者须显式选择新数据域。
 
+### RC.1 发布与 Ubuntu 验证
+
+`@silvermoon-work/check-task-sdk@0.1.0-rc.1` 与
+`@silvermoon-work/check-task-builder@0.1.0-rc.1` 已分别通过
+[SDK Trusted Publishing](https://github.com/silvermoon-work/okr-agent/actions/runs/43217303510)
+和
+[Builder Trusted Publishing](https://github.com/silvermoon-work/okr-agent/actions/runs/43217911987)
+发布到 npm `rc`；`latest` 仍为 `0.0.0`，历史 `next` 不变。准确发布提交
+`366d0faeccf77e7b2e23952d4f6466abd6942432` 的
+[Node 22.15 / 24.11 CI](https://github.com/silvermoon-work/okr-agent/actions/runs/43216988465)
+及发布门卫已通过。
+
+独立 Ubuntu（Node
+24.16.0）仅从 registry 安装上述精确版本及匹配上游包，无 workspace 链接或本地 tarball 替代。实际完成初始化、类型检查、构建，并通过同一父 CAR 的
+`SpaceRef`
+子调用验证通过、不通过及执行故障；共 6 个父子 Run 均已回收，输出参考文档可读。同时核验导入子根 CID 保持不变、删除原始子项目和内容缓存后仍能离线再打包、缺 sidecar 明确失败、`--no-car`
+不修改既有 CAR，以及 Engine 关闭不关闭调用方的
+`IpfsStore`。验证仅使用独立临时目录，结束后已清理；未修改远端全局工具或 registry。
+
 可执行项目放在 `apps/`，共享库放在
 `packages/`。当前保留 preset 示例，用于验证工作区依赖、类型检查、测试和构建链路。所有工作区包（包括私有根包）统一使用
 `@silvermoon-work/*` 命名，内部依赖使用
