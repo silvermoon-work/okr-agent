@@ -12,8 +12,8 @@
 在同一 Check 内按职责实现环境、开发依赖与 lockfile、项目规范、Agent 脚本、CI/适用 npm 发布及文档结构；明确根推荐工具链与成员运行兼容性、逐包开放/发布及精确提交 CI 复用。实施前明确元数据来源、新鲜度、0.x 边界和支持语法，不新增独立 npm/monorepo
 Task。
 
-固定文档整份比较，自由文档不评正文。实施前定稿 AGENTS.md、Release
-Skill 的完整 assets 及自由扩展引用路径；比较和修复仅使用同一份资源。必要 SDK 改动仅补齐 assets 到 output 的受限链接，不暴露完整写权限或扩展父子结果协议。
+固定文档仅根 AGENTS.md，引用自由扩展 docs/agent-project.md，不设置 Release
+Skill。比较和修复仅使用同一份完整 asset；必要 SDK 改动仅补齐 assets 到 output 的受限链接，不暴露完整写权限或扩展父子结果协议。
 
 ### I-S03: 验证统一标准 CAR
 
