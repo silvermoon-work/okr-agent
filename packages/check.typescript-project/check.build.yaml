@@ -1,0 +1,7 @@
+name: TypeScript Project Check
+runtime:
+  minVersion: 22.13.0
+source:
+  entry: src/main.ts
+  contract: src/contract.ts
+outDirectory: dist/typescript-project

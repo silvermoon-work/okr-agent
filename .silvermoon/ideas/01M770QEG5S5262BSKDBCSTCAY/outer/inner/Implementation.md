@@ -28,3 +28,9 @@
 
 实际配置测试与 CAR/Engine 证据一致，相关检查及 `pnpm check`
 验证；已有无关失败单独披露，不能声称未验证能力。
+
+## Verification
+
+实现、支持边界、真实 CAR/Engine 结果及仓库验证证据见
+[Verification.md](./Verification.md)。作者包的精确输入、默认政策与限制见
+[检查参考](../../../../../packages/check.typescript-project/references/check.md)。

@@ -1,0 +1,30 @@
+{
+  "name": "@silvermoon-work/check.typescript-project",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Configuration-only TypeScript project Check author package.",
+  "type": "module",
+  "scripts": {
+    "build": "check-task-builder build",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run --root . --config ../../vitest.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "@silvermoon-work/check-task-sdk": "workspace:*",
+    "@sinclair/typebox": "catalog:",
+    "acorn": "catalog:",
+    "yaml": "catalog:"
+  },
+  "devDependencies": {
+    "@silvermoon-work/check-task-builder": "workspace:*",
+    "@silvermoon-work/task-builder": "catalog:",
+    "@silvermoon-work/task-builder-cli": "catalog:",
+    "@silvermoon-work/task-engine": "catalog:",
+    "ipfs-unixfs-exporter": "catalog:"
+  }
+}

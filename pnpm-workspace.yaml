@@ -14,6 +14,7 @@ catalog:
   "@sinclair/typebox": 0.34.52
   commander: 14.0.2
   yaml: 2.8.1
+  acorn: ^8.15.0
   ipfs-unixfs-exporter: 16.2.3
   nrm: 1.2.6
   "@eslint/js": ^10.0.1
