@@ -8,8 +8,8 @@ import { runCheckBuilderCli } from "@silvermoon-work/check-task-builder/cli";
 import { fixture, put, manifest } from "./fixture.js";
 
 it("builds a real CAR and independently verifies Engine pass/fail plus linked Chinese documents", async () => {
-  const owned = resolve(`.typescript-car-${randomUUID()}`);
-  await mkdir(owned);
+  const owned = resolve("dist", `.typescript-car-${randomUUID()}`);
+  await mkdir(owned, { recursive: true });
   try {
     const good = join(owned, "good");
     const bad = join(owned, "bad");

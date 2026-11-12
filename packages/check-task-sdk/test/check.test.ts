@@ -151,15 +151,19 @@ describe("Check callbacks", () => {
       check.space("cid");
       await check.invokeTask({
         key: "child",
-        cid: "cid",
-        path: "resources/child",
+        bundle: check.bundle.root.resolve("resources/child"),
         input: {},
         timeoutMs: 1000,
       });
     })({ text: "x" }, host.value);
     expect(host.log).toHaveBeenCalled();
     expect(host.space).toHaveBeenCalledWith("cid");
-    expect(host.invokeTask).toHaveBeenCalled();
+    expect(host.invokeTask).toHaveBeenCalledWith({
+      key: "child",
+      bundle: host.value.bundle.root.resolve("resources/child"),
+      input: {},
+      timeoutMs: 1000,
+    });
   });
 });
 

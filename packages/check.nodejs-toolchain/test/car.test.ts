@@ -7,8 +7,8 @@ import { expect, it } from "vitest";
 import { runCheckBuilderCli } from "@silvermoon-work/check-task-builder/cli";
 
 it("imports a real standard CAR into the unmodified published Engine and checks native contexts, documents and reclamation", async () => {
-  const owned = resolve(`.toolchain-car-${randomUUID()}`);
-  await mkdir(owned);
+  const owned = resolve("dist", `.toolchain-car-${randomUUID()}`);
+  await mkdir(owned, { recursive: true });
   try {
     let output = "";
     const code = await runCheckBuilderCli(

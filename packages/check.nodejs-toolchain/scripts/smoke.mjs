@@ -8,6 +8,7 @@ import { Blob, Buffer } from "node:buffer";
 import { fileURLToPath } from "node:url";
 import { setTimeout } from "node:timers";
 import { readTaskBundleCar } from "@silvermoon-work/task-builder/car";
+import { IpfsStore } from "@silvermoon-work/ipfs-store";
 import { readBytes } from "@silvermoon-work/task-builder/tree";
 import {
   createTaskEngine,
@@ -27,14 +28,15 @@ const car = await readTaskBundleCar(
   new Blob([await readFile(carPath)]).stream(),
 );
 const store = new MemoryStore();
+const ipfsStore = IpfsStore.fromClient({ block: car.block });
 const engine = createTaskEngine({
   store,
-  ipfsClient: { block: car.block },
+  ipfsStore,
   requestInputEnvelope: true,
   authorize: () => true,
   limits: { stopGraceMs: 5000, forceExitWaitMs: 5000 },
 });
-const owned = join(directory, `.toolchain-engine-${randomUUID()}`);
+const owned = join(directory, "dist", `.toolchain-engine-${randomUUID()}`);
 const project = join(owned, "project");
 const userOnly = join(owned, "user-only");
 const interpolation = join(owned, "interpolation");
@@ -544,6 +546,7 @@ try {
   );
 } finally {
   await engine.close();
+  await ipfsStore.close();
   store.close();
   await car.close();
   // Only owned fixture descendants are eligible for emergency cleanup on assertion failure.

@@ -3,14 +3,18 @@ import process from "node:process";
 import { Buffer } from "node:buffer";
 import console from "node:console";
 import { resolve } from "node:path";
+import { IpfsStore } from "@silvermoon-work/ipfs-store";
 import { directoryTree } from "@silvermoon-work/task-builder-cli/node";
+import {
+  encodeTaskBundleCar,
+  readTaskBundleCar,
+} from "@silvermoon-work/task-builder/car";
 import { listTree, readBytes } from "@silvermoon-work/task-builder/tree";
 import {
   createTaskEngine,
   MemoryStore,
   newId,
 } from "@silvermoon-work/task-engine";
-import { MemoryIpfsClient } from "@silvermoon-work/task-engine/testing";
 import { exporter } from "ipfs-unixfs-exporter";
 
 // Copy this standalone harness into a consumer with the same published dependencies installed.
@@ -34,13 +38,15 @@ const ancillary = [...files.keys()]
       !path.startsWith("resources/references/problems/"),
   )
   .map((path) => path.slice("resources/".length));
-const client = new MemoryIpfsClient();
-const cid = await client.import(files);
+const archive = await encodeTaskBundleCar(tree);
+const car = await readTaskBundleCar(archive.stream);
+const cid = car.cid;
 const store = new MemoryStore();
+const ipfsStore = IpfsStore.fromClient({ block: car.block });
 const caller = { scope: "check-smoke", subject: "check-smoke" };
 const engine = createTaskEngine({
   store,
-  ipfsClient: client,
+  ipfsStore,
   requestInputEnvelope: true,
   authorize: () => true,
 });
@@ -88,7 +94,7 @@ try {
       const node = await exporter(`${outputCid}/${path}`, {
         async *get(cid) {
           yield store.readContentBlock(cid.toString()) ??
-            (await client.block.get(cid.toString()));
+            (await ipfsStore.block.get(cid.toString()));
         },
       });
       assert.ok(node.type === "file" || node.type === "raw");
@@ -116,5 +122,8 @@ try {
   console.log(JSON.stringify({ ok: true, bundleCid: cid, results }));
 } finally {
   await engine.close();
+  await ipfsStore.close();
   store.close();
+  await car.close();
+  await archive.close();
 }

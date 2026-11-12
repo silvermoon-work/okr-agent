@@ -2,7 +2,8 @@
 
 私有 CAR 作者项目
 `@silvermoon-work/check.nodejs-toolchain`，不发布 npm，不在 release 映射中，也不要求消费者安装作者包。一个项目、一个 Check
-Task，复用工作区 Check Task SDK/Builder 和未修改的已发布 Task 0.2.0-rc.0。
+Task，复用工作区 Check Task SDK/Builder、已发布 SDK/Protocol
+0.2.0-rc.1 与 Builder/Engine 0.2.0-rc.2。
 
 原先 sanitized
 Worker 缺少 PATH 的问题已通过获批准的显式执行上下文解决，没有改变 Engine 隔离。真实 CAR 的 Node-only、Node/npm 配对、npm/pnpm/nrm、有效配置、输出文档与生命周期场景已通过。官方 portable
@@ -145,6 +146,11 @@ ipfs pin ls <verified-root-cid>
 读取相对参考文档。
 
 建议父级部署验收：在不链接本仓库的独立目录只放 CAR，安装/使用已发布 Task
-Engine/Builder 0.2.0-rc.0 和标准 exporter，用 readTaskBundleCar 的已验证 block
-port 直接创建 Engine；由该宿主构造上述授权上下文，执行 Node-only
+Engine/Builder 0.2.0-rc.2、IPFS Store
+0.1.0-rc.1 和标准 exporter，将 readTaskBundleCar 的已验证 block port 通过
+`IpfsStore.fromClient` 适配，再以 `ipfsStore`
+创建 Engine；由该宿主构造上述授权上下文，执行 Node-only
 pass 和多问题 fail，从输出 CID 读取中文文档。不得调用本包 src、SDK 私有 API 或作者 smoke 作为替代。这验证离线 CAR 消费，不等于远程 IPFS 发布；D-* 由父级另行验收。
+
+升级后需重建 CAR 并使用新根 CID，不覆盖或声称历史已交付 CAR 自动采用新版模型。Engine 只借用
+`ipfsStore`，宿主应在 Engine 关闭后关闭它；CAR reader 由宿主另行关闭。

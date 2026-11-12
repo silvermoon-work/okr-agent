@@ -1,6 +1,6 @@
 {
   "name": "@silvermoon-work/check-task-builder",
-  "version": "0.1.0-rc.0",
+  "version": "0.1.0-rc.1",
   "description": "Build Check projects into standard Task Bundles and CARs.",
   "type": "module",
   "sideEffects": false,
@@ -32,9 +32,10 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22.15.0"
   },
   "dependencies": {
+    "@silvermoon-work/ipfs-store": "catalog:",
     "@silvermoon-work/check-task-sdk": "workspace:*",
     "@silvermoon-work/task-builder": "catalog:",
     "@silvermoon-work/task-builder-cli": "catalog:",

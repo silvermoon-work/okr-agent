@@ -6,11 +6,12 @@ allowBuilds:
   esbuild: true
 
 catalog:
-  "@silvermoon-work/task-sdk": 0.2.0-rc.0
-  "@silvermoon-work/task-protocol": 0.2.0-rc.0
-  "@silvermoon-work/task-builder": 0.2.0-rc.0
-  "@silvermoon-work/task-builder-cli": 0.2.0-rc.0
-  "@silvermoon-work/task-engine": 0.2.0-rc.0
+  "@silvermoon-work/task-sdk": 0.2.0-rc.1
+  "@silvermoon-work/task-protocol": 0.2.0-rc.1
+  "@silvermoon-work/task-builder": 0.2.0-rc.2
+  "@silvermoon-work/task-builder-cli": 0.2.0-rc.2
+  "@silvermoon-work/task-engine": 0.2.0-rc.2
+  "@silvermoon-work/ipfs-store": 0.1.0-rc.1
   "@sinclair/typebox": 0.34.52
   commander: 14.0.2
   yaml: 2.8.1
@@ -50,3 +51,9 @@ minimumReleaseAgeExclude:
   - "@silvermoon-work/task-engine@0.2.0-rc.0"
   - "@silvermoon-work/task-protocol@0.2.0-rc.0"
   - "@silvermoon-work/task-sdk@0.2.0-rc.0"
+  - "@silvermoon-work/task-builder-cli@0.2.0-rc.2"
+  - "@silvermoon-work/task-builder@0.2.0-rc.2"
+  - "@silvermoon-work/task-engine@0.2.0-rc.2"
+  - "@silvermoon-work/task-protocol@0.2.0-rc.1"
+  - "@silvermoon-work/task-sdk@0.2.0-rc.1"
+  - "@silvermoon-work/ipfs-store@0.1.0-rc.1"

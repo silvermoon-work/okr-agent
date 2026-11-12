@@ -8,7 +8,8 @@
 - [`@silvermoon-work/check-task-builder`](packages/check-task-builder/README.md)：
   `check-task-builder init/build`，一次构建交付标准 Task Bundle/CAR。
 
-两包基于已发布上游 Task SDK/Builder 0.2.0-rc.0，不复制运行时或编译器。先运行
+两包基于已发布 Task SDK/Protocol 0.2.0-rc.1、Builder/CLI/Engine
+0.2.0-rc.2 及 IPFS Store 0.1.0-rc.1，不复制运行时或编译器。先运行
 `check-task-builder init text-check`，编辑逻辑、契约与
 `references/`，再运行生成项目中的 `pnpm build`。
 
@@ -16,12 +17,17 @@
 
 ## 开发
 
-使用 Node.js 22.13+ 和 pnpm 11.22+：
+使用 Node.js `^22.15.0 || >=23.5.0` 和 pnpm 11.22+：
 
 ```sh
 pnpm install
 pnpm check
 ```
+
+新版 Bundle 支持不可变 `imports`，Builder 的 `content` 与 Engine 的 `ipfsStore`
+注入同一种调用方拥有的 `IpfsStore`。子 Task 使用
+`invokeTask({ key, bundle: SpaceRef, input, timeoutMs })`，不再接受旧
+`{ cid, path }`。升级后必须重建 CAR 并更新消费者引用的准确 CID；不修改历史制品或 Silvermoon 验收证据。旧 Engine 事实库不能自动迁移，消费者须显式选择新数据域。
 
 可执行项目放在 `apps/`，共享库放在
 `packages/`。当前保留 preset 示例，用于验证工作区依赖、类型检查、测试和构建链路。所有工作区包（包括私有根包）统一使用

@@ -16,7 +16,16 @@ import {
   directoryTree,
   writeDirectory,
 } from "@silvermoon-work/task-builder-cli/node";
-import { encodeTaskBundleCar } from "@silvermoon-work/task-builder/car";
+import {
+  encodeTaskBundleCar,
+  readTaskBundleCar,
+} from "@silvermoon-work/task-builder/car";
+import { IpfsStore } from "@silvermoon-work/ipfs-store";
+import {
+  createTaskEngine,
+  MemoryStore,
+  newId,
+} from "@silvermoon-work/task-engine";
 import { readBytes } from "@silvermoon-work/task-builder/tree";
 import { parse, stringify } from "yaml";
 import {
@@ -224,11 +233,183 @@ describe("Check tree transformation", () => {
 });
 
 describe("CLI and actual published Engine", () => {
+  it("preserves imported child identity through folder delivery, offline CAR and SpaceRef invocation", async () => {
+    const childDirectory = await project();
+    const child = await buildCheckBundle(
+      await directoryTree(root),
+      logical(childDirectory),
+    );
+    const encodedChild = await encodeTaskBundleCar(child);
+    const childCar = await readTaskBundleCar(encodedChild.stream);
+    const parentDirectory = await project();
+    const contentDirectory = join(parentDirectory, "content");
+    const content = IpfsStore.fromClient(
+      { block: childCar.block },
+      undefined,
+      contentDirectory,
+    );
+    try {
+      await content.prepare(childCar.cid);
+      const configPath = join(parentDirectory, "check.build.yaml");
+      const config = parse(await readFile(configPath, "utf8")) as Record<
+        string,
+        unknown
+      >;
+      await writeFile(
+        configPath,
+        stringify({
+          ...config,
+          imports: { "resources/tasks/child": childCar.cid },
+        }),
+      );
+      await writeFile(
+        join(parentDirectory, "src", "main.ts"),
+        `import { runCheck } from "@silvermoon-work/check-task-sdk";
+import contract from "./contract.js";
+runCheck(contract, async (input, context, reportProblem) => {
+  const result = await context.invokeTask({
+    key: "text",
+    bundle: context.bundle.root.resolve("resources/tasks/child"),
+    input,
+    timeoutMs: 10000,
+  });
+  if (!result || typeof result !== "object" || Array.isArray(result) ||
+      typeof result.pass !== "boolean") throw new Error("Invalid child result.");
+  if (!result.pass) reportProblem("text-mismatch", "The child check did not pass.");
+});
+`,
+      );
+      const definition = await transformCheckTree(
+        await directoryTree(root),
+        logical(parentDirectory),
+        { content },
+      );
+      expect(definition.options.content).toBe(content);
+      expect(definition.options.imports).toEqual({
+        "resources/tasks/child": childCar.cid,
+      });
+      await expect(
+        buildCheckBundle(await directoryTree(root), logical(parentDirectory)),
+      ).rejects.toThrow("IpfsStore");
+    } finally {
+      await content.close();
+      await childCar.close();
+      await encodedChild.close();
+    }
+
+    // The CLI uses only the explicit local store, not the child CAR or source.
+    const delivered = await cli(
+      ["build", "--content-data-dir", contentDirectory],
+      parentDirectory,
+    );
+    expect(delivered.exitCode, delivered.stdout).toBe(0);
+    const delivery = JSON.parse(delivered.stdout) as { data: { cid: string } };
+    const output = join(parentDirectory, "dist", "example-text-check");
+    expect(await readdir(output)).toContain(".task-imports.car");
+    const deliveredCar = await readFile(`${output}.car`);
+    const moduleOnly = await cli(
+      ["build", "--no-car", "--content-data-dir", contentDirectory],
+      parentDirectory,
+    );
+    expect(moduleOnly.exitCode, moduleOnly.stdout).toBe(0);
+    expect(JSON.parse(moduleOnly.stdout)).toMatchObject({
+      data: { cid: delivery.data.cid, car: null },
+    });
+    expect(await readFile(`${output}.car`)).toEqual(deliveredCar);
+    expect(await readdir(output)).toContain(".task-imports.car");
+    const repacked = await encodeTaskBundleCar(await directoryTree(output));
+    const parentCar = await readTaskBundleCar(repacked.stream);
+    const ipfsStore = IpfsStore.fromClient({ block: parentCar.block });
+    const store = new MemoryStore();
+    const engine = createTaskEngine({
+      store,
+      ipfsStore,
+      requestInputEnvelope: true,
+      authorize: () => true,
+    });
+    try {
+      expect(parentCar.cid).toBe(delivery.data.cid);
+      expect(parentCar.declaration.imports).toEqual({
+        "resources/tasks/child": childCar.cid,
+      });
+      const imported = await ipfsStore.read(
+        `${parentCar.cid}/resources/tasks/child`,
+      );
+      expect(imported.cid.toString()).toBe(childCar.cid);
+      await engine.start();
+      for (const text of ["hello", "other"]) {
+        let response = await engine.submit(
+          {
+            requestId: newId(),
+            bundle: parentCar.cid,
+            input: { text },
+            timeoutMs: 20_000,
+          },
+          { scope: "imports-test", subject: "imports-test" },
+        );
+        while (response.status === "preparing")
+          response = await engine.getRequestStatus(
+            response.requestId,
+            { waitMs: 100 },
+            { scope: "imports-test", subject: "imports-test" },
+          );
+        expect(response.status).toBe("accepted");
+      }
+      const drained = await engine.drain();
+      expect(drained.runs).toHaveLength(4);
+      expect(
+        drained.runs.every(
+          (run) => run.stage === "completed" && run.reclaimedAt,
+        ),
+      ).toBe(true);
+      expect(
+        drained.runs
+          .filter(
+            (run) =>
+              (typeof run.bundle === "string"
+                ? run.bundle
+                : run.bundle?.cid) === parentCar.cid,
+          )
+          .map((run) => run.output?.result),
+      ).toEqual(
+        expect.arrayContaining([
+          {
+            pass: false,
+            documentation: "references/check.md",
+            problems: [
+              {
+                code: "text-mismatch",
+                brief: "The child check did not pass.",
+                documentation: "references/problems/text-mismatch.md",
+              },
+            ],
+          },
+          { pass: true, documentation: "references/check.md" },
+        ]),
+      );
+      // Engine only borrows its store; it remains readable after Engine close.
+      await engine.close();
+      expect((await ipfsStore.read(childCar.cid)).cid.toString()).toBe(
+        childCar.cid,
+      );
+    } finally {
+      await engine.close();
+      await ipfsStore.close();
+      store.close();
+      await parentCar.close();
+      await repacked.close();
+    }
+    await rm(join(output, ".task-imports.car"));
+    await expect(
+      encodeTaskBundleCar(await directoryTree(output)),
+    ).rejects.toThrow();
+  }, 60_000);
+
   it("prints text help/version, JSON errors and a pinned editable init project without installing", async () => {
     await mkdir(scratch, { recursive: true });
     expect((await cli([], scratch)).stdout).toContain("Usage:");
     expect((await cli(["--version"], scratch)).stdout.trim()).toBe(
-      "0.1.0-rc.0",
+      "0.1.0-rc.1",
     );
     const result = await cli(
       ["init", "example", "--package-name", "@example/text-check"],
@@ -244,10 +425,10 @@ describe("CLI and actual published Engine", () => {
       scripts: Record<string, string>;
     };
     expect(manifest.dependencies["@silvermoon-work/check-task-sdk"]).toBe(
-      "0.1.0-rc.0",
+      "0.1.0-rc.1",
     );
     expect(manifest.devDependencies["@silvermoon-work/task-builder-cli"]).toBe(
-      "0.2.0-rc.0",
+      "0.2.0-rc.2",
     );
     expect(manifest.scripts.car).toContain("dist/example-text-check/task.yaml");
     expect(await readdir(join(scratch, "example"))).not.toContain(

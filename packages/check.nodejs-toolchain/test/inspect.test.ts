@@ -458,9 +458,9 @@ afterEach(async () => {
     await rm(path, { recursive: true, force: true });
 });
 async function scratch() {
-  const path = join(cwd, `.toolchain-test-${randomUUID()}`);
+  const path = join(cwd, "dist", `.toolchain-test-${randomUUID()}`);
   owned.push(path);
-  await mkdir(path);
+  await mkdir(path, { recursive: true });
   return path;
 }
 describe("native read-only execution", () => {

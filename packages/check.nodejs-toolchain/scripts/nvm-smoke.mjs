@@ -18,6 +18,7 @@ import console from "node:console";
 import { fileURLToPath } from "node:url";
 import { setTimeout } from "node:timers";
 import { readTaskBundleCar } from "@silvermoon-work/task-builder/car";
+import { IpfsStore } from "@silvermoon-work/ipfs-store";
 import { readBytes } from "@silvermoon-work/task-builder/tree";
 import {
   createTaskEngine,
@@ -88,9 +89,10 @@ const car = await readTaskBundleCar(
   new Blob([await readFile(carPath)]).stream(),
 );
 const store = new MemoryStore();
+const ipfsStore = IpfsStore.fromClient({ block: car.block });
 const engine = createTaskEngine({
   store,
-  ipfsClient: { block: car.block },
+  ipfsStore,
   requestInputEnvelope: true,
   authorize: () => true,
   limits: { stopGraceMs: 5000, forceExitWaitMs: 5000 },
@@ -319,6 +321,7 @@ try {
   };
 } finally {
   await engine.close();
+  await ipfsStore.close();
   store.close();
   await car.close();
   await rm(owned, { recursive: true, force: true });

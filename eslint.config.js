@@ -4,7 +4,12 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["**/coverage/**", "**/dist/**", ".turbo/**"],
+    ignores: [
+      "**/coverage/**",
+      "**/dist/**",
+      "**/.check-task-builder-*/**",
+      ".turbo/**",
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked.map((config) => ({

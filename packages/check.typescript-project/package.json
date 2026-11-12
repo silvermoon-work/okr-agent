@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": "^22.15.0 || >=23.5.0"
   },
   "dependencies": {
     "@silvermoon-work/check-task-sdk": "workspace:*",
@@ -21,6 +21,7 @@
     "yaml": "catalog:"
   },
   "devDependencies": {
+    "@silvermoon-work/ipfs-store": "catalog:",
     "@silvermoon-work/check-task-builder": "workspace:*",
     "@silvermoon-work/task-builder": "catalog:",
     "@silvermoon-work/task-builder-cli": "catalog:",

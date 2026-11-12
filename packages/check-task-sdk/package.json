@@ -1,6 +1,6 @@
 {
   "name": "@silvermoon-work/check-task-sdk",
-  "version": "0.1.0-rc.0",
+  "version": "0.1.0-rc.1",
   "description": "Typed Check Task contracts and restricted callbacks composed with the Task SDK.",
   "type": "module",
   "sideEffects": false,

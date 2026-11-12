@@ -16,8 +16,8 @@ import { javascript, jsonc } from "../src/static.js";
 
 let root: string;
 beforeEach(async () => {
-  root = resolve(`.typescript-fixture-${randomUUID()}`);
-  await mkdir(root);
+  root = resolve("dist", `.typescript-fixture-${randomUUID()}`);
+  await mkdir(root, { recursive: true });
   await fixture(root);
 });
 afterEach(async () => {

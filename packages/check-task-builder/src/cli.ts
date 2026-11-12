@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { lstat, mkdir, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { Command, CommanderError } from "commander";
+import { createConfiguredContent } from "@silvermoon-work/ipfs-store/node";
 import { encodeTaskBundleCar } from "@silvermoon-work/task-builder/car";
 import {
   directoryTree,
@@ -9,7 +10,11 @@ import {
   writeStreamFile,
 } from "@silvermoon-work/task-builder-cli/node";
 import { fileTree, type ReadOptions } from "@silvermoon-work/task-builder/tree";
-import { buildCheckBundle, transformCheckTree } from "./index.js";
+import {
+  buildCheckBundle,
+  transformCheckTree,
+  type CheckBuildOptions,
+} from "./index.js";
 import { createCheckProject, version } from "./project.js";
 
 export interface CheckBuilderCliOptions extends ReadOptions {
@@ -105,7 +110,7 @@ async function build(
   outDir: string | undefined,
   car: boolean,
   cwd: string,
-  options: ReadOptions,
+  options: CheckBuildOptions,
 ) {
   const file = resolve(cwd, config);
   let root = dirname(file);
@@ -346,14 +351,42 @@ export async function runCheckBuilderCli(
       )
       .argument("[build-file]", "Check build description", "check.build.yaml")
       .option("--out-dir <directory>", "Output directory relative to cwd")
+      .option(
+        "--content-gateway <url>",
+        "Explicit gateway for immutable imports",
+      )
+      .option("--content-data-dir <directory>", "Local IPFS content directory")
       .option("--no-car", "Do not update or remove any CAR")
       .addHelpText(
         "after",
         "\nExample: check-task-builder build --out-dir dist/text-check\n",
       )
       .action(
-        async (file: string, flags: { outDir?: string; car: boolean }) => {
-          result = await build(file, flags.outDir, flags.car, cwd, readOptions);
+        async (
+          file: string,
+          flags: {
+            outDir?: string;
+            car: boolean;
+            contentGateway?: string;
+            contentDataDir?: string;
+          },
+        ) => {
+          const content = await createConfiguredContent({
+            ...(flags.contentGateway !== undefined
+              ? { gateway: flags.contentGateway }
+              : {}),
+            ...(flags.contentDataDir !== undefined
+              ? { dataDir: resolve(cwd, flags.contentDataDir) }
+              : {}),
+          });
+          try {
+            result = await build(file, flags.outDir, flags.car, cwd, {
+              ...readOptions,
+              content,
+            });
+          } finally {
+            await content.close();
+          }
         },
       );
     validateOptions(program, argv);

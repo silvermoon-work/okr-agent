@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import type { IpfsStore } from "@silvermoon-work/ipfs-store";
 import {
   buildTaskBundle,
   readTaskBuild,
@@ -25,11 +26,16 @@ export interface CheckBuild extends TaskBuildFile {
   readonly references: string;
 }
 
+export interface CheckBuildOptions extends ReadOptions {
+  readonly outDirectory?: string;
+  readonly content?: IpfsStore;
+}
+
 /** Overlay only a standard build description; sources and dependencies stay lazy. */
 export async function transformCheckTree(
   input: ReadonlyFileTree,
   path = "check.build.yaml",
-  options: ReadOptions & { readonly outDirectory?: string } = {},
+  options: CheckBuildOptions = {},
 ): Promise<CheckBuild> {
   checkTreePath(path);
   const raw: unknown = parse(
@@ -97,6 +103,10 @@ export async function transformCheckTree(
   await inspectReferences(references);
   return {
     ...definition,
+    options: {
+      ...definition.options,
+      ...(options.content ? { content: options.content } : {}),
+    },
     tree,
     references,
   };
@@ -180,7 +190,7 @@ async function validateReferences(
 export async function buildCheckBundle(
   input: ReadonlyFileTree,
   path = "check.build.yaml",
-  options: ReadOptions & { readonly outDirectory?: string } = {},
+  options: CheckBuildOptions = {},
 ): Promise<ReadonlyFileTree> {
   const definition = await transformCheckTree(input, path, options);
   const bundle = await buildTaskBundle(definition.tree, definition.options);

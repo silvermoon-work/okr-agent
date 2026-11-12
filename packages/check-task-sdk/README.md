@@ -1,6 +1,6 @@
 # Check Task SDK
 
-基于 `@silvermoon-work/task-sdk@0.2.0-rc.0`
+基于 `@silvermoon-work/task-sdk@0.2.0-rc.1`
 的检查领域组合；不包含第二套运行时或构建器。
 
 ```ts
@@ -64,7 +64,21 @@ Markdown，无 frontmatter 要求。消费者从 Engine Run 的 `output.cid` 及
 
 上游 0.2.0 将宿主的结果与文件包身份统一到
 `output: { cid, result }`；Check 回调仍只生成业务结果，不自行添加这层信封。
-`invokeTask` 仍返回子任务业务 JSON，CheckContext 的作者接口不变。
+`invokeTask` 仍返回子任务业务 JSON，但入参已改为真实 `SpaceRef`：
 
-Node.js >=22.13。使用配套 Check Task
+```ts
+const childResult = await context.invokeTask({
+  key: "child",
+  bundle: context.bundle.root.resolve("resources/tasks/child"),
+  input: {},
+  timeoutMs: 10000,
+});
+```
+
+外部 Bundle 使用 `context.space(cid).root`。不能传手写
+`{sid,path}`、可写输出引用或旧
+`{cid,path}`；旧调用会明确失败。父 Bundle 可用 Builder 的 `imports`
+固定子根 CID。这只是执行组合，不自动合并子问题码或文档；Check 结果协议保持不变。
+
+Engine 运行要求 Node.js `^22.15.0 || >=23.5.0`。使用配套 Check Task
 Builder 构建，不能直接把未绑定的源码作为 Worker 执行。
