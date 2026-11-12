@@ -7,3 +7,4 @@
 {"type":"submitIdeal","timestamp":"2026-11-12T15:04:59.348Z","payload":{"idealRevision":"6d52467167de916a7f48aeca37e89ef6a674f84b"}}
 {"type":"submitIdeal","timestamp":"2026-11-12T15:17:05.379Z","payload":{"idealRevision":"ca3766aa88cca3c81c339c7e5ae08ff72ac44635"}}
 {"type":"submitIdeal","timestamp":"2026-11-12T15:23:06.328Z","payload":{"idealRevision":"59438ed46121c4b64ce19217b9bff782da4a72f3"}}
+{"type":"acceptIdeal","timestamp":"2026-11-12T15:23:31.224Z","payload":{"idealRevision":"59438ed46121c4b64ce19217b9bff782da4a72f3"}}
