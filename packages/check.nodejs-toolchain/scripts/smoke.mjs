@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile, mkdir, readdir, writeFile, rm } from "node:fs/promises";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import process from "node:process";
 import console from "node:console";
@@ -45,15 +45,15 @@ const standaloneConfigDependencies = join(
   owned,
   "standalone-config-dependencies",
 );
-// The harness is the authorized local execution host. Empty PATH segments
-// (implicit cwd) are deliberately not selected; no other environment is copied.
+// The harness selects absolute tool directories, not implicit cwd or host shell
+// PATH placeholders; no other environment is copied.
 const executionEnvironment = {
   path: [
     join(packageDirectory, "node_modules", ".bin"),
     ...(process.env.PATH ?? "")
       .split(delimiter)
-      .filter(Boolean)
-      .map((p) => p.replace(/^"|"$/g, "")),
+      .map((p) => p.replace(/^"|"$/g, ""))
+      .filter((p) => isAbsolute(p)),
   ],
   ...(process.platform === "win32"
     ? {

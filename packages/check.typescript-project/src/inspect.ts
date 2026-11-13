@@ -100,22 +100,24 @@ export async function inspect(
     );
   const requirements = fixedRequirements();
   const files = new Files(input.projectDirectory, signal);
-  const uncertain = new Set<Domain>();
+  const failures = new Map<Domain, number>();
   const issue = (domain: Domain, status: Status, evidence: string) => {
-    if (status === "unconfirmed") uncertain.add(domain);
+    failures.set(domain, (failures.get(domain) ?? 0) + 1);
     report(`${domain}-${status}` as ProblemCode, evidence);
   };
   const section = async (
     domain: Domain,
     action: () => Promise<void> | void,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     signal.throwIfAborted();
+    const before = failures.get(domain) ?? 0;
     try {
       await action();
     } catch (error) {
       if (!(error instanceof Unconfirmed)) throw error;
       issue(domain, "unconfirmed", error.message);
     }
+    return (failures.get(domain) ?? 0) === before;
   };
   try {
     await files.scan();
@@ -535,7 +537,8 @@ export async function inspect(
         else prove(command, "lint");
       }
     });
-    await section("testing", async () => {
+    const coverageFailures = failures.get("coverage") ?? 0;
+    const testingValid = await section("testing", async () => {
       const r = requirements.testing;
       if (!r.enabled || !applicable) return;
       const candidates = own.filter((c) => c.tool === "vitest");
@@ -748,6 +751,19 @@ export async function inspect(
           });
       }
     });
+    if (
+      applicable &&
+      requirements.testing.enabled &&
+      requirements.testing.coverage.enabled &&
+      testingValid &&
+      (failures.get("coverage") ?? 0) === coverageFailures &&
+      !own.some((command) => proved.get(command)?.has("coverage"))
+    )
+      issue(
+        "coverage",
+        scriptErrors.length ? "unconfirmed" : "missing",
+        `${prefix}: 未确认启用覆盖率且执行有效阈值的入口；只有 thresholds 不足以接入覆盖率`,
+      );
   }
   await section("formatting", async () => {
     const r = requirements.formatting;
@@ -910,9 +926,19 @@ export async function inspect(
     );
   };
   const gateNames: string[] = [];
+  const capabilityDomains: Record<Capability, Domain> = {
+    typecheck: "typescript",
+    lint: "lint",
+    formatting: "formatting",
+    test: "testing",
+    coverage: "coverage",
+  };
+  const blocked = (capability: Capability) =>
+    failures.has(capabilityDomains[capability]) ||
+    (capability === "coverage" && failures.has("testing"));
   await section("gate", () => {
     const r = requirements.qualityGate;
-    if (!r.enabled) return;
+    if (!r.enabled || r.capabilities.some(blocked)) return;
     for (const name of Object.keys(
       record(root.manifest.scripts ?? {}),
     ).sort()) {
@@ -932,20 +958,6 @@ export async function inspect(
         `根聚合入口未连接有效能力: ${r.capabilities.join(", ")}${scriptErrors.length ? `; ${scriptErrors.join("; ")}` : ""}`,
       );
   });
-  if (
-    requirements.testing.enabled &&
-    requirements.testing.coverage.enabled &&
-    !commands.some((c) => evidence.get(key(c))?.has("coverage"))
-  )
-    issue(
-      "coverage",
-      uncertain.has("testing") ||
-        uncertain.has("coverage") ||
-        scriptErrors.length
-        ? "unconfirmed"
-        : "missing",
-      "未确认启用覆盖率且执行有效阈值的入口；只有 thresholds 不足以接入覆盖率",
-    );
   await section("ci", async () => {
     if (!requirements.ci.enabled) return;
     const origin = await repository(files);
@@ -954,7 +966,22 @@ export async function inspect(
       throw new Unconfirmed(
         `首版尚不支持主分支 ${origin.primary} 的触发覆盖证明`,
       );
-    await ci(files, scripts, root, requirements, gateNames, covers, issue);
+    await ci(
+      files,
+      scripts,
+      root,
+      requirements,
+      gateNames,
+      {
+        gate:
+          (!requirements.qualityGate.enabled ||
+            !requirements.qualityGate.capabilities.some(blocked)) &&
+          !failures.has("gate"),
+        coverage: !blocked("coverage"),
+      },
+      covers,
+      issue,
+    );
   });
   await convention(
     files,
@@ -964,6 +991,7 @@ export async function inspect(
     internal,
     report,
     covers,
+    blocked,
   );
 }
 
@@ -1181,11 +1209,14 @@ async function ci(
   root: Project,
   requirements: Requirements,
   gateNames: string[],
+  prerequisites: { gate: boolean; coverage: boolean },
   covers: (commands: Command[], capability: Capability) => boolean,
   issue: (domain: Domain, status: Status, brief: string) => void,
 ): Promise<void> {
   const r = requirements.ci;
   if (!r.enabled) return;
+  const checkGate = r.qualityGate && prerequisites.gate;
+  const checkCoverage = r.coverage && prerequisites.coverage;
   const paths = files.paths.filter((p) =>
     /^\.github\/workflows\/[^/]+\.ya?ml$/.test(p),
   );
@@ -1283,7 +1314,7 @@ async function ci(
       let selectedNode = false;
       let selectedPnpm = false;
       let supportedJob = true;
-      let passed = !r.qualityGate && !r.coverage;
+      let passed = !checkGate && !checkCoverage;
       for (const step of j.steps) {
         const s = record(step);
         const settings = record(s.with ?? {});
@@ -1383,12 +1414,13 @@ async function ci(
           supportedJob = false;
           unknown = true;
         }
+        if (!checkGate && !checkCoverage) continue;
         if (!checkedOut || !installed || tokens[0] !== "pnpm") continue;
         const name = tokens[1] === "run" ? tokens[2] : tokens[1];
         if (!name || tokens.length !== (tokens[1] === "run" ? 3 : 2)) continue;
-        if (r.qualityGate && !gateNames.includes(name)) continue;
+        if (checkGate && !gateNames.includes(name)) continue;
         const expanded = await scripts.expand(root, name);
-        if (r.coverage && !covers(expanded, "coverage")) continue;
+        if (checkCoverage && !covers(expanded, "coverage")) continue;
         passed = true;
       }
       if (
@@ -1406,6 +1438,6 @@ async function ci(
     issue(
       "ci",
       unknown ? "unconfirmed" : "mismatch",
-      "未确认 PR/main push 同一无条件 job 在 checkout、读取根 Node/pnpm 声明和冻结安装之后调用包含覆盖率的有效 check",
+      "未确认 PR/main push 同一无条件 job 按序完成 checkout、读取根 Node/pnpm 声明、冻结安装及前置检查通过的 check/覆盖率连接",
     );
 }

@@ -54,13 +54,62 @@ it("does not mistake threshold declarations for an enabled coverage gate", async
       "test:coverage": "vitest run",
     },
   });
-  expect((await check()).map((p) => p.code)).toEqual(
-    expect.arrayContaining([
-      "coverage-missing",
-      "gate-mismatch",
-      "ci-mismatch",
-    ]),
+  const problems = await check();
+  expect(problems.map((p) => p.code)).toEqual(["coverage-missing"]);
+  expect(problems[0]?.brief).toContain(".:");
+});
+it("keeps independent CI and lint failures when coverage blocks dependent checks", async () => {
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: {
+      ...manifest.scripts,
+      test: "vitest run",
+      "test:coverage": "vitest run",
+    },
+  });
+  await rm(join(root, "eslint.config.js"));
+  await put(
+    root,
+    ".github\\workflows\\ci.yaml",
+    workflow.replace("--frozen-lockfile", ""),
   );
+  expect((await check()).map((p) => p.code)).toEqual([
+    "lint-missing",
+    "coverage-missing",
+    "ci-unconfirmed",
+  ]);
+});
+it("skips coverage diagnostics when test discovery is unconfirmed", async () => {
+  await put(root, "vitest.config.ts", "export default unknownConfiguration();");
+  expect((await check()).map((p) => p.code)).toEqual(["testing-unconfirmed"]);
+});
+it("keeps independent gate safety checks when lint blocks capability linkage", async () => {
+  await rm(join(root, "eslint.config.js"));
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: { ...manifest.scripts, check: "pnpm format" },
+  });
+  const problems = await check();
+  expect(problems.map((p) => p.code)).toContain("lint-missing");
+  expect(problems).toContainEqual(
+    expect.objectContaining({
+      code: "gate-mismatch",
+      brief: "check 调用了源码修正命令",
+    }),
+  );
+});
+it("checks independent CI coverage linkage after the root gate fails", async () => {
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: {
+      ...manifest.scripts,
+      check: "pnpm typecheck && pnpm lint && pnpm format:check",
+    },
+  });
+  expect((await check()).map((p) => p.code)).toEqual([
+    "gate-mismatch",
+    "ci-mismatch",
+  ]);
 });
 it("checks effective strict flags rather than strict:true alone", async () => {
   await put(root, "tsconfig.json", {
@@ -268,6 +317,22 @@ it.each([1, 2])(
     );
     await put(root, "pnpm-lock.yaml", workspaceLock);
     expect(await check()).toEqual([]);
+    const member = join(root, "packages", "a");
+    const memberManifest = JSON.parse(
+      await readFile(join(member, "package.json"), "utf8"),
+    ) as typeof manifest;
+    await put(member, "package.json", {
+      ...memberManifest,
+      scripts: {
+        ...memberManifest.scripts,
+        test: "vitest run --root . --config ../../vitest.config.ts",
+        "test:coverage": "vitest run --root . --config ../../vitest.config.ts",
+      },
+    });
+    const partial = await check();
+    expect(partial.map((p) => p.code)).toEqual(["coverage-missing"]);
+    expect(partial[0]?.brief).toContain("packages/a:");
+    await put(member, "package.json", memberManifest);
     await put(root, "packages\\uncovered\\package.json", {
       name: "uncovered",
       scripts: {},
@@ -283,7 +348,6 @@ it.each([1, 2])(
         "typescript-missing",
         "lint-missing",
         "testing-missing",
-        "gate-mismatch",
       ]),
     );
   },

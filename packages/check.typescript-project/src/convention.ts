@@ -120,6 +120,7 @@ export async function convention(
   evidence: InspectionEvidence,
   report: ProblemReporter<ProblemCode>,
   covers: (commands: Command[], capability: Capability) => boolean,
+  blocked: (capability: Capability) => boolean,
 ): Promise<void> {
   const root = projects[0]!;
   const issue = (domain: Domain, status: Status, message: string) => {
@@ -675,7 +676,7 @@ export async function convention(
           "test:coverage": "coverage",
         } as Record<string, Capability>
       )[name];
-      if (capability && !covers(expanded, capability))
+      if (capability && !blocked(capability) && !covers(expanded, capability))
         issue(
           "gate",
           "mismatch",
@@ -775,6 +776,7 @@ export async function convention(
           issue("gate", "mismatch", `${name} 必须单次执行`);
         if (
           name === "test:coverage" &&
+          !blocked("coverage") &&
           !expanded.some(
             (c) =>
               c.tool === "vitest" &&

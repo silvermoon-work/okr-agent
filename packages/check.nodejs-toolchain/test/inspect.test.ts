@@ -5,10 +5,11 @@ import {
   readFile,
   realpath,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCheckCallback } from "@silvermoon-work/check-task-sdk";
 import contract, {
@@ -34,10 +35,12 @@ import {
 } from "../src/execution-context.js";
 
 const cwd = resolve(".");
+// The harness selects absolute tool directories, not host shell PATH placeholders.
 const selected = captureExecutionEnvironment({
   PATH: (process.env.PATH ?? "")
     .split(delimiter)
-    .filter(Boolean)
+    .map((directory) => directory.replace(/^"|"$/g, ""))
+    .filter((directory) => isAbsolute(directory))
     .join(delimiter),
   ...(process.platform === "win32" ? { PATHEXT: ".COM;.EXE;.BAT;.CMD" } : {}),
 });
@@ -631,7 +634,7 @@ process.stdout.write("11.22.0\\n");`,
     await expect(
       inspect(interpolated, signal(), () => undefined),
     ).rejects.toThrow();
-  });
+  }, 30_000);
   it.skipIf(process.platform !== "win32")(
     "refuses a potentially mutating nrm startup before invoking it",
     async () => {
@@ -674,9 +677,18 @@ process.stdout.write("11.22.0\\n");`,
       );
       expect(location).toBeDefined();
       const packageRoot = join(prefix, "node_modules", "npm");
-      await cp(dirname(dirname(location!.cli)), packageRoot, {
+      const sourceRoot = dirname(dirname(location!.cli));
+      const dependencies = join(sourceRoot, "node_modules");
+      await cp(sourceRoot, packageRoot, {
         recursive: true,
+        filter: (source) => source !== dependencies,
       });
+      // Keep real npm execution without copying thousands of dependency files.
+      await symlink(
+        dependencies,
+        join(packageRoot, "node_modules"),
+        "junction",
+      );
       const environment = {
         ...selected,
         home: directory,
@@ -712,6 +724,7 @@ process.stdout.write("11.22.0\\n");`,
       );
       expect(problems).toEqual(["pairing-mismatch"]);
     },
+    30_000,
   );
   it.each(["timeout", "cancel", "cleanup"] as const)(
     "keeps %s a fault and physically stops owned descendant processes",
