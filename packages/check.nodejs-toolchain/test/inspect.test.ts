@@ -467,6 +467,61 @@ async function scratch() {
   return path;
 }
 describe("native read-only execution", () => {
+  it("preserves a real tool failure and identifies unsupported registry interpolation", async () => {
+    const result = await execute(
+      process.execPath,
+      [
+        "-e",
+        'process.stdout.write("diagnostic\\n"); process.stderr.write("Failed to replace env in config"); process.exitCode = 7;',
+      ],
+      cwd,
+      signal(),
+      selectedEnv(),
+    );
+    expect(result).toEqual({
+      code: 7,
+      stdout: "diagnostic\n",
+      unsupportedInterpolation: true,
+    });
+  });
+
+  it("keeps unavailable executables and pre-start cancellation as execution faults", async () => {
+    await expect(
+      execute(
+        join(cwd, "does-not-exist.exe"),
+        [],
+        cwd,
+        signal(),
+        selectedEnv(),
+      ),
+    ).rejects.toThrow("could not be started");
+    const controller = new AbortController();
+    const reason = new Error("cancel before startup");
+    controller.abort(reason);
+    await expect(
+      execute(
+        process.execPath,
+        ["--version"],
+        cwd,
+        controller.signal,
+        selectedEnv(),
+      ),
+    ).rejects.toBe(reason);
+  });
+
+  it.each([
+    ["relative-node", []],
+    [process.execPath, ["--version\n"]],
+    [process.execPath, ["--version\0"]],
+  ] as const)(
+    "rejects an unsafe internal invocation before startup: %s",
+    async (executable, args) => {
+      await expect(
+        execute(executable, args, cwd, signal(), selectedEnv()),
+      ).rejects.toThrow("Invalid internal command");
+    },
+  );
+
   it.runIf(process.platform !== "win32")(
     "resolves a pnpm POSIX nrm shim before checking read-only package provenance",
     async () => {

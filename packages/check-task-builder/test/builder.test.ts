@@ -99,6 +99,25 @@ function logical(directory: string) {
 }
 
 describe("Check tree transformation", () => {
+  it.each([
+    ["null", "must contain an object"],
+    ["[]", "must contain an object"],
+    ['{"$schema":"https://invalid.test/schema"}', "Invalid Check build schema"],
+    ['{"source":null}', "source must contain entry and contract"],
+    ['{"source":[]}', "source must contain entry and contract"],
+    ['{"source":{},"include":{}}', "Include must be an array"],
+  ])(
+    "rejects malformed build descriptions before compiling: %s",
+    async (text, message) => {
+      const directory = await project();
+      await writeFile(join(directory, "check.build.yaml"), text);
+      await expect(
+        transformCheckTree(await directoryTree(root), logical(directory)),
+      ).rejects.toThrow(message);
+      expect(await readdir(directory)).not.toContain("dist");
+    },
+  );
+
   it("uses upstream compilation/binding/CAR and preserves resources and relative references", async () => {
     const directory = await project();
     await mkdir(join(directory, "references", "images"));
@@ -233,6 +252,112 @@ describe("Check tree transformation", () => {
 });
 
 describe("CLI and actual published Engine", () => {
+  it.each([
+    ["--help=unexpected"],
+    ["--help", "-h"],
+    ["init", "new", "--task-name=One", "--task-name=Two"],
+    ["build", "--no-car=true"],
+    ["build", "--out-dir"],
+    ["build", "--unknown=value"],
+    ["init"],
+    ["build", "one.yaml", "two.yaml"],
+  ])(
+    "reports invalid CLI arguments as a failed JSON envelope: %j",
+    async (...argv) => {
+      await mkdir(scratch, { recursive: true });
+      const result = await cli(argv, scratch);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toBe("");
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        ok: false,
+        error: { code: "INVALID_ARGUMENT" },
+      });
+      expect(await readdir(scratch)).toEqual([]);
+    },
+  );
+
+  it("reports canceled init without creating output and honors the termination exit code", async () => {
+    await mkdir(scratch, { recursive: true });
+    const controller = new AbortController();
+    controller.abort();
+    let stdout = "";
+    const exitCode = await runCheckBuilderCli(["init", "new"], {
+      cwd: scratch,
+      signal: controller.signal,
+      signalExitCode: () => 143,
+      stdout: {
+        write: (text) => {
+          stdout += text;
+        },
+      },
+    });
+    expect(exitCode).toBe(143);
+    expect(JSON.parse(stdout)).toMatchObject({
+      ok: false,
+      error: { code: "INTERRUPTED" },
+    });
+    expect(await readdir(scratch)).toEqual([]);
+  });
+
+  it("refuses init below a missing parent and never overwrites an existing file", async () => {
+    await mkdir(scratch, { recursive: true });
+    const missing = await cli(["init", "missing/new"], scratch);
+    expect(missing.exitCode).toBe(1);
+    expect(JSON.parse(missing.stdout)).toMatchObject({
+      ok: false,
+      error: { code: "OPERATION_FAILED" },
+    });
+    await writeFile(join(scratch, "existing"), "retain this file");
+    const existing = await cli(["init", "existing"], scratch);
+    expect(existing.exitCode).toBe(1);
+    expect(JSON.parse(existing.stdout)).toMatchObject({
+      ok: false,
+      error: { code: "OUTPUT_EXISTS" },
+    });
+    expect(await readFile(join(scratch, "existing"), "utf8")).toBe(
+      "retain this file",
+    );
+  });
+
+  it("rejects output overlapping source inputs or reference resources before writing", async () => {
+    const directory = await project();
+    const before = await readFile(join(directory, "src", "main.ts"));
+    for (const output of [".", "src", "references/generated"]) {
+      const result = await cli(["build", "--out-dir", output], directory);
+      expect(result.exitCode, result.stdout).toBe(1);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        ok: false,
+        error: { code: "OPERATION_FAILED" },
+      });
+    }
+    expect(await readFile(join(directory, "src", "main.ts"))).toEqual(before);
+    expect(await readdir(join(directory, "references"))).not.toContain(
+      "generated",
+    );
+  }, 30_000);
+
+  it("runs the delivered executable for help and rejects invalid commands without reporting success", async () => {
+    const executable = resolve("dist", "bin.js");
+    const result = await promisify(execFile)(
+      process.execPath,
+      [executable, "--help"],
+      { timeout: 15_000 },
+    );
+    expect(result.stdout).toContain("Usage: check-task-builder");
+    const failed = promisify(execFile)(
+      process.execPath,
+      [executable, "not-a-command"],
+      {
+        timeout: 15_000,
+      },
+    );
+    await expect(failed).rejects.toHaveProperty("code", 1);
+    await expect(failed).rejects.toHaveProperty(
+      "stdout",
+      expect.stringContaining('"ok":false'),
+    );
+  }, 30_000);
+
   it("preserves imported child identity through folder delivery, offline CAR and SpaceRef invocation", async () => {
     const childDirectory = await project();
     const child = await buildCheckBundle(

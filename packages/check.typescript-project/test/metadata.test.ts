@@ -10,6 +10,53 @@ import {
 
 afterEach(() => vi.restoreAllMocks());
 const selection = { current: "6.0.3", series: "6.x" };
+it.each([302, 404, 429, 503])(
+  "never treats official HTTP %s as a missing or current tool version",
+  async (status) => {
+    const fetcher = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status }));
+    await expect(
+      publicMetadata(new AbortController().signal).package(
+        "typescript",
+        selection,
+      ),
+    ).rejects.toThrow(`HTTP ${status}`);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  },
+);
+it.each(["empty-body", "invalid-json", "missing-date", "future-date"] as const)(
+  "rejects unusable fresh-source responses without a fallback: %s",
+  async (mode) => {
+    const response =
+      mode === "empty-body"
+        ? new Response(null, { headers: { date: new Date().toUTCString() } })
+        : mode === "invalid-json"
+          ? new Response("{", {
+              headers: {
+                date: new Date().toUTCString(),
+                "content-type": "application/json",
+              },
+            })
+          : metadataResponse(
+              canonicalPackument("typescript", [{ version: "6.0.3" }]),
+              {
+                date:
+                  mode === "missing-date"
+                    ? ""
+                    : new Date(Date.now() + 120_000).toUTCString(),
+              },
+            );
+    const fetcher = vi.spyOn(globalThis, "fetch").mockResolvedValue(response);
+    await expect(
+      publicMetadata(new AbortController().signal).package(
+        "typescript",
+        selection,
+      ),
+    ).rejects.toThrow();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  },
+);
 it("parses a complete canonical packument through mocked HTTP, not global latest or a slim list", async () => {
   const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(
     canonicalTransport({

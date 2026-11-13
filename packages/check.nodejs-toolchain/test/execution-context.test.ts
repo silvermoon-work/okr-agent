@@ -112,4 +112,62 @@ describe("authorized execution context", () => {
       captureExecutionEnvironment({ ...source, PATH: `${root}${delimiter}` });
     }).toThrow();
   });
+
+  it.each([
+    {},
+    { PATH: "C:\\Tools" },
+    { PATH: "C:\\Tools", PATHEXT: ".EXE;.VBS" },
+    { PATH: "C:\\Tools", PATHEXT: ".EXE", npm_config_global: "1" },
+    { PATH: "C:\\Tools", PATHEXT: ".EXE", npm_config_location: "workspace" },
+  ])(
+    "rejects incomplete or unsupported captured Windows startup context %j",
+    (source) => {
+      expect(() => captureExecutionEnvironment(source, "win32")).toThrow();
+    },
+  );
+
+  it("round-trips approved npm configuration paths and ignores Windows-only paths on POSIX", () => {
+    const captured = captureExecutionEnvironment({
+      PATH: root,
+      ...(process.platform === "win32" ? { PATHEXT: ".EXE;.CMD" } : {}),
+      npm_config_userconfig: resolve("user.npmrc"),
+      npm_config_globalconfig: resolve("global.npmrc"),
+      npm_config_prefix: root,
+      npm_config_global: "true",
+      npm_config_location: "user",
+    });
+    expect(executionEnvironment(captured, {})).toMatchObject({
+      npm_config_userconfig: resolve("user.npmrc"),
+      npm_config_globalconfig: resolve("global.npmrc"),
+      npm_config_prefix: root,
+      npm_config_global: "true",
+      npm_config_location: "user",
+    });
+    expect(
+      captureExecutionEnvironment(
+        {
+          PATH: "/usr/bin",
+          USERPROFILE: "not-an-authorized-posix-path",
+          APPDATA: "not-an-authorized-posix-path",
+          LOCALAPPDATA: "not-an-authorized-posix-path",
+        },
+        "linux",
+      ),
+    ).toEqual({ path: ["/usr/bin"] });
+  });
+
+  it("rejects unsafe trusted Worker system paths rather than forwarding them", () => {
+    expect(() =>
+      executionEnvironment(selected, { SystemRoot: "relative" }),
+    ).toThrow("trusted Worker");
+    expect(() =>
+      executionEnvironment(selected, { WINDIR: "relative" }),
+    ).toThrow("trusted Worker");
+    expect(
+      executionEnvironment(selected, { SystemRoot: root, WINDIR: root }),
+    ).toMatchObject({
+      SystemRoot: root,
+      WINDIR: root,
+    });
+  });
 });

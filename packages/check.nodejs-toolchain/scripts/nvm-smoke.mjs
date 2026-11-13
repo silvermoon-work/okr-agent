@@ -268,8 +268,10 @@ try {
     for (const path of new Set(documents)) {
       const file = await exporter(`${run.output.cid}/${path}`, {
         async *get(cid) {
-          yield store.readContentBlock(cid.toString()) ??
-            (await car.block.get(cid.toString()));
+          yield (
+            store.readContentBlock(cid.toString()) ??
+            (await car.block.get(cid.toString()))
+          );
         },
       });
       assert.ok(file.type === "file" || file.type === "raw");

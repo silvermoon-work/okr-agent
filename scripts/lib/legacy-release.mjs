@@ -3,7 +3,7 @@ import { appendFileSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import semver from "semver";
-import { releasePackages } from "./release-packages.js";
+import { releasePackages } from "./release-packages.mjs";
 
 const registry = "https://registry.npmjs.org";
 const dependencyFields = [

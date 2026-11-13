@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, symlink } from "node:fs/promises";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { inspect } from "../src/inspect.js";
@@ -15,6 +15,7 @@ import {
   testEvidence,
 } from "./fixture.js";
 import { javascript, jsonc } from "../src/static.js";
+import { Files } from "../src/files.js";
 
 let root: string;
 beforeEach(async () => {
@@ -40,6 +41,26 @@ async function check(requirements?: unknown) {
 }
 it("passes configuration despite deliberately broken types and failing test code", async () => {
   expect(await check()).toEqual([]);
+});
+it("rejects oversized configuration and malformed UTF-8 rather than reading or defaulting it", async () => {
+  await put(root, "large.json", "x".repeat(1_048_577));
+  const files = new Files(root, new AbortController().signal);
+  await expect(files.text("large.json")).rejects.toThrow("byte budget");
+  await writeFile(join(root, "invalid.json"), Buffer.from([0xff]));
+  await expect(files.text("invalid.json")).rejects.toThrow();
+});
+it("enforces the configuration-count budget while caching repeated reads", async () => {
+  const files = new Files(root, new AbortController().signal);
+  for (let index = 0; index < 512; index++) {
+    const path = `configuration/${index}.json`;
+    await put(root, path, "{}");
+    expect(await files.text(path)).toBe("{}");
+  }
+  expect(await files.text("configuration/0.json")).toBe("{}");
+  await put(root, "configuration/overflow.json", "{}");
+  await expect(files.text("configuration/overflow.json")).rejects.toThrow(
+    "exceeds 512",
+  );
 });
 it("checks the fixed shared implementation rather than only its wrapper", async () => {
   const assets = await testEvidence();

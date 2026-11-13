@@ -1,61 +1,86 @@
-# Project Guidelines
+# Agent maintenance convention
 
-## Development
+Read [project-specific guidance](docs/agent-project.md), README.md and
+CONTRIBUTING.md before changing the project. Project guidance supplements these
+rules; it does not override them.
 
-- This project uses pnpm workspaces and Turborepo. Keep executable apps under
-  `apps/` and reusable packages under `packages/`.
-- Use Node.js `^22.15.0 || >=23.5.0` and pnpm 11.22 or newer.
-- Install dependencies with `pnpm install`.
-- Run `pnpm check` before submitting changes.
-- Keep shared third-party versions in the pnpm catalog and internal workspace
-  dependencies on `workspace:*`.
-- Name every workspace package, including the private root, under
-  `@silvermoon-work/*`. Keep imports, workspace dependencies, release mappings,
-  and documentation consistent when renaming packages.
-- Keep each workspace's build, lint, test, and typecheck scripts aligned with
-  `turbo.json`.
+## Safe maintenance
 
-## Skills
+- Inspect the worktree and preserve unrelated changes and custom content.
+- Use the root .node-version and the exact packageManager from package.json.
+  Install with pnpm install; CI uses pnpm install --frozen-lockfile.
+- Keep .node-version on the highest stable official release marked LTS and still
+  supported by the current official schedule. Require index and schedule
+  evidence no older than one hour; never fall back to stale or conflicting
+  facts. Package runtime ranges may be wider but must include this developer
+  Node; consumer minimum environments need not run all development tools.
+- Keep the parsed minimum engines.node version equal across all applicable
+  monorepo code packages, including private packages. Full ranges may differ;
+  exclude purely aggregate manifests. Report missing or invalid declarations
+  before comparisons, and never raise consumer minimums automatically.
+- Keep third-party development tools on compatible stable versions, update
+  declarations and the corresponding lockfile importers together, and verify
+  Node and peer compatibility. Never install or upgrade implicitly during
+  inspection.
+- Keep strict TypeScript and type-aware lint enabled for all applicable source
+  and tests. Preserve formatting checks, single-run tests and coverage of
+  untested source with all four global thresholds explicitly chosen by the
+  project as finite percentages in 0..100. Enforce those thresholds; this
+  convention does not prescribe a universal minimum percentage.
+- Use typecheck, lint, format-check, test and test-coverage for read-only
+  checks. Use format only for intentional formatting changes. Use applicable
+  build and lint-package for deliverable validation.
+- Use colon-free package script names and exactly node scripts/<same-name>.mjs
+  without arguments. Keep a one-to-one mapping with top-level .mjs entries;
+  shared implementations belong in scripts/lib/. Ordinary entry implementations
+  are unrestricted; interface compliance alone does not prove execution.
+- Run the root check before submitting changes. Use the documented targeted
+  checks while developing. Do not hide failures, remove tests, weaken gates or
+  exclude code to obtain success.
+- Keep workspace membership, shared tooling, scripts, PR/main-push CI and
+  documentation consistent. Never execute untrusted configuration, hooks or
+  commands merely to inspect a project.
+- Separate configuration location from execution scope. Shared Vitest
+  configuration runs in each code package with explicit --root and --config;
+  configuration reuse alone does not establish a multi-project test runner.
+- Protect secrets, dependency directories, generated output, coverage and caches
+  with gitignore without ignoring required source, configuration, workflows or
+  lockfiles.
+- Keep this entire AGENTS.md identical to the supplied standard. Put
+  project-specific additions only in docs/agent-project.md; preserve existing
+  custom guidance there before restoring this file.
 
-- Manage project skills with `npx skills`.
-- Keep all project skills under `.agent/skills/<skill-name>/`, with each skill's
-  `SKILL.md` in its directory.
+## Conditional npm delivery
 
-## Silvermoon
+These rules apply only to packages intentionally delivered to npm, not private
+applications or aggregate roots.
 
-- Use the device-level Silvermoon CLI and personal skill registration, not a
-  project dependency or repository-local Silvermoon skill.
-- Project content defaults to Simplified Chinese (`zh-CN`).
-- Start with `silvermoon whats-next --audience agent --language zh-CN` and
-  follow its reported next action.
-- Validate metadata with
-  `silvermoon check --worktree --audience agent --language zh-CN` before staging
-  and `silvermoon check --staged --audience agent --language zh-CN` before
-  committing.
-
-## Publishing
-
-- Keep repository release knowledge here, not in a project skill. See
-  [README](README.md#publish-one-package) for setup and commands.
-- Release one explicitly mapped package with `<package-id>-v<version>` tags.
-  Never batch-publish workspaces or automatically release dependencies.
-- Update the package mapping in `scripts/release-packages.js` when renaming or
-  adding a publishable library. Keep the root, apps, and preset examples
-  private.
-- Require the tag's package identity and exact version to match both the tagged
-  commit's manifest and the packed manifest, including prerelease suffixes.
-- Publish stable versions to `latest` and prerelease versions to `rc`.
-  Prerelease versions must use `x.y.z-rc.n`, with `n` starting at `0` and
-  increasing by one for each subsequent prerelease of the same target version.
-- Publish only commits reachable from main with successful exact-commit main
-  push CI. Keep the versioned CI aggregate and verifier arguments aligned.
-- Build the selected package and its dependencies, then pack the selected
-  package once with lifecycle hooks disabled. Validate and publish that same
-  tarball.
-- Internal runtime and peer dependencies must have matching versions already on
-  npm. Publish missing dependencies separately before tagging the dependent
-  package.
-- Use npm Trusted Publishing, not stored tokens. Manual workflow runs are dry
-  runs only. Never push release tags or publish without explicit authorization.
-- Release tags are immutable. Retry a failed pre-publication run without moving
-  its tag; an existing npm version must block publication.
+- Maintain explicit package identity, license, source links, ESM import and type
+  exports, package.json export, delivery allowlist, source maps and declaration
+  maps. Build and validate the selected package with publint.
+- Keep non-release workspaces private. Explicitly opt in one mapped package at a
+  time; never recursively publish workspaces or automatically release
+  dependencies.
+- Publish only an explicitly authorized exact version and commit. Stable x.y.z
+  uses latest; x.y.z-rc.n uses rc, starting at rc.0 and increasing continuously
+  for that target version.
+- Verify unique tag/package mapping, main ancestry and existing successful
+  exact-SHA main-push CI including every required matrix and aggregate check.
+  Missing or uncertain evidence blocks publication; do not rerun release-local
+  full CI as a substitute.
+- Reject private packages, placeholder identities, existing versions and
+  unavailable internal runtime/peer dependency versions. Registry failures are
+  not proof that a version is absent.
+- Use npm Trusted Publishing with an explicit environment and id-token
+  permission, never stored npm tokens.
+- Use the supplied fixed release/release-dry-run entries and fixed shared
+  publisher implementation without changes. Read identity/version from the
+  selected manifest, topology from the workspace and matrix from the real CI.
+  Reuse an existing explicit package ID/tag mapping for multiple targets; never
+  introduce duplicate release descriptions. CI invokes pnpm release or pnpm
+  release-dry-run, never an internal Node file or naked npm publish.
+- Explicitly build the selected package and dependencies, pack the selected
+  package once with lifecycle hooks disabled, validate its exact name/version
+  and publish that same tarball. Never mutate the tarball after validation.
+- Manual workflow dispatch is dry-run only. Do not publish, move release tags,
+  change dist-tags or upload artifacts remotely without explicit authorization.

@@ -3,6 +3,9 @@ dist/
 node_modules/
 *.tgz
 .turbo/
+.release-artifacts/
+.env
+.env.*
 
 .DS_Store
 .idea/

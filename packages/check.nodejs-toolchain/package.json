@@ -5,11 +5,14 @@
   "description": "Node.js Toolchain Check — private CAR author project.",
   "type": "module",
   "scripts": {
-    "build": "node ../check-task-builder/dist/bin.js build",
-    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "lint": "eslint . --max-warnings=0",
-    "test": "vitest run --root . --config ../../vitest.config.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "build": "node scripts/build.mjs",
+    "clean": "node scripts/clean.mjs",
+    "lint": "node scripts/lint.mjs",
+    "nvm-smoke": "node scripts/nvm-smoke.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "test": "node scripts/test.mjs",
+    "test-coverage": "node scripts/test-coverage.mjs",
+    "typecheck": "node scripts/typecheck.mjs"
   },
   "engines": {
     "node": "^22.15.0 || >=23.5.0"

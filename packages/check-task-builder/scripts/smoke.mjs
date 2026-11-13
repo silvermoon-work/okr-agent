@@ -93,8 +93,10 @@ try {
     for (const path of new Set([...paths, ...ancillary])) {
       const node = await exporter(`${outputCid}/${path}`, {
         async *get(cid) {
-          yield store.readContentBlock(cid.toString()) ??
-            (await ipfsStore.block.get(cid.toString()));
+          yield (
+            store.readContentBlock(cid.toString()) ??
+            (await ipfsStore.block.get(cid.toString()))
+          );
         },
       });
       assert.ok(node.type === "file" || node.type === "raw");
