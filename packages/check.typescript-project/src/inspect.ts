@@ -596,10 +596,18 @@ export async function inspect(
                   "enabled",
                   "all",
                   "skipFull",
+                  "autoAttachSubprocess",
                 ].includes(k),
             )
           )
             throw new Unconfirmed("unsupported Vitest coverage key");
+          if (
+            Object.hasOwn(coverage, "autoAttachSubprocess") &&
+            typeof coverage.autoAttachSubprocess !== "boolean"
+          )
+            throw new Unconfirmed(
+              `coverage.autoAttachSubprocess 观察值=${JSON.stringify(coverage.autoAttachSubprocess)}；要求 boolean（true/false），仅控制子进程采集，不证明覆盖率启用或源码映射正确`,
+            );
           if (
             coverage.provider !== undefined &&
             !["v8", "istanbul"].includes(coverage.provider as string)
@@ -620,15 +628,14 @@ export async function inspect(
           for (const metric of metrics) {
             const observed = thresholds[metric];
             if (
-              typeof observed === "number" &&
-              (!Number.isFinite(observed) || observed < 0 || observed > 100)
+              typeof observed !== "number" ||
+              !Number.isFinite(observed) ||
+              observed < 0 ||
+              observed > 100
             )
-              failures.push(`${metric} 必须是有限的 0..100 百分比`);
-            else if (
-              typeof thresholds[metric] !== "number" ||
-              thresholds[metric] < c.minimum[metric]
-            )
-              failures.push(`${metric} < ${c.minimum[metric]}`);
+              failures.push(
+                `thresholds.${metric} 观察值=${observed === undefined ? "未声明" : JSON.stringify(observed)}；必须显式声明有限的 0..100 百分比，数值由项目决定`,
+              );
           }
           if (
             Object.keys(thresholds).some(

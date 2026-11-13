@@ -6,7 +6,10 @@ import { inspect } from "../src/inspect.js";
 import type { ProblemCode } from "../src/contract.js";
 import { npmFixture, put, testEvidence, fixture, manifest } from "./fixture.js";
 import { Files, dataYaml, record } from "../src/files.js";
-import { publisherProfile } from "../src/publisher-profile.js";
+import {
+  compatibilityMatrix,
+  publisherProfile,
+} from "../src/publisher-profile.js";
 import type { Project } from "../src/commands.js";
 
 let root: string;
@@ -374,6 +377,60 @@ it("requires the actual engine minimum in the compatibility matrix, not just a h
   const text = await readFile(join(root, "package.json"), "utf8");
   await put(root, "package.json", text.replace(">=22.15.0", ">=22.14.0"));
   expect((await check()).map((p) => p.code)).toContain("ci-mismatch");
+});
+it("does not turn unsupported extra matrix entries into a consumer promise", async () => {
+  const evidence = await testEvidence();
+  const provider = evidence.metadata.node;
+  evidence.metadata.node = async () => {
+    const observation = await provider();
+    observation.data.releases.push({ version: "v22.13.0", lts: "Jod" });
+    return observation;
+  };
+  const problems: { code: string; brief: string }[] = [];
+  const runtimes: Project[] = [
+    {
+      directory: "packages/sdk",
+      manifest: { engines: { node: ">=22.15" } },
+      sources: ["src/index.ts"],
+      tests: [],
+    },
+    {
+      directory: "packages/builder",
+      manifest: { private: true, engines: { node: "^22.15.0 || >=24" } },
+      sources: ["src/index.ts"],
+      tests: [],
+    },
+  ];
+  const run = async (
+    nodes: string[],
+    tools: { name: string; range: string }[] = [],
+  ) => {
+    problems.length = 0;
+    await compatibilityMatrix(
+      { nodeVersions: nodes },
+      runtimes,
+      evidence.metadata,
+      (domain, status, brief) =>
+        problems.push({ code: `${domain}-${status}`, brief }),
+      tools,
+    );
+    return problems;
+  };
+  expect(await run(["22.13.0", "22.15.0", "24.11.0"])).toEqual([]);
+  expect(await run(["22.13.0", "24.11.0"])).toContainEqual(
+    expect.objectContaining({
+      code: "ci-mismatch",
+      brief: expect.stringContaining("缺少 required 最低版本") as unknown,
+    }),
+  );
+  const limitation = await run(
+    ["22.13.0", "22.15.0", "24.11.0"],
+    [{ name: "modern-tool", range: ">=24" }],
+  );
+  expect(limitation).toHaveLength(1);
+  expect(limitation[0]?.code).toBe("ci-unconfirmed");
+  expect(limitation[0]?.brief).toContain('unsupported 额外条目=["22.13.0"]');
+  expect(limitation[0]?.brief).toContain("仍对全部条目运行开发 check");
 });
 it("does not infer an npm library from private:false alone", async () => {
   await rm(root, { recursive: true, force: true });

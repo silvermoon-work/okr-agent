@@ -14,13 +14,19 @@ rules; it does not override them.
   evidence no older than one hour; never fall back to stale or conflicting
   facts. Package runtime ranges may be wider but must include this developer
   Node; consumer minimum environments need not run all development tools.
+- Keep the parsed minimum engines.node version equal across all applicable
+  monorepo code packages, including private packages. Full ranges may differ;
+  exclude purely aggregate manifests. Report missing or invalid declarations
+  before comparisons, and never raise consumer minimums automatically.
 - Keep third-party development tools on compatible stable versions, update
   declarations and the corresponding lockfile importers together, and verify
   Node and peer compatibility. Never install or upgrade implicitly during
   inspection.
 - Keep strict TypeScript and type-aware lint enabled for all applicable source
   and tests. Preserve formatting checks, single-run tests and coverage of
-  untested source with all four global thresholds at least 90.
+  untested source with all four global thresholds explicitly chosen by the
+  project as finite percentages in 0..100. Enforce those thresholds; this
+  convention does not prescribe a universal minimum percentage.
 - Use typecheck, lint, format-check, test and test-coverage for read-only
   checks. Use format only for intentional formatting changes. Use applicable
   build and lint-package for deliverable validation.

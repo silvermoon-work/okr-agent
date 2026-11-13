@@ -5,12 +5,12 @@
 
 ## 六类检查
 
-1. 环境：根 .node-version 必须精确匹配官方索引中最高 SemVer 的稳定、发行标 LTS 且当前官方 schedule 仍在支持期的发行版；不按偶数 major 或固定版本猜测。索引与 schedule 均须满足一小时新鲜度，任何失败/过期/冲突均 environment-unconfirmed，不回退旧版。同 major 旧 patch 或仍维护的旧 LTS 都不满足最新要求。各代码成员 engines.node 独立检查并包含开发环境，不强制成员范围相同；消费者最低环境不必运行所有现代开发工具。根 packageManager 精确 pnpm 稳定版本，跟进所选 major 最新版本；重复默认选择不得冲突。
+1. 环境：根 .node-version 必须精确匹配官方索引中最高 SemVer 的稳定、发行标 LTS 且当前官方 schedule 仍在支持期的发行版；不按偶数 major 或固定版本猜测。索引与 schedule 均须满足一小时新鲜度，任何失败/过期/冲突均 environment-unconfirmed，不回退旧版。同 major 旧 patch 或仍维护的旧 LTS 都不满足最新要求。各代码成员 engines.node 独立检查并包含开发环境；monorepo 所有适用代码包（包括 private 包）的最低受支持 Node 必须一致，比较解析出的最低版本，不要求完整范围或文本相同，纯聚合根不参与。差异证据包含 manifest 路径、原始范围和最低版本，不自动缩窄兼容承诺。消费者最低环境不必运行所有现代开发工具。根 packageManager 精确 pnpm 稳定版本，跟进所选 major 最新版本；重复默认选择不得冲突。
 2. 工具：只检查已规定的必要开发工具；单包与 monorepo 均要求其 devDependencies 引用根 pnpm-workspace.yaml 的默认/named
    catalog，保留共享根声明与内部 workspace 协议。普通 dependencies 和自由扩展的其他 devDependencies 不受此 catalog/版本政策约束，后者不查询元数据、不报不受支持依赖。检查实际 pnpm
    lockfile
    importer 的 specifier/version。major>=1 追同 major，0.minor 追同 minor 的 patch，0.0.patch 精确锁定；声明及已解析版本都检查。校验工具 Node 与已解析 peer 兼容；其他 snapshot 不能替代本 importer。
-3. 规范与交付：独立检查 strict、五项 safety、源码与测试类型感知 lint、格式配置和忽略范围、测试发现、未触达文件 coverage.include 及四项全局门限>=90；显式 watch/passWithNoTests 不得放宽。实际 npm
+3. 规范与交付：独立检查 strict、五项 safety、源码与测试类型感知 lint、格式配置和忽略范围、测试发现、未触达文件 coverage.include；四项全局覆盖率门限须明确声明为有限的 0..100 百分比，数值由项目决定，不设统一最低值；显式 watch/passWithNoTests 不得放宽。实际 npm
    ESM 职责附加检查身份/许可/链接、exports、files、已声明的构建/映射配置及 build/lint-package 接口。private:true 完全跳过 npm 发布/交付专项检查，不因入口或显式映射报告发布职责无法确认；通用质量及适用构建配置仍检查，不强迫解除 private。
 4. Agent 接口：根 typecheck、lint、format-check、format、test、test-coverage、check 仍必需；成员按职责提供动作，不要求机械复制根接口。所有 package
    scripts（含可选动作与生命周期动作）名称均禁止冒号，只允许无参数的
@@ -19,7 +19,7 @@
    script。
 5. 工作流：根内 Git origin/主分支事实、GitHub
    main-push 与保留的 PR 入口采用固定质量 workflow，执行 pnpm
-   check，全部必需 job/矩阵/聚合成功才合格。先完整比较结构，仅标准 compatibility.strategy.matrix.node-version 允许 2..8 个唯一精确稳定版本参数；结构不符给出实际路径/值及期望，短路派生矩阵/发布绑定问题，不猜任意 workflow。npm 发布采用固定资产与受保护 workflow，独立确凿缺陷继续报告。
+   check，全部必需 job/矩阵/聚合成功才合格。先完整比较结构，仅标准 compatibility.strategy.matrix.node-version 允许 2..8 个唯一精确稳定版本参数；结构不符给出实际路径/值及期望，短路派生矩阵/发布绑定问题，不猜任意 workflow。适用包统一最低值未通过先报环境问题并短路依赖矩阵差异；独立默认 CI/发布保护仍检。通过后 required 为统一消费者最低值及一个更高、当前受支持且满足所有适用范围的官方 LTS；更低或范围外额外条目标 unsupported，不单独因此报 ci-mismatch。完整矩阵仍运行开发 check，工具不兼容保留 unconfirmed 支持边界，不擅自引入新标准 probe。npm 发布采用固定资产与受保护 workflow，独立确凿缺陷继续报告。
 6. 文档与结构：声明 workspace 定位全部成员，聚合根无虚构源码/build 要求。README/CONTRIBUTING/docs/agent-project.md 只检查存在/可读/非空，固定根 AGENTS.md 与[唯一标准 asset](../assets/AGENTS.md)完整比较，仅统一 CRLF/CR 到 LF。嵌套 AGENTS 不能静默忽略。gitignore 检查依赖、输出、覆盖率/缓存与秘密，且不排除必要文件。
 
 ## 支持语法与保守边界
@@ -29,7 +29,8 @@
   references 不作为执行证据；未知编译配置仍无法确认。类型配置从各代码项目 tsconfig.json 读取，不通过脚本参数推断配置选择。
 - Acorn 只解析数据，不解释目标代码。支持 ESLint flat
   array、已知 typescript-eslint
-  TypeChecked 预设及有限 map 包装、projectService；动态覆盖/自定义 parser 不支持。Prettier 静态 JSON/YAML/ESM 配置与忽略路径；插件/overrides 不支持。Vitest 静态 defineConfig、4.x/5.x 未触达 include 语义及全局 thresholds；动态 projects/provider/分 glob 门限不支持。
+  TypeChecked 预设及有限 map 包装、projectService；动态覆盖/自定义 parser 不支持。Prettier 静态 JSON/YAML/ESM 配置与忽略路径；插件/overrides 不支持。Vitest 静态 defineConfig、4.x/5.x 未触达 include 语义及全局 thresholds；可选 coverage.autoAttachSubprocess 支持 boolean
+  true/false，不强制启用、不作为启用覆盖率或映射正确的证据；未知字段和非 boolean 仍无法确认。动态 projects/provider/分 glob 门限不支持。
 - 格式检查覆盖源码、测试和维护者配置；生成的 pnpm-lock.yaml 不强制交给 Prettier 格式化，但仍要求纳入版本控制且不被 gitignore 排除。忽略必要格式目标时报告准确路径，不重复追加同根因的总括失败。
 - typecheck、lint、format、format-check、test、test-coverage、lint-package、check 的入口及 scripts/lib/commands.mjs 必须与对应 output
   assets 准确一致，仅允许 LF 归一化。release/release-dry-run 及其固定 lib 同样检查。build 与扩展入口内部自由，不解释或执行，不因未知构建器报错。固定 lib 不能自由替换，不能靠相同 wrapper 名称获得通过。

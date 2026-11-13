@@ -199,9 +199,11 @@ jobs:
     ),
   ).toBe(false);
 });
-it("locates each package's consumer-minimum matrix gap without inventing a conflict between compatible engines", async () => {
-  await put(root, ".node-version", "24.11.1");
+it("reports unequal monorepo consumer minimums before derived matrix differences", async () => {
+  await put(root, ".nvmrc", "22.15.0");
   await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
+  await rm(join(root, "src"), { recursive: true });
+  await rm(join(root, "test"), { recursive: true });
   for (const [name, range] of [
     ["sdk", ">=22.13"],
     ["builder", ">=22.15.0"],
@@ -215,30 +217,136 @@ it("locates each package's consumer-minimum matrix gap without inventing a confl
         registry: "https://registry.npmjs.org/",
       },
     });
+  await put(root, "packages/sdk/src/index.ts", "export {};");
+  await put(root, "packages/builder/src/index.ts", "export {};");
   const workflow = dataYaml(new TextDecoder().decode(evidence.ciWorkflow));
   record(record(record(record(workflow.jobs).compatibility).strategy).matrix)[
     "node-version"
   ] = ["22.15.0", "24.11.0"];
   await put(root, ".github/workflows/ci.yaml", workflow);
-  const ci = (await check()).filter(
-    (problem) => problem.code === "ci-mismatch",
+  const problems = await check();
+  const environment = problems.filter(
+    (problem) =>
+      problem.code === "environment-mismatch" &&
+      problem.brief.includes("最低受支持 Node 必须一致"),
   );
-  const sdk = ci.find((problem) =>
-    problem.brief.includes("packages/sdk/package.json"),
+  expect(environment).toHaveLength(1);
+  expect(environment[0]?.brief).toContain(
+    '{"manifest":"packages/builder/package.json","range":">=22.15.0","minVersion":"22.15.0"}',
   );
-  expect(sdk?.brief).toContain('engines.node = ">=22.13"');
-  expect(sdk?.brief).toContain("22.13.0");
-  expect(sdk?.brief).toContain(".github/workflows/ci.yaml");
-  expect(sdk?.brief).toContain('["22.15.0","24.11.0"]');
-  expect(sdk?.brief).toContain("不将包之间不同下限视作冲突");
+  expect(environment[0]?.brief).toContain(
+    '{"manifest":"packages/sdk/package.json","range":">=22.13","minVersion":"22.13.0"}',
+  );
+  const ci = problems.filter((problem) => problem.code === "ci-mismatch");
+  expect(ci).toEqual([]);
   expect(
-    ci.some((problem) =>
-      problem.brief.includes("packages/builder/package.json"),
+    problems.some((problem) =>
+      problem.brief.includes(".nvmrc 与根 .node-version 不一致"),
     ),
-  ).toBe(false);
+  ).toBe(true);
   expect(ci.some((problem) => problem.brief.includes("固定发布绑定"))).toBe(
     false,
   );
+  record(record(workflow.jobs).check).permissions = { contents: "write" };
+  await put(root, ".github/workflows/ci.yaml", workflow);
+  expect(await check()).toContainEqual(
+    expect.objectContaining({
+      code: "ci-mismatch",
+      brief: expect.stringContaining("jobs.check.permissions") as unknown,
+    }),
+  );
+});
+it.each([">=22", ">=22.15.0"])(
+  "compares private code packages while excluding empty aggregate manifests: %s",
+  async (range) => {
+    await put(root, "pnpm-workspace.yaml", {
+      packages: ["packages/*"],
+      catalog,
+    });
+    await rm(join(root, "src"), { recursive: true });
+    await rm(join(root, "test"), { recursive: true });
+    await put(root, "package.json", { ...manifest, engines: { node: ">=18" } });
+    for (const [name, node] of [
+      ["a", ">=22"],
+      ["b", range],
+    ])
+      await put(root, `packages/${name}/package.json`, {
+        name,
+        private: true,
+        engines: { node },
+      });
+    await put(root, "packages/a/src/index.ts", "export {};");
+    await put(root, "packages/b/src/index.ts", "export {};");
+    await put(root, "packages/aggregate/package.json", {
+      name: "aggregate",
+      private: true,
+      engines: { node: ">=16" },
+    });
+    const problems = (await check()).filter((p) =>
+      p.code.startsWith("environment-"),
+    );
+    if (range === ">=22") expect(problems).toEqual([]);
+    else {
+      expect(problems).toHaveLength(1);
+      expect(problems[0]?.brief).toContain("packages/a/package.json");
+      expect(problems[0]?.brief).toContain("packages/b/package.json");
+      expect(problems[0]?.brief).not.toContain("aggregate/package.json");
+    }
+  },
+);
+it("accepts different ranges with equal parsed minimums, including private code", async () => {
+  await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
+  await put(root, "packages/member/package.json", {
+    name: "member",
+    private: true,
+    engines: { node: "^22.0.0 || >=24" },
+  });
+  await put(root, "packages/member/src/index.ts", "export {};");
+  expect(
+    (await check()).filter((p) => p.code.startsWith("environment-")),
+  ).toEqual([]);
+});
+it("reports each missing or invalid engine without derived minimum or matrix failures", async () => {
+  await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
+  for (const [name, node] of [
+    ["missing", undefined],
+    ["invalid", "not-semver"],
+    ["empty", "<0.0.0"],
+    ["malformed", undefined],
+  ]) {
+    await put(root, `packages/${name}/package.json`, {
+      name,
+      private: false,
+      engines: name === "malformed" ? [] : { node },
+      publishConfig: {
+        access: "public",
+        registry: "https://registry.npmjs.org/",
+      },
+    });
+    await put(root, `packages/${name}/src/index.ts`, "export {};");
+  }
+  const problems = await check();
+  const environment = problems.filter((p) => p.code.startsWith("environment-"));
+  expect(environment.map((p) => p.code).sort()).toEqual([
+    "environment-missing",
+    "environment-unconfirmed",
+    "environment-unconfirmed",
+    "environment-unconfirmed",
+  ]);
+  expect(environment.map((p) => p.brief).join("\n")).toContain(
+    "packages/missing/package.json",
+  );
+  expect(environment.map((p) => p.brief).join("\n")).toContain(
+    'engines.node="not-semver"',
+  );
+  expect(environment.map((p) => p.brief).join("\n")).toContain(
+    'engines.node="<0.0.0"',
+  );
+  expect(environment.map((p) => p.brief).join("\n")).toContain(
+    "packages/malformed/package.json: engines=[]",
+  );
+  expect(problems.some((p) => p.code.startsWith("ci-"))).toBe(false);
+  expect(problems.some((p) => p.code.startsWith("release-"))).toBe(true);
 });
 it("uses official lifecycle and exact release LTS status, not an even major or minimum", async () => {
   const provider = evidence.metadata.node;
