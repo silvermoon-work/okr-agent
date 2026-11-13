@@ -216,5 +216,6 @@
   "cancel": true,
   "reclaimed": true,
   "configurationUnchanged": true,
+  "configurationSnapshot": "all-project-file-bytes-and-paths",
   "borrowedContentSurvivedClose": true
 }

@@ -88,3 +88,23 @@ socket 和文件操作保持原样。不修改 Engine、制品、共享网络、
 ### D-AC03: 交付身份与范围真实
 
 CAR/CID、复现说明及限制持久可用，不将本地验收声称为 npm 发布、远程 pin 或未验证平台支持。
+
+## 当前交付结果
+
+在上述完整文件树契约已同步到 primary 后，父级于授权 Ubuntu 宿主复验同一生产 CAR；取回最终报告后的 UTC 时间为
+`2026-11-13T00:32:06Z`。制品与归档的本地/远端 SHA256 均相符，归档 75 项均为普通文件或目录，无绝对/上跳路径或符号链接。全部所需验证与取证完成后，已仅清理本次独占
+`/tmp/okr-convention-2QcjdAV3` 并确认不存在，未清理共享环境。
+
+- [Independent-live.json](./Independent-live.json)：`ok:true`，真实 canonical-live；应用、npm 单包、单成员和双成员 workspace 全部通过；旧配置与固定文档变更正确不通过。
+- [Independent-network-failure.json](./Independent-network-failure.json)：`ok:true`，明确标记 injected-ip-connect-rejection；六个项目全部不通过并含 unconfirmed，不以缓存/默认值伪造成功。测试进程结束后注入随进程消失。
+- 两份报告均证明四种旧输入拒绝、I/O 故障与取消无输出、全部 Run 回收、四份 assets 和问题相对链接字节一致、借用 store 在 Engine.close 后仍可读。
+- 两份报告均具有 `configurationSnapshot: all-project-file-bytes-and-paths` 和
+  `configurationUnchanged:true`，完整根/成员输入树未改变。消费者没有安装作者 SDK 或 Check，也不读取作者源码。
+- [Fixture-preparation.json](./Fixture-preparation.json) 与
+  [Workspace-preparation.json](./Workspace-preparation.json)
+  记录实际版本解析、同系列发行事实、根工具共享、单/双成员及未执行目标脚本。故障源与正常来源严格分离。
+- 父级最后运行 `pnpm check`，24/24
+  tasks 通过（本次完整 Turbo 缓存命中，复用前述同代码的已通过结果）；最终生产 CID 未变。规则本包 122
+  tests，SDK 12 tests。
+
+已满足 D-S01..03、D-AC01..03，允许提交当前准确 deploymentRevision 并按用户委托审批；是否终态以同步后的 Silvermoon 观测为准。未发布 npm、未远程 pin、未修改历史制品，也不宣称实际线上 release 或任意自定义 publisher 已被验证。原生故障注入仅验证 Linux 消费，不扩张为其他平台证据。
