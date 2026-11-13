@@ -19,12 +19,12 @@ Engine 执行。检查只读取目标项目，不运行其代码、配置模块�
 
 ## 检查内容
 
-- **环境**：默认 Node.js 版本、LTS 支持周期、成员运行时要求和 pnpm 版本。
+- **环境**：默认 Node.js 版本、LTS 支持周期、成员运行时要求和 pnpm 版本。monorepo 所有适用代码包（包括 private）解析出的最低 Node 必须一致，纯聚合 manifest 不参与，完整范围可以不同；缺失/非法先各自报告，不自动提高消费者下限。
 - **工具依赖**：只检查已规定的必要开发工具，单包与 monorepo 都要求其 devDependencies 引用根默认/named
   catalog；检查准确 lockfile
   importer、版本系列新鲜度及 Node.js/peer 兼容。自由扩展依赖不查询元数据或报不受支持，普通 dependencies 不受新增 catalog 规则约束。
 - **规范与交付**：TypeScript 严格配置、类型感知 lint、格式检查、单次测试、覆盖率门限和适用的 npm
-  ESM 产物配置。
+  ESM 产物配置。四项覆盖率门限由项目明确声明为有限的 0..100 百分比，不设统一最低值；可选 autoAttachSubprocess 只接受 boolean，不证明已启用覆盖率或映射正确。
 - **Agent 接口**：所有 package scripts 必须为
   `node scripts/<同名>.mjs`（无参数），所有名称禁止冒号；与 scripts 顶层 .mjs 入口严格双向一一对应。共享模块只放
   `scripts/lib/`。typecheck、lint、format、format-check、test、test-coverage、lint-package、check 及两个发布入口使用随 CAR 交付的固定实现和必要 lib，按准确字节比较（仅归一化换行）；build 和项目扩展入口可自定义。

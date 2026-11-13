@@ -141,6 +141,15 @@ export async function convention(
       issue(domain, "mismatch", `${path}: 文件为空`);
   };
   let node: string | undefined;
+  const runtimeProjects = projects.filter(
+    (project) =>
+      project.sources.length || project.tests.length || artifact(project),
+  );
+  const runtimeMinimums: {
+    manifest: string;
+    range: string;
+    minVersion: string;
+  }[] = [];
   await section("environment", async () => {
     if (!files.exists(".node-version")) {
       issue("environment", "missing", "根 .node-version 缺失");
@@ -264,21 +273,57 @@ export async function convention(
         if (project.manifest.volta !== undefined)
           throw new Unconfirmed(`${prefix}: 成员 Volta 选择无法确认`);
       }
-      if (project.sources.length || project.tests.length || artifact(project)) {
-        const range = record(project.manifest.engines ?? {}).node;
-        if (range === undefined)
-          issue("environment", "missing", `${prefix}: engines.node 缺失`);
-        else if (typeof range !== "string" || !validRange(range))
-          throw new Unconfirmed(`${prefix}: engines.node 无法解析`);
-        else if (node && !satisfies(node, range))
+    }
+  });
+  for (const project of runtimeProjects)
+    await section("environment", () => {
+      const path = files.path(project.directory, "package.json");
+      const engines = project.manifest.engines;
+      if (
+        engines !== undefined &&
+        (!engines || typeof engines !== "object" || Array.isArray(engines))
+      )
+        throw new Unconfirmed(
+          `${path}: engines=${JSON.stringify(engines)}；要求包含 node 范围的静态对象`,
+        );
+      const range = record(engines ?? {}).node;
+      if (range === undefined)
+        issue("environment", "missing", `${path}: engines.node 缺失`);
+      else {
+        if (typeof range !== "string" || !validRange(range))
+          throw new Unconfirmed(
+            `${path}: engines.node=${JSON.stringify(range)} 无法解析最低 SemVer`,
+          );
+        const minimum = minVersion(range);
+        if (!minimum)
+          throw new Unconfirmed(
+            `${path}: engines.node=${JSON.stringify(range)} 无法解析最低 SemVer`,
+          );
+        runtimeMinimums.push({
+          manifest: path,
+          range,
+          minVersion: minimum.version,
+        });
+        if (node && !satisfies(node, range))
           issue(
             "environment",
             "mismatch",
-            `${prefix}: 根开发 Node ${node} 不满足自身运行范围 ${range}`,
+            `${path}: 根开发 Node ${node} 不满足自身运行范围 ${range}`,
           );
       }
-    }
-  });
+    });
+  const uniformRuntimeMinimum =
+    runtimeMinimums.length === runtimeProjects.length &&
+    new Set(runtimeMinimums.map((entry) => entry.minVersion)).size <= 1;
+  if (
+    runtimeMinimums.length === runtimeProjects.length &&
+    !uniformRuntimeMinimum
+  )
+    issue(
+      "environment",
+      "mismatch",
+      `monorepo 所有适用代码包（包括 private）的最低受支持 Node 必须一致；观察 ${JSON.stringify(runtimeMinimums)}；仅比较解析出的最低 SemVer，不要求完整范围相同，不自动提高下限或修改 manifest`,
+    );
   await section("dependency", async () => {
     const declared = root.manifest.packageManager;
     const match =
@@ -805,21 +850,20 @@ export async function convention(
   await section("ci", async () => {
     const origin = await repository(files);
     if (!origin.github) return;
-    if (deliveries.length && quality)
-      for (const project of deliveries)
-        await section("ci", () =>
-          compatibilityMatrix(
-            quality,
-            project,
-            evidence.metadata,
-            issue,
-            [...(actual.get("")?.entries() ?? [])].flatMap(([name, value]) =>
-              value.release.engines?.node
-                ? [{ name, range: value.release.engines.node }]
-                : [],
-            ),
+    if (deliveries.length && quality && uniformRuntimeMinimum)
+      await section("ci", () =>
+        compatibilityMatrix(
+          quality,
+          runtimeProjects,
+          evidence.metadata,
+          issue,
+          [...(actual.get("")?.entries() ?? [])].flatMap(([name, value]) =>
+            value.release.engines?.node
+              ? [{ name, range: value.release.engines.node }]
+              : [],
           ),
-        );
+        ),
+      );
   });
 }
 

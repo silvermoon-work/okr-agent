@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, symlink } from "node:fs/promises";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { inspect } from "../src/inspect.js";
@@ -15,6 +15,7 @@ import {
   testEvidence,
 } from "./fixture.js";
 import { javascript, jsonc } from "../src/static.js";
+import { Files } from "../src/files.js";
 
 let root: string;
 beforeEach(async () => {
@@ -40,6 +41,26 @@ async function check(requirements?: unknown) {
 }
 it("passes configuration despite deliberately broken types and failing test code", async () => {
   expect(await check()).toEqual([]);
+});
+it("rejects oversized configuration and malformed UTF-8 rather than reading or defaulting it", async () => {
+  await put(root, "large.json", "x".repeat(1_048_577));
+  const files = new Files(root, new AbortController().signal);
+  await expect(files.text("large.json")).rejects.toThrow("byte budget");
+  await writeFile(join(root, "invalid.json"), Buffer.from([0xff]));
+  await expect(files.text("invalid.json")).rejects.toThrow();
+});
+it("enforces the configuration-count budget while caching repeated reads", async () => {
+  const files = new Files(root, new AbortController().signal);
+  for (let index = 0; index < 512; index++) {
+    const path = `configuration/${index}.json`;
+    await put(root, path, "{}");
+    expect(await files.text(path)).toBe("{}");
+  }
+  expect(await files.text("configuration/0.json")).toBe("{}");
+  await put(root, "configuration/overflow.json", "{}");
+  await expect(files.text("configuration/overflow.json")).rejects.toThrow(
+    "exceeds 512",
+  );
 });
 it("checks the fixed shared implementation rather than only its wrapper", async () => {
   const assets = await testEvidence();
@@ -410,7 +431,7 @@ it("rejects a modified fixed coverage entry independently of its tool configurat
   await put(
     root,
     "vitest.config.ts",
-    vitestConfig.replace("branches: 90", "branches: 80"),
+    vitestConfig.replace("branches: 90", "branches: 101"),
   );
   expect((await check()).map((p) => p.code)).toEqual([
     "gate-mismatch",
@@ -430,7 +451,7 @@ it("keeps independent CI and lint failures when coverage blocks dependent checks
   await put(
     root,
     "vitest.config.ts",
-    vitestConfig.replace("branches: 90", "branches: 80"),
+    vitestConfig.replace("branches: 90", "branches: 101"),
   );
   await put(
     root,
@@ -626,7 +647,7 @@ it("does not execute or accept dynamically computed config", async () => {
     ),
   ).toThrow("not loaded");
 });
-it("detects coverage excluding sources, low thresholds and no-test success", async () => {
+it("detects coverage excluding sources, missing thresholds and no-test success", async () => {
   await put(
     root,
     "vitest.config.ts",
@@ -639,7 +660,7 @@ it("detects coverage excluding sources, low thresholds and no-test success", asy
   await put(
     root,
     "vitest.config.ts",
-    vitestConfig.replace("branches: 90", "branches: 80"),
+    vitestConfig.replace("branches: 90,", ""),
   );
   expect((await check()).map((p) => p.code)).toContain("coverage-mismatch");
   await put(
@@ -1064,7 +1085,7 @@ it("does not vacuously pass without observable TS files", async () => {
     "typescript-unconfirmed",
   );
 });
-it.each(["101", "1e309"])(
+it.each(["101", "1e309", '"65"', "null"])(
   "rejects observed coverage percentages outside finite 0..100: %s",
   async (value) => {
     await put(
@@ -1077,3 +1098,76 @@ it.each(["101", "1e309"])(
     );
   },
 );
+it.each([0, 65, 72.5, 100])(
+  "accepts explicit project-selected coverage thresholds of %s without a fixed minimum",
+  async (threshold) => {
+    await put(
+      root,
+      "vitest.config.ts",
+      vitestConfig.replace(
+        /(?:branches|functions|lines|statements): 90/g,
+        (metric) => metric.replace("90", String(threshold)),
+      ),
+    );
+    expect(await check()).toEqual([]);
+  },
+);
+it.each([true, false])(
+  "accepts optional boolean subprocess coverage collection: %s",
+  async (autoAttachSubprocess) => {
+    const config = vitestConfig
+      .replace(
+        'provider: "v8",',
+        `provider: "v8", autoAttachSubprocess: ${autoAttachSubprocess},`,
+      )
+      .replace(/: 90/g, ": 65");
+    await put(root, "vitest.config.ts", config);
+    expect(await check()).toEqual([]);
+    for (const invalid of ["", "branches: 101,"]) {
+      await put(
+        root,
+        "vitest.config.ts",
+        config.replace("branches: 65,", invalid),
+      );
+      expect((await check()).map((p) => p.code)).toContain("coverage-mismatch");
+    }
+    await put(
+      root,
+      "vitest.config.ts",
+      config.replace('include: ["src/**/*.ts"],', 'include: ["lib/**/*.ts"],'),
+    );
+    expect((await check()).map((p) => p.code)).toContain("coverage-mismatch");
+  },
+);
+it.each(['"true"', "1", "null"])(
+  "rejects nonboolean subprocess coverage collection: %s",
+  async (value) => {
+    await put(
+      root,
+      "vitest.config.ts",
+      vitestConfig.replace(
+        'provider: "v8",',
+        `provider: "v8", autoAttachSubprocess: ${value},`,
+      ),
+    );
+    expect(await check()).toContainEqual(
+      expect.objectContaining({
+        code: "coverage-unconfirmed",
+        brief: expect.stringContaining(
+          `coverage.autoAttachSubprocess 观察值=${value}`,
+        ) as unknown,
+      }),
+    );
+  },
+);
+it("does not accept unrelated unknown coverage fields", async () => {
+  await put(
+    root,
+    "vitest.config.ts",
+    vitestConfig.replace(
+      'provider: "v8",',
+      'provider: "v8", unknownCollection: true,',
+    ),
+  );
+  expect((await check()).map((p) => p.code)).toContain("coverage-unconfirmed");
+});

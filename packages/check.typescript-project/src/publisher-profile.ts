@@ -373,28 +373,34 @@ export async function publisherProfile(
 
 export async function compatibilityMatrix(
   profile: PublisherProfile,
-  project: Project,
+  projects: Project[],
   metadata: Metadata,
   report: Report,
   toolEngines: { name: string; range: string }[],
 ) {
-  const range = record(project.manifest.engines ?? {}).node;
-  const minimum =
-    typeof range === "string" && validRange(range)
-      ? minVersion(range)
-      : undefined;
-  if (
-    !minimum ||
-    !profile.nodeVersions.includes(minimum.version) ||
-    !profile.nodeVersions.every((version) =>
-      satisfies(version, range as string),
-    )
-  ) {
-    report(
-      "ci",
-      "mismatch",
-      `${project.directory ? `${project.directory}/` : ""}package.json engines.node = ${JSON.stringify(range)}，最低版本 ${minimum?.version ?? "无法解析"}；.github/workflows/ci.yaml compatibility matrix = ${JSON.stringify(profile.nodeVersions)}；要求包含该包最低版本且每个条目满足其范围，不将包之间不同下限视作冲突`,
-    );
+  const runtimes = projects.map((project) => {
+    const range = record(project.manifest.engines ?? {}).node;
+    return {
+      manifest: `${project.directory ? `${project.directory}/` : ""}package.json`,
+      range,
+      minimum:
+        typeof range === "string" && validRange(range)
+          ? minVersion(range)?.version
+          : undefined,
+    };
+  });
+  const minimum = runtimes[0]?.minimum;
+  if (!minimum || runtimes.some((runtime) => runtime.minimum !== minimum))
+    return;
+  const supported = profile.nodeVersions.filter((version) =>
+    runtimes.every((runtime) => satisfies(version, runtime.range as string)),
+  );
+  const unsupported = profile.nodeVersions.filter(
+    (version) => !supported.includes(version),
+  );
+  const context = `运行声明=${JSON.stringify(runtimes)}；.github/workflows/ci.yaml compatibility matrix=${JSON.stringify(profile.nodeVersions)}；required 最低版本=${minimum} 及至少一个更高受支持官方 LTS；unsupported 额外条目=${JSON.stringify(unsupported)}，不代表所有包承诺支持`;
+  if (!supported.includes(minimum)) {
+    report("ci", "mismatch", `${context}；缺少 required 最低版本`);
     return;
   }
   for (const { name, range: engine } of toolEngines) {
@@ -404,7 +410,7 @@ export async function compatibilityMatrix(
       report(
         "ci",
         "unconfirmed",
-        `package.json devDependencies ${name} 的 engines.node=${engine}；.github/workflows/ci.yaml matrix=${JSON.stringify(profile.nodeVersions)} 仍运行开发 check；当前固定 profile 尚不能独立证明消费者运行兼容，不要求消费者最低 Node 运行现代开发工具，也不要求缩窄包 engines`,
+        `package.json devDependencies ${name} 的 engines.node=${engine}；${context}；矩阵仍对全部条目运行开发 check；当前固定 profile 尚不能独立证明消费者运行兼容，不要求消费者最低 Node 运行现代开发工具，也不要求缩窄包 engines`,
       );
   }
   const observed = await metadata.node();
@@ -419,10 +425,10 @@ export async function compatibilityMatrix(
   )
     throw new Unconfirmed("官方发行事实不能确认全部兼容矩阵版本");
   if (
-    !profile.nodeVersions.some((version) => {
+    !supported.some((version) => {
       const lifecycle = facts.schedule[`v${parse(version)!.major}`];
       return (
-        gt(version, minimum.version) &&
+        gt(version, minimum) &&
         facts.releases.some(
           (release) =>
             release.version.replace(/^v/, "") === version && release.lts,
@@ -433,5 +439,9 @@ export async function compatibilityMatrix(
       );
     })
   )
-    report("ci", "mismatch", "npm 兼容矩阵缺少更高且当前受支持的官方 LTS");
+    report(
+      "ci",
+      "mismatch",
+      `${context}；npm 兼容矩阵缺少更高且当前受支持的官方 LTS`,
+    );
 }

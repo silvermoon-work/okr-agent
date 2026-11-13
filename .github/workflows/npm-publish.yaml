@@ -1,0 +1,42 @@
+name: Publish one verified npm package
+on:
+  push:
+    tags: ["*-v*"]
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Explicit package ID for dry run only
+        required: true
+        type: string
+permissions: {}
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      PACKAGE_INPUT: ${{ inputs.package }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - run: npm install --global npm@11.21.0
+      - if: github.event_name == 'push'
+        run: pnpm release
+      - if: github.event_name == 'workflow_dispatch'
+        run: pnpm release-dry-run

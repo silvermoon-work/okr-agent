@@ -17,7 +17,8 @@
 
 ## 开发
 
-使用 Node.js `^22.15.0 || >=23.5.0` 和 pnpm 11.22+：
+开发环境使用根 `.node-version` 和 `packageManager` 中的精确版本；
+各包消费者 Node 范围仍由各自 `engines.node` 声明：
 
 ```sh
 pnpm install
@@ -125,7 +126,8 @@ verified.
   `pnpm-workspace.yaml`.
 - Internal dependencies use `workspace:*`.
 - Each workspace owns its build, lint, test, and typecheck scripts.
-- Root commands use Turborepo to respect dependency order and cache outputs.
+- Fixed root quality commands discover members and dependency order from pnpm
+  workspace manifests. The root build command uses Turborepo for cached builds.
 
 Add a dependency from the repository root:
 
@@ -142,14 +144,17 @@ pnpm --filter @silvermoon-work/core test
 
 ## Commands
 
-| Command          | Purpose                                          |
-| ---------------- | ------------------------------------------------ |
-| `pnpm build`     | Build every workspace in dependency order        |
-| `pnpm lint`      | Lint release scripts and every workspace         |
-| `pnpm typecheck` | Type-check every workspace                       |
-| `pnpm test`      | Test release guards and workspaces with coverage |
-| `pnpm check`     | Run formatting, lint, types, tests, and builds   |
-| `pnpm clean`     | Remove workspace outputs and Turborepo state     |
+| Command              | Purpose                                                 |
+| -------------------- | ------------------------------------------------------- |
+| `pnpm build`         | Build every workspace in dependency order               |
+| `pnpm lint`          | Lint release scripts and every workspace                |
+| `pnpm typecheck`     | Type-check every workspace                              |
+| `pnpm test`          | Run workspace tests and release regressions once        |
+| `pnpm test-coverage` | Run workspace coverage and release regressions          |
+| `pnpm format-check`  | Check formatting without modifying files                |
+| `pnpm lint-package`  | Validate public npm package delivery with publint       |
+| `pnpm check`         | Format, build, types, lint, coverage and package checks |
+| `pnpm clean`         | Remove workspace outputs and Turborepo state            |
 
 ## Adding a workspace
 
@@ -166,15 +171,15 @@ no automatic batch release or automatic version bumping.
 ### Configure a derived repository
 
 1. Replace the example library's name and metadata. In
-   `scripts/release-packages.js`, map its unique package ID to the exact npm
-   name and `packages/<directory>`. For example, `core` can map to
+   `scripts/lib/release-packages.mjs`, map its unique package ID to the exact
+   npm name and `packages/<directory>`. For example, `core` can map to
    `@your-scope/core`. Update workspace consumers when renaming the library.
 2. Only for a library ready to publish, remove `private: true`, add
-   `"files": ["dist", "README.md", "LICENSE"]`, and set
+   `"files": ["dist", "src", "README.md", "LICENSE"]`, and set
    `"publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" }`.
    Include the library's README and license in its directory. Keep apps private.
 3. Configure an `npm` GitHub environment and an npm Trusted Publisher for each
-   package, using the exact owner, repository, `publish-npm.yaml` workflow, and
+   package, using the exact owner, repository, `npm-publish.yaml` workflow, and
    `npm` environment. Do not configure an `NPM_TOKEN`.
 4. Keep each library's `build` script aligned with Turborepo. Publishing builds
    the selected library and its workspace dependencies, then packs only that
@@ -204,12 +209,13 @@ increment it by one for each subsequent prerelease: `1.2.3-rc.0`, `1.2.3-rc.1`,
 and so on. Use matching package-specific Git tags, for example
 `core-v1.2.3-rc.0`.
 
-The pinned `github-ci-verify` CLI requires the latest `ci.yaml` main push run
-for the exact checked-out SHA and its successful versioned aggregate job and
-step. Missing, pending, skipped, failed, or inaccessible evidence blocks
-publication. Changing the validation contract requires updating both the CI
-aggregate and the publish verifier arguments. Publishing does not rerun
-`pnpm check`.
+The fixed `scripts/lib/npm-publish.mjs` requires the latest `ci.yaml` main push
+run for the exact full checked-out SHA, every required default/matrix job, and
+the successful versioned aggregate job and step. Missing, pending, skipped,
+failed, or inaccessible evidence blocks publication without rerunning or
+dispatching quality checks. Keep CI and the supplied fixed core aligned. The
+current candidate consumer-minimum matrix remains blocked by the known
+development-tool/profile boundary; it is not evidence of compatibility.
 
 `pnpm pack` converts `workspace:*` to registry versions. Internal runtime,
 optional, and peer dependency ranges must already resolve to published npm
@@ -223,12 +229,12 @@ same artifact through npm OIDC.
 After the configured commit's main push CI succeeds:
 
 ```sh
-gh workflow run publish-npm.yaml --ref main -f package=core
+gh workflow run npm-publish.yaml --ref main -f package=core
 ```
 
 Manual runs only perform an npm dry run, never an actual publish or dist-tag
-update. All metadata, CI, artifact, and dependency checks still apply; only the
-already-published-version rejection is omitted. A dry run is not proof of a
+update. All metadata, exact-commit CI, unpublished-version, artifact, channel,
+RC-history and dependency checks still apply. A dry run is not proof of a
 successful real OIDC publication.
 
 Release tags are immutable. If CI has not completed, wait and retry the failed

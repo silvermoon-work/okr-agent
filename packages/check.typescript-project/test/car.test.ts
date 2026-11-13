@@ -25,7 +25,7 @@ it("builds a real CAR and independently verifies Engine pass/fail plus linked Ch
     await put(
       bad,
       "vitest.config.ts",
-      vitestConfig.replace("branches: 90", "branches: 80"),
+      vitestConfig.replace("branches: 90", "branches: 101"),
     );
     await rm(join(bad, "scripts", "check.mjs"));
     await put(

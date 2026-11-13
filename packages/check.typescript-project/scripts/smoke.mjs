@@ -46,8 +46,10 @@ async function until(action) {
 async function document(output, path) {
   const entry = await exporter(`${output.cid}/${path}`, {
     async *get(cid) {
-      yield store.readContentBlock(cid.toString()) ??
-        (await car.block.get(cid.toString()));
+      yield (
+        store.readContentBlock(cid.toString()) ??
+        (await car.block.get(cid.toString()))
+      );
     },
   });
   assert.ok(entry.type === "file" || entry.type === "raw");

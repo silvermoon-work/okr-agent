@@ -3,6 +3,13 @@
 基于 `@silvermoon-work/task-sdk@0.2.0-rc.1`
 的检查领域组合；不包含第二套运行时或构建器。
 
+## Node.js 支持
+
+SDK 的 `engines.node` 为 `>=22.15.0`。本轮经用户明确授权，将原
+`>=22.13` 的最低兼容承诺收紧至 22.15.0，与 monorepo 其他适用代码包
+保持最低版本一致；不再承诺 Node.js 22.13 或 22.14。开发环境仍独立读取
+仓库根 `.node-version`，不将开发版本当作消费者最低要求。
+
 ```ts
 // src/contract.ts — 可由编辑器正常解析，无生成类型文件
 import { Type, type Static } from "@sinclair/typebox";

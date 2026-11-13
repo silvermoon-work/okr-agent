@@ -35,7 +35,7 @@ build，可涵盖依赖，只对选中目录 pack/校验/publish 一次。其他
 门卫完整源字节必须与实际 Bundle
 resource 相同，仅允许换行归一化；两个入口与 lib 都校验，不能自由替换保障行为的模块。Check 不导入/执行目标副本。workflow 比较完整 YAML 数据语义，只在受保护 tag
 push 调用 pnpm release，手动 dispatch 调用 pnpm
-release-dry-run，不接受内部 Node 调用、裸 publish 或额外发布命令。只有 CI 的 compatibility 矩阵字面值可在验证其 2..8 个唯一精确稳定版本及逐包运行范围后改变，其他语义须与该版本资源相同。矩阵直接读取实际
+release-dry-run，不接受内部 Node 调用、裸 publish 或额外发布命令。只有 CI 的 compatibility 矩阵字面值可在验证其 2..8 个唯一精确稳定版本及统一消费者最低值前置后改变，其他语义须与该版本资源相同。矩阵直接读取实际
 `.github/workflows/ci.yaml`，不维护复制列表。所有 package
 script 名称禁止冒号，命令严格为 node scripts/<同名>.mjs 且无参数。
 
@@ -85,6 +85,6 @@ check，保留 PR 质量入口，全部必需 job/矩阵/聚合成功才合格�
 compatibility.strategy.matrix.node-version 可作有限版本参数扩展。先比较完整 workflow 结构，列明观察路径/值与期望；实际矩阵使用其他 job
 ID 时是标准结构不符，不是项目没有矩阵。前置结构不符不追加派生矩阵/发布绑定问题，独立确凿缺陷继续报告。兼容性是质量 CI 的组成部分，不再另立发布前整套检查。
 
-默认质量 job 读取根 .node-version/packageManager；兼容矩阵含 engines.node 的真实最低版本及一个更高、当前受支持的官方 LTS。各条目须满足运行范围。现有 profile 的矩阵仍执行完整开发 check：消费者最低 Node 不必支持所有现代开发工具；若工具不能运行在这些条目上，准确报告该 profile 尚不能独立证明运行兼容的 unconfirmed，不要求缩窄包 engines。完全分离消费者运行探测与开发检查仍是本 profile 的明确待扩展边界。聚合同时依赖默认与完整矩阵，固定的失败传播代码不能变成空壳成功。
+默认质量 job 读取根 .node-version/packageManager。先检查所有适用代码包（包括 private）的 engines.node 最低 SemVer 一致；缺失/非法或不同最低值先报环境问题，短路依赖的矩阵差异，但默认 CI 和发布保护仍独立检查。required 兼容矩阵含统一消费者最低值及一个更高、当前受支持且满足所有适用范围的官方 LTS。更低或范围外的额外条目标为 unsupported，不单独因此报 ci-mismatch 或声称所有包承诺该版本。现有 profile 的矩阵仍对全部条目执行完整开发 check：消费者最低 Node 不必支持所有现代开发工具；若工具不能运行在这些条目上，准确报告该 profile 尚不能独立证明运行兼容的 unconfirmed，不要求缩窄包 engines。完全分离消费者运行探测与开发检查仍是本 profile 的明确待扩展边界，需要先确认项目约定/脚本，不擅自加入新标准动作。聚合同时依赖默认与完整矩阵，固定的失败传播代码不能变成空壳成功。
 
 Check 只按完整资源和声明式工作流证据确认上述已知门卫的配置与外部连接，不以通用 scripts 接口结构证明自定义入口内部执行或发布安全，也不声称当前版本未发布、RC 历史连续、线上 CI 成功或 npm 权限已登记。这些事实由实际发布时的 fail-closed 门卫重新获取。本机生产 Check 使用检查参考声明的官方来源与新鲜度政策；不能用本 profile 或确定性测试 provider 豁免。测试仅使用本地确定性数据/纯守卫，不运行远程发布或网络发布实测。

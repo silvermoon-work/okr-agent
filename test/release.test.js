@@ -17,7 +17,7 @@ import {
   validateManifest,
   verifyUnpublished,
   verifyWorkspaceDependencies,
-} from "./release.js";
+} from "../scripts/lib/legacy-release.mjs";
 
 const packages = [
   { id: "core", name: "@example/core", directory: "packages/core" },
@@ -330,7 +330,7 @@ test("pnpm packs once without hooks, converts workspace dependencies and passes 
     const tarball = join(directory, "release.tgz");
     // Use the same pnpm executable that launched the repository test command.
     const pnpm = process.env.npm_execpath;
-    assert.ok(pnpm, "Run this test through pnpm test:release");
+    assert.ok(pnpm, "Run this test through pnpm test-release");
     const args = [
       "--config.ignore-scripts=true",
       "--dir",
@@ -383,7 +383,7 @@ test("pnpm packs once without hooks, converts workspace dependencies and passes 
 });
 
 test("metadata CLI keeps the preset private and requires supported events", () => {
-  const command = resolve("scripts", "release.js");
+  const command = resolve("scripts", "lib", "legacy-release.mjs");
   for (const env of [
     { RELEASE_EVENT: "push", RELEASE_TAG: "core-v0.0.0" },
     { RELEASE_EVENT: "workflow_dispatch", PACKAGE_INPUT: "core" },

@@ -14,7 +14,15 @@
     },
     "test": {
       "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "test-coverage": {
+      "dependsOn": ["^build"],
       "outputs": ["coverage/**"]
+    },
+    "lint-package": {
+      "dependsOn": ["build"],
+      "outputs": []
     },
     "typecheck": {
       "dependsOn": ["^build"],

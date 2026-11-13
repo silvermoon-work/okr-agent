@@ -2,6 +2,10 @@ packages:
   - apps/*
   - packages/*
 
+engineStrict: true
+saveExact: false
+strictPeerDependencies: true
+
 allowBuilds:
   esbuild: true
 
@@ -14,24 +18,23 @@ catalog:
   "@silvermoon-work/ipfs-store": 0.1.0-rc.1
   "@sinclair/typebox": 0.34.52
   commander: 14.0.2
-  yaml: 2.8.1
+  yaml: ^2.8.1
   acorn: ^8.15.0
   ipfs-unixfs-exporter: 16.2.3
   nrm: 1.2.6
   "@eslint/js": ^10.0.1
   "@types/node": ^26.6.6
-  "@vitest/coverage-v8": ^5.0.4
+  "@vitest/coverage-v8": ^5.1.0
   eslint: ^10.14.0
-  globals: ^17.13.0
-  github-ci-verify: 0.1.0
-  prettier: ^3.9.10
+  globals: ^17.14.0
+  prettier: ^3.10.1
   publint: ^0.3.25
-  semver: ^7.8.5
+  semver: ^7.8.6
   "@types/semver": ^7.7.1
-  turbo: ^2.11.10
+  turbo: ^2.11.11
   typescript: ^6.0.3
-  typescript-eslint: ^8.72.1
-  vitest: ^5.0.4
+  typescript-eslint: ^8.72.2
+  vitest: ^5.1.0
 
 minimumReleaseAgeExclude:
   - "@turbo/darwin-64@2.11.8"
