@@ -8,6 +8,7 @@
     "build": "node scripts/build.mjs",
     "clean": "node scripts/clean.mjs",
     "lint": "node scripts/lint.mjs",
+    "native-test": "node scripts/native-test.mjs",
     "nvm-smoke": "node scripts/nvm-smoke.mjs",
     "smoke": "node scripts/smoke.mjs",
     "test": "node scripts/test.mjs",

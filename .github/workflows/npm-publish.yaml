@@ -29,11 +29,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: pnpm
-      - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
       - run: npm install --global npm@11.21.0
       - if: github.event_name == 'push'

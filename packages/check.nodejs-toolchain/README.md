@@ -23,14 +23,22 @@ node packages/check.nodejs-toolchain/scripts/smoke.mjs packages/check.nodejs-too
 
 Builder 一次生成标准目录和
 `dist/nodejs-toolchain.car`（忽略目录），并报告根 CID；无需重复运行 task-builder
-car。测试也会独立构建 CAR，完整校验 DAG，通过公开 Engine 执行和输出 CID 读取中文文档字节，检查取消/超时与实际子 PID 回收。受控故障脚本不是实际工具支持证据。可增加
+car。默认测试独立构建生产 CAR，完整校验 DAG，通过公开 Engine 在受控工具目录执行并从输出 CID 读取中文文档字节，检查取消/超时与实际子 PID 回收。工具响应由明确的 fixture 提供，只依赖执行测试的 Node，不读取宿主 npm/pnpm/nrm 安装或个人配置。受控脚本不是实际工具支持证据。默认测试不是上面不带参数的原生 smoke；原生 smoke 必须显式运行。可增加
 `--nvm` 诊断宿主原有 nvm；该原安装仍会超时，不用于替代下面的官方隔离实证。
 
-本地测试和 smoke
-harness 有意只选择宿主 PATH 中已去引号的绝对目录，排除空项、相对路径及未展开的环境变量占位符；不修改宿主 PATH，不放宽 Check 输入校验。Windows
-npm-prefix 回归复制真实 npm 本体，并通过私有 junction 只读复用原安装依赖，避免递归复制整棵依赖树导致默认测试预算超时；清理仅删除私有副本和链接。
+单元测试 mock 外部工具结果，并用真实文件系统中的新旧 pnpm shim
+fixture 检查入口识别。默认测试只选择当前 Node 和自有 fixture 目录，不从宿主 PATH 猜测其他工具；原生 smoke 才选择宿主 PATH 中已去引号的绝对目录。两者都不修改宿主 PATH，不放宽 Check 输入校验。
 
-两个连续执行多次真实 npm 查询的用例使用 30 秒测试预算，避免全量并发构建时被 Vitest 默认 5 秒提前中断并与清理竞争；每条工具命令仍保留原来的 10 秒执行限制。
+依赖真实 npm 安装的优先级及 Windows npm-prefix 用例默认不运行，可显式执行：
+
+```sh
+pnpm --filter @silvermoon-work/check.nodejs-toolchain native-test
+pnpm --filter @silvermoon-work/check.nodejs-toolchain smoke
+```
+
+仓库的 `Native toolchain compatibility`
+workflow 可手动在 Ubuntu 和 Windows 上执行这两组验证，工具来自固定 packageManager、lockfile 和 devDependencies。它独立于默认质量门禁，不代表每台开发机都需安装这些工具。Windows
+npm-prefix 回归复制真实 npm 本体，通过私有 junction 只读复用原安装依赖，清理仅删除私有副本和链接。真实 npm 用例使用 30 秒测试预算；每条工具命令仍保留 10 秒执行限制。
 
 ### 官方 portable nvm-windows 隔离实证
 

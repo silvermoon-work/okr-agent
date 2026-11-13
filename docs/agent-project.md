@@ -77,6 +77,13 @@
   types, lint, coverage, `test-release`, package lint, and `check-scripts`.
   `pnpm test` is a single non-coverage run; use `pnpm test-coverage` for
   coverage.
+- A non-code aggregate root is not built again by the per-project check plan;
+  its `pnpm build` remains the explicit Turbo aggregate action. Each member is
+  built once in dependency order. Keep the standard command asset and installed
+  workspace copies in sync when changing this behavior.
+- Default toolchain tests use controlled tools and isolated configuration, not
+  ambient npm/pnpm/nrm installations. Real installed-tool checks are explicit
+  `native-test`/`smoke` actions and the manual cross-platform native workflow.
 - Coverage thresholds are project-owned policy, not a universal Check minimum.
   The user approved temporary global thresholds of 65% for branches, functions,
   lines and statements in this normalization round. Keep coverage enabled,

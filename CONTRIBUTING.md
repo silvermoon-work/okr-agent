@@ -22,6 +22,14 @@ extra arguments; use a workspace's
 `pnpm exec vitest run --root . --config ../../vitest.config.ts test/<file>.test.ts`
 for a focused test.
 
+Default tests use mocked external results and controlled filesystem/process
+fixtures. They must not depend on personal configuration, live services or
+ambient npm/pnpm/nrm installations. Native tool compatibility is a separate,
+explicit validation: use the `Native toolchain compatibility` manual workflow,
+or run the toolchain workspace's `native-test` and `smoke` actions after
+building it. Do not remove native compatibility coverage or turn unknown tools
+into success to make the default gate pass.
+
 Project-specific agent guidance is in
 [docs/agent-project.md](docs/agent-project.md). Keep the fixed root AGENTS.md
 and standard command cores unchanged.

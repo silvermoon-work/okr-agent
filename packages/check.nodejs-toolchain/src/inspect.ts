@@ -244,6 +244,18 @@ async function assertPnpmStartup(
   }
 }
 
+export function posixNrmTarget(shim: string): string | undefined {
+  if (!shim.startsWith("#!/bin/sh\n")) return undefined;
+  const targets = new Set(
+    [
+      ...shim.matchAll(
+        /^\s*exec\s+(?:"\$basedir\/node(?:\.exe)?"|node(?:\.exe)?)\s+(?:"\$(?:basedir|basedir_win)\/([A-Za-z0-9_@./+~-]+(?:cli\.js|dist\/index\.js))"|"\$(?:basedir_abs|basedir_win)"\/'([A-Za-z0-9_@./+~-]+(?:cli\.js|dist\/index\.js))')\s+"\$@"\s*$/gm,
+      ),
+    ].map((match) => match[1] ?? match[2]),
+  );
+  return targets.size === 1 ? [...targets][0] : undefined;
+}
+
 export function nativeHost(env: NodeJS.ProcessEnv): Host {
   const host: Host = {
     platform: process.platform,
@@ -318,11 +330,8 @@ export function nativeHost(env: NodeJS.ProcessEnv): Host {
               cli = await realpath(resolve(dirname(entry), relativeCli));
             } else if (dirname(selected.realPath).endsWith(`${sep}.bin`)) {
               const shim = await readFile(entry, "utf8");
-              const relativeCli =
-                /"\$(?:basedir|basedir_win)\/([^"\r\n]+(?:cli\.js|dist\/index\.js))"/.exec(
-                  shim,
-                )?.[1];
-              if (!shim.startsWith("#!/bin/sh") || !relativeCli)
+              const relativeCli = posixNrmTarget(shim);
+              if (!relativeCli)
                 throw new Error(
                   "Cannot establish read-only nrm entry provenance.",
                 );

@@ -16,6 +16,7 @@ import {
   newId,
 } from "@silvermoon-work/task-engine";
 import { exporter } from "ipfs-unixfs-exporter";
+import { fixtureTools } from "./lib/fixture-tools.mjs";
 
 const packageDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const carPath = resolve(
@@ -37,6 +38,7 @@ const engine = createTaskEngine({
   limits: { stopGraceMs: 5000, forceExitWaitMs: 5000 },
 });
 const owned = join(directory, "dist", `.toolchain-engine-${randomUUID()}`);
+const fixtureMode = process.argv.includes("--fixture");
 const project = join(owned, "project");
 const userOnly = join(owned, "user-only");
 const interpolation = join(owned, "interpolation");
@@ -48,13 +50,15 @@ const standaloneConfigDependencies = join(
 // The harness selects absolute tool directories, not implicit cwd or host shell
 // PATH placeholders; no other environment is copied.
 const executionEnvironment = {
-  path: [
-    join(packageDirectory, "node_modules", ".bin"),
-    ...(process.env.PATH ?? "")
-      .split(delimiter)
-      .map((p) => p.replace(/^"|"$/g, ""))
-      .filter((p) => isAbsolute(p)),
-  ],
+  path: fixtureMode
+    ? [join(owned, "tools", "node_modules", ".bin")]
+    : [
+        join(packageDirectory, "node_modules", ".bin"),
+        ...(process.env.PATH ?? "")
+          .split(delimiter)
+          .map((p) => p.replace(/^"|"$/g, ""))
+          .filter((p) => isAbsolute(p)),
+      ],
   ...(process.platform === "win32"
     ? {
         pathExtensions: [".COM", ".EXE", ".BAT", ".CMD"],
@@ -207,6 +211,28 @@ const cases = [
     stage: "failed",
   },
 ];
+if (fixtureMode) {
+  cases.splice(2, 3, {
+    name: "fixture-tools",
+    input: {
+      context: context(project),
+      requirements: {
+        tools: realTools,
+        registries: {
+          ...active("https://fixture.example.test/"),
+          nrm: {
+            required: [
+              { name: "owned", url: "https://registered.example.test/" },
+            ],
+          },
+        },
+      },
+    },
+    pass: true,
+  });
+  cases.find((sample) => sample.name === "real-nrm-missing-and-mismatch").name =
+    "fixture-nrm-missing-and-mismatch";
+}
 if (process.argv.includes("--nvm")) {
   const managed = {
     ...executionEnvironment,
@@ -332,6 +358,7 @@ try {
     ],
   ]);
   for (const [path, content] of snapshots) await writeFile(path, content);
+  if (fixtureMode) await fixtureTools(owned);
   cases.push(
     await fixture("cancel", 30_000),
     await fixture("task-timeout", 1500),
@@ -378,13 +405,14 @@ try {
   // pnpm 11 treats npm_config_registry as a user-level source; a project
   // registry wins. pnpm 10 treats it as an environment override. Both must be
   // observed natively, independently of npm's own precedence.
-  cases.find(
-    (sample) => sample.name === "real-tools-environment",
-  ).input.requirements.registries.active.pnpm.allowedUrls = [
-    major === 11
-      ? "https://project.example.test/custom/"
-      : "https://env.example.test/",
-  ];
+  if (!fixtureMode)
+    cases.find(
+      (sample) => sample.name === "real-tools-environment",
+    ).input.requirements.registries.active.pnpm.allowedUrls = [
+      major === 11
+        ? "https://project.example.test/custom/"
+        : "https://env.example.test/",
+    ];
   tracked.push({
     name: "pnpm-version",
     taskId: probe.taskId,
@@ -539,6 +567,7 @@ try {
   console.log(
     JSON.stringify({
       ok: true,
+      mode: fixtureMode ? "fixture" : "native",
       carPath,
       bundleCid: car.cid,
       results,

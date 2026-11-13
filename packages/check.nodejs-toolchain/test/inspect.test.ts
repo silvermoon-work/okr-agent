@@ -21,6 +21,7 @@ import {
   compareVersions,
   inspect,
   nativeHost,
+  posixNrmTarget,
   parseNrm,
   registryUrl,
   validateInput,
@@ -35,9 +36,10 @@ import {
 } from "../src/execution-context.js";
 
 const cwd = resolve(".");
+const nativeTests = process.env["TOOLCHAIN_NATIVE_TESTS"] === "1";
 // The harness selects absolute tool directories, not host shell PATH placeholders.
 const selected = captureExecutionEnvironment({
-  PATH: (process.env.PATH ?? "")
+  PATH: (nativeTests ? (process.env.PATH ?? "") : dirname(process.execPath))
     .split(delimiter)
     .map((directory) => directory.replace(/^"|"$/g, ""))
     .filter((directory) => isAbsolute(directory))
@@ -467,6 +469,31 @@ async function scratch() {
   return path;
 }
 describe("native read-only execution", () => {
+  it.each([
+    ['exec node "$basedir/../nrm/cli.js" "$@"', "../nrm/cli.js"],
+    ['exec node "$basedir_win/../nrm/cli.js" "$@"', "../nrm/cli.js"],
+    [
+      'exec "$basedir/node" "$basedir_abs"/\'../.pnpm/nrm@1.2.6/node_modules/nrm/cli.js\' "$@"',
+      "../.pnpm/nrm@1.2.6/node_modules/nrm/cli.js",
+    ],
+    [
+      'exec node.exe "$basedir_win"/\'../nrm/dist/index.js\' "$@"',
+      "../nrm/dist/index.js",
+    ],
+  ])(
+    "recognizes a supported pnpm nrm launcher without executing it: %s",
+    (line, target) => {
+      expect(posixNrmTarget(`#!/bin/sh\n${line}\n`)).toBe(target);
+    },
+  );
+  it.each([
+    '#!/usr/bin/env node\nexec node "$basedir/../nrm/cli.js" "$@"\n',
+    '#!/bin/sh\nexec node "$unknown/../nrm/cli.js" "$@"\n',
+    '#!/bin/sh\nexec node "$basedir/$(unknown)/cli.js" "$@"\n',
+    '#!/bin/sh\nexec node "$basedir/../nrm/cli.js" "$@"\nexec node "$basedir/../other/cli.js" "$@"\n',
+  ])("rejects unknown, dynamic or conflicting nrm launchers: %s", (shim) => {
+    expect(posixNrmTarget(shim)).toBeUndefined();
+  });
   it("preserves a real tool failure and identifies unsupported registry interpolation", async () => {
     const result = await execute(
       process.execPath,
@@ -522,9 +549,9 @@ describe("native read-only execution", () => {
     },
   );
 
-  it.runIf(process.platform !== "win32")(
-    "resolves a pnpm POSIX nrm shim before checking read-only package provenance",
-    async () => {
+  it.runIf(process.platform !== "win32").each(["legacy", "pnpm-11"] as const)(
+    "resolves a %s POSIX nrm shim before checking read-only package provenance",
+    async (format) => {
       const directory = await scratch();
       const bins = join(directory, "node_modules", ".bin");
       const nrm = join(directory, "node_modules", "nrm");
@@ -532,7 +559,9 @@ describe("native read-only execution", () => {
       await mkdir(nrm, { recursive: true });
       await writeFile(
         join(bins, "nrm"),
-        '#!/bin/sh\nexec node "$basedir/../nrm/cli.js" "$@"\n',
+        format === "legacy"
+          ? '#!/bin/sh\nexec node "$basedir/../nrm/cli.js" "$@"\n'
+          : '#!/bin/sh\nexec node "$basedir_abs"/\'../nrm/cli.js\' "$@"\n',
       );
       await writeFile(join(nrm, "cli.js"), "// Not executed by discovery.\n");
       await writeFile(
@@ -624,72 +653,126 @@ process.stdout.write("11.22.0\\n");`,
     );
     expect(problems).toEqual([]);
   });
-  it("honors isolated npm project and environment registry overrides without changing files", async () => {
-    const directory = await scratch();
-    const env = selectedEnv();
-    env.npm_config_userconfig = join(directory, "user.npmrc");
-    env.npm_config_globalconfig = join(directory, "global.npmrc");
-    await writeFile(
-      env.npm_config_userconfig,
-      "registry=https://user.example.test/\n",
-    );
-    await writeFile(env.npm_config_globalconfig, "");
-    await writeFile(
-      join(directory, "package.json"),
-      '{"private":true,"scripts":{"preinstall":"exit 99"}}\n',
-    );
-    const host = nativeHost(env);
-    const npm = await host.locate("npm", cwd);
-    expect(npm).toBeDefined();
-    const config = join(directory, ".npmrc");
-    await writeFile(config, "registry=https://project.example.test/custom/\n");
-    const before = await readFile(config);
-    const result = await host.run(
-      npm!,
-      ["config", "get", "registry"],
-      directory,
-      signal(),
-    );
-    expect(result).toMatchObject({
-      code: 0,
-      stdout: "https://project.example.test/custom/\n",
-    });
-    const override = nativeHost({
-      ...env,
-      npm_config_registry: "https://env.example.test/",
-    });
-    expect(
-      await override.run(
+  it.each(["workspace", "global"] as const)(
+    "validates isolated %s pnpm registry configuration with mocked process output",
+    async (source) => {
+      const directory = await scratch();
+      const workspace = join(directory, "pnpm-workspace.yaml");
+      const global = join(directory, "global.yaml");
+      await writeFile(workspace, "packages: []\n");
+      await writeFile(global, "{}\n");
+      const configuration = source === "workspace" ? workspace : global;
+      const host = nativeHost({});
+      host.run = (_entry, args, project) => {
+        expect(args).toEqual(["config", "get", "globalconfig"]);
+        expect(project).toBe(directory);
+        return Promise.resolve({ code: 0, stdout: `${global}\n` });
+      };
+      await writeFile(
+        configuration,
+        "registry: https://fixture.example.test/\n",
+      );
+      await expect(
+        host.assertRegistryContext("pnpm", entry("pnpm"), directory, signal()),
+      ).resolves.toBeUndefined();
+      for (const [contents, message] of [
+        ["registry: https://${UNAPPROVED_REGISTRY_HOST}/\n", "interpolation"],
+        [
+          "registry: [https://fixture.example.test/]\n",
+          "valid pnpm default registry",
+        ],
+      ] as const) {
+        await writeFile(configuration, contents);
+        await expect(
+          host.assertRegistryContext(
+            "pnpm",
+            entry("pnpm"),
+            directory,
+            signal(),
+          ),
+        ).rejects.toThrow(message);
+        expect(await readFile(configuration, "utf8")).toBe(contents);
+      }
+    },
+  );
+  it.runIf(nativeTests)(
+    "honors isolated npm project and environment registry overrides without changing files",
+    async () => {
+      const directory = await scratch();
+      const env = selectedEnv();
+      env.npm_config_userconfig = join(directory, "user.npmrc");
+      env.npm_config_globalconfig = join(directory, "global.npmrc");
+      await writeFile(
+        env.npm_config_userconfig,
+        "registry=https://user.example.test/\n",
+      );
+      await writeFile(env.npm_config_globalconfig, "");
+      await writeFile(
+        join(directory, "package.json"),
+        '{"private":true,"scripts":{"preinstall":"exit 99"}}\n',
+      );
+      const host = nativeHost(env);
+      const npm = await host.locate("npm", cwd);
+      expect(npm).toBeDefined();
+      const config = join(directory, ".npmrc");
+      await writeFile(
+        config,
+        "registry=https://project.example.test/custom/\n",
+      );
+      const before = await readFile(config);
+      const result = await host.run(
         npm!,
         ["config", "get", "registry"],
         directory,
         signal(),
-      ),
-    ).toMatchObject({ code: 0, stdout: "https://env.example.test/\n" });
-    expect(await readFile(config)).toEqual(before);
-    await writeFile(config, "registry=https://${UNAPPROVED_REGISTRY_HOST}/\n");
-    const interpolated = {
-      context: {
-        projectDirectory: directory,
-        executionEnvironment: {
-          ...selected,
-          npmConfig: {
-            userConfig: env.npm_config_userconfig,
-            globalConfig: env.npm_config_globalconfig,
+      );
+      expect(result).toMatchObject({
+        code: 0,
+        stdout: "https://project.example.test/custom/\n",
+      });
+      const override = nativeHost({
+        ...env,
+        npm_config_registry: "https://env.example.test/",
+      });
+      expect(
+        await override.run(
+          npm!,
+          ["config", "get", "registry"],
+          directory,
+          signal(),
+        ),
+      ).toMatchObject({ code: 0, stdout: "https://env.example.test/\n" });
+      expect(await readFile(config)).toEqual(before);
+      await writeFile(
+        config,
+        "registry=https://${UNAPPROVED_REGISTRY_HOST}/\n",
+      );
+      const interpolated = {
+        context: {
+          projectDirectory: directory,
+          executionEnvironment: {
+            ...selected,
+            npmConfig: {
+              userConfig: env.npm_config_userconfig,
+              globalConfig: env.npm_config_globalconfig,
+            },
           },
         },
-      },
-      requirements: {
-        tools: { npm: {} },
-        registries: {
-          active: { npm: { allowedUrls: ["https://fallback.example.test/"] } },
+        requirements: {
+          tools: { npm: {} },
+          registries: {
+            active: {
+              npm: { allowedUrls: ["https://fallback.example.test/"] },
+            },
+          },
         },
-      },
-    };
-    await expect(
-      inspect(interpolated, signal(), () => undefined),
-    ).rejects.toThrow();
-  }, 30_000);
+      };
+      await expect(
+        inspect(interpolated, signal(), () => undefined),
+      ).rejects.toThrow();
+    },
+    30_000,
+  );
   it.skipIf(process.platform !== "win32")(
     "refuses a potentially mutating nrm startup before invoking it",
     async () => {
@@ -718,7 +801,7 @@ process.stdout.write("11.22.0\\n");`,
       await expect(access(marker)).rejects.toThrow();
     },
   );
-  it.skipIf(process.platform !== "win32")(
+  it.runIf(nativeTests && process.platform === "win32")(
     "honors the real npm shim's explicit prefix for both execution and pairing provenance",
     async () => {
       const directory = await scratch();

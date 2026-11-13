@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { expect, it } from "vitest";
 import { runCheckBuilderCli } from "@silvermoon-work/check-task-builder/cli";
 
-it("imports a real standard CAR into the unmodified published Engine and checks native contexts, documents and reclamation", async () => {
+it("imports a production CAR into the published Engine with controlled tools, documents and reclamation", async () => {
   const owned = resolve("dist", `.toolchain-car-${randomUUID()}`);
   await mkdir(owned, { recursive: true });
   try {
@@ -26,11 +26,17 @@ it("imports a real standard CAR into the unmodified published Engine and checks 
     expect(code, output).toBe(0);
     const { stdout } = await promisify(execFile)(
       process.execPath,
-      ["scripts/smoke.mjs", join(owned, "bundle.car"), resolve("../..")],
+      [
+        "scripts/smoke.mjs",
+        join(owned, "bundle.car"),
+        resolve("../.."),
+        "--fixture",
+      ],
       { cwd: resolve("."), timeout: 60_000 },
     );
     const evidence = JSON.parse(stdout) as {
       ok: boolean;
+      mode: string;
       bundleCid: string;
       results: {
         name: string;
@@ -42,6 +48,7 @@ it("imports a real standard CAR into the unmodified published Engine and checks 
       fixtureChildrenReclaimed: boolean;
     };
     expect(evidence.ok).toBe(true);
+    expect(evidence.mode).toBe("fixture");
     expect(evidence.bundleCid).toMatch(/^bafy/);
     expect(
       evidence.results.find((sample) => sample.name === "node-only")?.pass,

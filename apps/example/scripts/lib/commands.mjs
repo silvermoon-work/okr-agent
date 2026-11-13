@@ -152,6 +152,12 @@ export function plan(projects, action, scope = ".") {
         ? selected
         : strategy.scopes) {
       if (name === "build") {
+        if (
+          project.directory === "." &&
+          project.code === false &&
+          projects.length > 1
+        )
+          continue;
         if (project.manifest.scripts?.build !== undefined)
           tasks.push({ directory: project.directory, args: ["run", "build"] });
         continue;

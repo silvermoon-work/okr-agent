@@ -1,0 +1,24 @@
+name: Native toolchain compatibility
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @silvermoon-work/check.nodejs-toolchain... build
+      - run: pnpm --filter @silvermoon-work/check.nodejs-toolchain native-test
+      - run: pnpm --filter @silvermoon-work/check.nodejs-toolchain smoke

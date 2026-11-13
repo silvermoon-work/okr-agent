@@ -137,6 +137,37 @@ it("orders dependency builds before dependants and package checks, and connects 
   Object.assign(cyclic[2]!.manifest, { dependencies: { app: "workspace:*" } });
   expect(() => commands.plan(cyclic, "check")).toThrow("Cyclic");
 });
+it("does not rebuild members through a non-code aggregate root, while preserving code roots and single packages", () => {
+  const projects = structuredClone(config);
+  Object.assign(projects[0]!, { code: false });
+  Object.assign(projects[0]!.manifest.scripts, {
+    build: "node scripts/build.mjs",
+  });
+  const builds = (value: unknown) =>
+    commands
+      .plan(value, "check")
+      .filter((task) => task.args.join(" ") === "run build");
+  expect(builds(projects).map((task) => task.directory)).toEqual([
+    "packages/core",
+    "packages/app",
+  ]);
+  expect(
+    commands
+      .plan(projects, "check", "packages/app")
+      .filter((task) => task.args.join(" ") === "run build")
+      .map((task) => task.directory),
+  ).toEqual(["packages/core", "packages/app"]);
+  expect(builds([projects[0]]).map((task) => task.directory)).toEqual(["."]);
+  Object.assign(projects[0]!, {
+    code: true,
+    configs: {
+      typecheck: "tsconfig.json",
+      lint: "eslint.config.js",
+      test: "vitest.config.ts",
+    },
+  });
+  expect(builds(projects).map((task) => task.directory)).toContain(".");
+});
 it("discovers catalog-only and member workspaces from pnpm and existing tool configuration without duplicate topology files", async () => {
   const root = resolve("dist", `.commands-${randomUUID()}`);
   await mkdir(root, { recursive: true });

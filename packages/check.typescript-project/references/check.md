@@ -71,6 +71,10 @@ projects/workspace/root，多项目配置报告 unconfirmed，不因为根有配
 /
 check-* 命名识别相应补充动作（排除固定标准动作），普通扩展仍可自由实现，不另要求新拓扑文件。自定义 build/扩展不解释内部，只传播其失败。
 
+多成员项目的无源码聚合根不加入逐项目构建计划，避免先执行根 Turbo 聚合 build、再对同一批成员重复构建；有代码职责的根和单包自身 build 仍保留。根
+`pnpm build`
+可继续作为手动聚合入口。发布 workflow 先通过 pnpm/action-setup 准备 pnpm，再由 setup-node 初始化 pnpm 缓存，不依赖 runner 预装包管理器。
+
 唯一标准资产的嵌套副本只有在正文完整一致、位于所属项目 assets/AGENTS.md，且 check.build.yaml 明确将 assets/** 交付到 resources/assets/ 时才识别为 Bundle 数据。不对其他嵌套入口或已修改副本作此豁免，它们仍无法确认。
 
 映射身份使用全部声明成员核对，不因成员仍 private 就误报不存在或 name 不匹配；映射包含 private 包本身不表示允许发布。对 private 包只在有明确允许发布的证据时报告发布保护问题；目前可识别 workflow 在同一静态工作目录显式
