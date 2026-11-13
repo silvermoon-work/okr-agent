@@ -35,7 +35,6 @@ export interface Metadata {
   ): Promise<Observation<PackageFacts>>;
   node(this: void): Promise<Observation<NodeFacts>>;
 }
-export const MAX_AGE = 3_600_000;
 export const METADATA_PROFILE = "canonical-v1";
 const registry = "https://registry.npmjs.org/";
 const scheduleUrl =
@@ -61,17 +60,16 @@ const publicTools = new Set([
   "github-ci-verify",
   "semver",
 ]);
-export function fresh<T>(evidence: Observation<T>, now = Date.now()): T {
+export function verified<T>(evidence: Observation<T>, now = Date.now()): T {
   if (!evidence.authoritative)
     throw new Unconfirmed(`${evidence.source}: 缺少可信完整发行证据`);
   if (
     !Number.isFinite(evidence.observedAt) ||
     evidence.observedAt > now + 60_000 ||
-    now - evidence.observedAt > MAX_AGE ||
     !evidence.source.startsWith("https://")
   )
     throw new Unconfirmed(
-      `${evidence.source}: 发行证据过期、来源无效或观察时间不可信，observedAt=${evidence.observedAt}`,
+      `${evidence.source}: 发行证据来源无效或观察时间不可信，observedAt=${evidence.observedAt}`,
     );
   return evidence.data;
 }
@@ -149,7 +147,7 @@ export function publicMetadata(signal: AbortSignal): Metadata {
       const response = await fetch(url, {
         signal: AbortSignal.any([signal, runDeadline, timeout]),
         redirect: "error",
-        headers: { accept, "cache-control": "no-cache" },
+        headers: { accept },
       });
       if (!response.ok)
         throw new Unconfirmed(`${url}: HTTP ${response.status}`);
@@ -171,12 +169,10 @@ export function publicMetadata(signal: AbortSignal): Metadata {
         !Number.isFinite(date) ||
         date > now + 60_000 ||
         (rawAge !== null && !/^\d+$/.test(rawAge)) ||
-        !Number.isSafeInteger(age) ||
-        cacheAgeMs > MAX_AGE ||
-        /stale|expired|revalidating|\b11[01]\b/i.test(state)
+        !Number.isSafeInteger(age)
       )
         throw new Unconfirmed(
-          `${url}: 缓存陈旧或无法确认 HTTP 响应新鲜度；Date=${response.headers.get("date")}, Age=${rawAge ?? "0"}s, cacheAgeMs=${cacheAgeMs}；要求至多 ${MAX_AGE}ms 且无 stale/expired/revalidating (${state.trim() || "no cache status"})`,
+          `${url}: HTTP 响应时间无效；Date=${response.headers.get("date")}, Age=${rawAge ?? "0"}s`,
         );
       if (
         url.startsWith(registry) &&
@@ -297,7 +293,7 @@ export function publicMetadata(signal: AbortSignal): Metadata {
           "内部元数据选择必须是稳定精确 current 与固定 SemVer 系列",
         );
       const observed = await packument(name);
-      const facts = fresh(observed);
+      const facts = verified(observed);
       const newest = maxSatisfying(facts.stable, selection.series);
       if (!newest || !facts.stable.includes(selection.current))
         throw new Unconfirmed(

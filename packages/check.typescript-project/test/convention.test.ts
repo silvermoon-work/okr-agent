@@ -667,15 +667,13 @@ it("checks actual auto-installed Vite Node compatibility without requiring a dir
     }),
   );
 });
-it("treats metadata failures and expired observations as unconfirmed, never stale success", async () => {
+it("accepts cached tool metadata without a fixed observation age limit", async () => {
   const provider = evidence.metadata.package;
   evidence.metadata.package = async (name, selection) => ({
     ...(await provider(name, selection)),
-    observedAt: Date.now() - 3_600_001,
+    observedAt: Date.now() - 86_400_000,
   });
-  expect((await check()).map((p) => p.code)).toContain(
-    "dependency-unconfirmed",
-  );
+  expect(await check()).toEqual([]);
 });
 it("reports malformed lockfile and unsupported dependency protocols without executing or faulting", async () => {
   await put(root, "pnpm-lock.yaml", "importers: [broken");

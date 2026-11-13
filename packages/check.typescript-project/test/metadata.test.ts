@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { fresh, publicMetadata } from "../src/metadata.js";
+import { verified, publicMetadata } from "../src/metadata.js";
 import {
   canonicalPackument,
   canonicalTransport,
@@ -26,7 +26,7 @@ it.each([302, 404, 429, 503])(
   },
 );
 it.each(["empty-body", "invalid-json", "missing-date", "future-date"] as const)(
-  "rejects unusable fresh-source responses without a fallback: %s",
+  "rejects unusable source responses without a fallback: %s",
   async (mode) => {
     const response =
       mode === "empty-body"
@@ -75,7 +75,7 @@ it("parses a complete canonical packument through mocked HTTP, not global latest
   ]);
   expect(cached).toEqual(observed);
   expect(observed.authoritative).toBe(true);
-  const facts = fresh(observed);
+  const facts = verified(observed);
   expect(facts.versions).toEqual(["7.0.0", "6.1.0", "6.0.3"]);
   expect(Object.keys(facts.releases).sort()).toEqual(["6.0.3", "6.1.0"]);
   expect(facts.releases["6.0.3"]?.peerDependencies).toEqual({ eslint: "^10" });
@@ -111,10 +111,10 @@ it("encodes scoped public tools and shares a complete packument across SemVer se
   );
   const provider = publicMetadata(new AbortController().signal);
   await provider.package("@eslint/js", { current: "10.0.1", series: "10.x" });
-  const minor = fresh(
+  const minor = verified(
     await provider.package("publint", { current: "0.3.25", series: "0.3.x" }),
   );
-  const exact = fresh(
+  const exact = verified(
     await provider.package("publint", { current: "0.0.5", series: "0.0.5" }),
   );
   expect(Object.keys(minor.releases)).toEqual(["0.3.25", "0.3.26"]);
@@ -176,15 +176,8 @@ it.each([
     ).rejects.toThrow();
   },
 );
-it.each([
-  { age: "3601" },
-  { age: "-1" },
-  { age: "bad" },
-  { date: new Date(Date.now() - 3_700_000).toUTCString() },
-  { "x-cache": "STALE" },
-  { "content-type": "text/html" },
-])(
-  "never falls back after stale or invalid canonical HTTP evidence: %j",
+it.each([{ age: "-1" }, { age: "bad" }, { "content-type": "text/html" }])(
+  "never falls back after invalid canonical HTTP evidence: %j",
   async (headers) => {
     const fetcher = vi
       .spyOn(globalThis, "fetch")
@@ -206,35 +199,75 @@ it.each([
     );
   },
 );
-it("requires fresh Node index and lifecycle evidence together", async () => {
+it.each([
+  { age: "7724" },
+  { date: new Date(Date.now() - 86_400_000).toUTCString() },
+  { "x-cache": "STALE" },
+  { "cache-status": "expired" },
+  { "x-nitro-cache": "revalidating" },
+  { warning: '110 - "Response is stale"' },
+])(
+  "accepts canonical registry cache delays and status hints: %j",
+  async (headers) => {
+    const fetcher = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        metadataResponse(
+          canonicalPackument("typescript", [{ version: "6.0.3" }]),
+          headers,
+        ),
+      );
+    const observation = await publicMetadata(
+      new AbortController().signal,
+    ).package("typescript", selection);
+    expect(verified(observation).versions).toEqual(["6.0.3"]);
+    expect(fetcher.mock.calls[0]?.[1]?.headers).toEqual({
+      accept: "application/vnd.npm.install-v1+json",
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  },
+);
+it("requires official Node index and lifecycle evidence together", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(canonicalTransport());
   const observed = await publicMetadata(new AbortController().signal).node();
   expect(Date.now() - observed.observedAt).toBeLessThan(5_000);
-  expect(fresh(observed).historicalIndex?.cacheAgeMs).toBeLessThan(5_000);
+  expect(verified(observed).historicalIndex?.cacheAgeMs).toBeLessThan(5_000);
   expect(observed.source).not.toContain("historical-only=true");
   expect(observed.source).toContain(
     "api.github.com/repos/nodejs/Release/contents/schedule.json",
   );
 });
-it.each([
-  "stale-index",
-  "stale-schedule",
-  "missing-content",
-  "wrong-sha",
-  "invalid-date",
-] as const)(
-  "never uses stale index or invalid lifecycle evidence to select a latest LTS: %s",
+it.each(["index", "schedule"] as const)(
+  "accepts cached Node %s data and retains the cache age as evidence",
+  async (source) => {
+    const transport = canonicalTransport();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const response = await transport(input);
+      if (
+        source === "index"
+          ? requestUrl(input) === "https://nodejs.org/dist/index.json"
+          : requestUrl(input).startsWith("https://api.github.com/")
+      ) {
+        response.headers.set("age", "172800");
+        response.headers.set("x-cache", "STALE");
+      }
+      return response;
+    });
+    const observed = await publicMetadata(new AbortController().signal).node();
+    expect(verified(observed).releases.length).toBeGreaterThan(0);
+    expect(Date.now() - observed.observedAt).toBeGreaterThanOrEqual(
+      172_800_000,
+    );
+    expect(observed.source).toContain("age=172800s,cache=STALE");
+    if (source === "index")
+      expect(observed.data.historicalIndex?.cacheAgeMs).toBe(172_800_000);
+  },
+);
+it.each(["missing-content", "wrong-sha", "invalid-date"] as const)(
+  "never uses invalid lifecycle evidence to select a latest LTS: %s",
   async (failure) => {
     const transport = canonicalTransport();
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      if (
-        failure === "stale-index" &&
-        requestUrl(input) === "https://nodejs.org/dist/index.json"
-      ) {
-        const response = await transport(input);
-        response.headers.set("age", "3601");
-        return response;
-      }
       if (!requestUrl(input).startsWith("https://api.github.com/"))
         return transport(input);
       const body: Record<string, unknown> = githubContents({
@@ -245,10 +278,7 @@ it.each([
       });
       if (failure === "missing-content") delete body.content;
       if (failure === "wrong-sha") body.sha = "0".repeat(40);
-      return metadataResponse(
-        body,
-        failure === "stale-schedule" ? { age: "3601" } : {},
-      );
+      return metadataResponse(body);
     });
     await expect(
       publicMetadata(new AbortController().signal).node(),
@@ -262,7 +292,7 @@ it("allows a full install-v1 response above 4MiB and rejects one above 16MiB", a
     metadataResponse({ ...body, padding: "x".repeat(4_200_000) }),
   );
   expect(
-    fresh(
+    verified(
       await publicMetadata(new AbortController().signal).package(
         "typescript",
         selection,
@@ -306,12 +336,32 @@ it("preserves cancellation and unexpected faults, while network errors are uncon
       selection,
     ),
   ).rejects.toBe(unexpected);
+});
+it.each([Number.NaN, Date.now() + 120_000])(
+  "rejects invalid observation times: %s",
+  (observedAt) => {
+    expect(() =>
+      verified({
+        data: {},
+        source: "https://fixture.invalid",
+        observedAt,
+        authoritative: true,
+      }),
+    ).toThrow("观察时间不可信");
+  },
+);
+it("accepts older observations without discarding provenance checks", () => {
+  const observation = {
+    data: {},
+    source: "https://fixture.invalid",
+    observedAt: Date.now() - 86_400_000,
+    authoritative: true,
+  };
+  expect(verified(observation)).toBe(observation.data);
+  expect(() => verified({ ...observation, authoritative: false })).toThrow(
+    "缺少可信完整发行证据",
+  );
   expect(() =>
-    fresh({
-      data: {},
-      source: "https://fixture.invalid",
-      observedAt: Date.now() - 3_600_001,
-      authoritative: true,
-    }),
-  ).toThrow("过期");
+    verified({ ...observation, source: "http://fixture.invalid" }),
+  ).toThrow("来源无效");
 });

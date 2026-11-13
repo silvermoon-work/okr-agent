@@ -2,7 +2,7 @@ import { gt, minVersion, parse, satisfies, validRange } from "semver";
 import { projectStrategy, type Project } from "./commands.js";
 import type { InspectionEvidence } from "./convention.js";
 import { type Files, dataYaml, record, Unconfirmed } from "./files.js";
-import { fresh, type Metadata } from "./metadata.js";
+import { verified, type Metadata } from "./metadata.js";
 import { repository } from "./repository.js";
 import { fixedFile } from "./script-profile.js";
 import { releaseMappings } from "./release-evidence.js";
@@ -414,7 +414,7 @@ export async function compatibilityMatrix(
       );
   }
   const observed = await metadata.node();
-  const facts = fresh(observed);
+  const facts = verified(observed);
   if (
     profile.nodeVersions.some(
       (version) =>
@@ -424,6 +424,7 @@ export async function compatibilityMatrix(
     )
   )
     throw new Unconfirmed("官方发行事实不能确认全部兼容矩阵版本");
+  const now = Date.now();
   if (
     !supported.some((version) => {
       const lifecycle = facts.schedule[`v${parse(version)!.major}`];
@@ -434,8 +435,8 @@ export async function compatibilityMatrix(
             release.version.replace(/^v/, "") === version && release.lts,
         ) &&
         lifecycle?.lts &&
-        Date.parse(lifecycle.lts) <= observed.observedAt &&
-        observed.observedAt < Date.parse(lifecycle.end)
+        Date.parse(lifecycle.lts) <= now &&
+        now < Date.parse(lifecycle.end)
       );
     })
   )

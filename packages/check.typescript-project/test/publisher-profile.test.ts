@@ -378,6 +378,29 @@ it("requires the actual engine minimum in the compatibility matrix, not just a h
   await put(root, "package.json", text.replace(">=22.15.0", ">=22.14.0"));
   expect((await check()).map((p) => p.code)).toContain("ci-mismatch");
 });
+it("evaluates LTS support at the current time, not the cached observation time", async () => {
+  const evidence = await testEvidence();
+  const provider = evidence.metadata.node;
+  const now = Date.now();
+  evidence.metadata.node = async () => {
+    const observed = await provider();
+    observed.data.schedule.v24!.end = new Date(now - 86_400_000).toISOString();
+    return { ...observed, observedAt: now - 172_800_000 };
+  };
+  const problems: { code: string; brief: string }[] = [];
+  await inspect(
+    { projectDirectory: root },
+    new AbortController().signal,
+    (code, brief) => problems.push({ code, brief }),
+    evidence,
+  );
+  expect(problems).toContainEqual(
+    expect.objectContaining({
+      code: "ci-mismatch",
+      brief: expect.stringContaining("当前受支持的官方 LTS") as unknown,
+    }),
+  );
+});
 it("does not turn unsupported extra matrix entries into a consumer promise", async () => {
   const evidence = await testEvidence();
   const provider = evidence.metadata.node;

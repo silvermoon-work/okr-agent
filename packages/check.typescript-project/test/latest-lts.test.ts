@@ -11,12 +11,12 @@ it.each([
   "latest",
   "older-patch",
   "older-lts",
-  "expired-index",
+  "cached-index",
   "conflicting-index",
   "conflicting-schedule",
   "index-unavailable",
 ] as const)(
-  "selects only the highest supported official stable LTS with fresh evidence: %s",
+  "selects the highest supported official stable LTS while accepting source cache delays: %s",
   async (kind) => {
     const root = resolve("dist", `.latest-lts-${randomUUID()}`);
     await mkdir(root, { recursive: true });
@@ -43,7 +43,7 @@ it.each([
           if (kind === "index-unavailable")
             throw new TypeError("index unavailable");
           const response = await transport(input);
-          if (kind === "expired-index") response.headers.set("age", "3601");
+          if (kind === "cached-index") response.headers.set("age", "7724");
           return response;
         }
         return transport(input);
@@ -67,7 +67,8 @@ it.each([
         },
         { ...(await testEvidence()), metadata: publicMetadata(signal) },
       );
-      if (kind === "latest") expect(problems).toEqual([]);
+      if (kind === "latest" || kind === "cached-index")
+        expect(problems).toEqual([]);
       else if (kind === "older-patch" || kind === "older-lts") {
         expect(problems).toEqual([
           expect.objectContaining({ code: "environment-mismatch" }),

@@ -5,7 +5,7 @@
 
 ## 六类检查
 
-1. 环境：根 .node-version 必须精确匹配官方索引中最高 SemVer 的稳定、发行标 LTS 且当前官方 schedule 仍在支持期的发行版；不按偶数 major 或固定版本猜测。索引与 schedule 均须满足一小时新鲜度，任何失败/过期/冲突均 environment-unconfirmed，不回退旧版。同 major 旧 patch 或仍维护的旧 LTS 都不满足最新要求。各代码成员 engines.node 独立检查并包含开发环境；monorepo 所有适用代码包（包括 private 包）的最低受支持 Node 必须一致，比较解析出的最低版本，不要求完整范围或文本相同，纯聚合根不参与。差异证据包含 manifest 路径、原始范围和最低版本，不自动缩窄兼容承诺。消费者最低环境不必运行所有现代开发工具。根 packageManager 精确 pnpm 稳定版本，跟进所选 major 最新版本；重复默认选择不得冲突。
+1. 环境：根 .node-version 必须精确匹配官方索引中最高 SemVer 的稳定、发行标 LTS 且当前官方 schedule 仍在支持期的发行版；不按偶数 major 或固定版本猜测。索引与 schedule 接受官方端点的缓存延迟，不设固定缓存年龄上限，按本次响应的完整事实及当前时间判定；请求失败、时间无效或数据冲突均 environment-unconfirmed，不回退旧成功。同 major 旧 patch 或仍维护的旧 LTS 都不满足最新要求。各代码成员 engines.node 独立检查并包含开发环境；monorepo 所有适用代码包（包括 private 包）的最低受支持 Node 必须一致，比较解析出的最低版本，不要求完整范围或文本相同，纯聚合根不参与。差异证据包含 manifest 路径、原始范围和最低版本，不自动缩窄兼容承诺。消费者最低环境不必运行所有现代开发工具。根 packageManager 精确 pnpm 稳定版本，跟进所选 major 最新版本；重复默认选择不得冲突。
 2. 工具：只检查已规定的必要开发工具；单包与 monorepo 均要求其 devDependencies 引用根 pnpm-workspace.yaml 的默认/named
    catalog，保留共享根声明与内部 workspace 协议。普通 dependencies 和自由扩展的其他 devDependencies 不受此 catalog/版本政策约束，后者不查询元数据、不报不受支持依赖。检查实际 pnpm
    lockfile
@@ -82,19 +82,19 @@ check-* 命名识别相应补充动作（排除固定标准动作），普通扩
 业务 input 不接收来源、时钟、provider 或离线豁免。作者代码固定闭合生产 profile
 `canonical-v1`，部署者必须先在实际执行主机授权以下来源；包含这些地址的 CAR 不意味着任意设备已获准联网：
 
-| 端点                                                                                                                | 用途与时效                                                                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `https://registry.npmjs.org/<encoded-public-tool-name>`，Accept `application/vnd.npm.install-v1+json`               | 官方完整版本表，包含已解析版本与最新稳定兼容系列版本的完整 engines/peer/dist 字段；HTTP Date/Age 至多一小时，不能使用 slim 列表或全局 latest 代替系列计算                    |
-| `https://nodejs.org/dist/index.json`                                                                                | 官方完整发行索引，验证精确发行存在，并按稳定版本、LTS 标记和当前 schedule 支持期选择最高 SemVer；HTTP Date/Age 至多一小时，陈旧/冲突记录不能用于最新选择；不再有历史缓存例外 |
-| `https://api.github.com/repos/nodejs/Release/contents/schedule.json?ref=main`，Accept `application/vnd.github+json` | 新鲜的官方当前支持周期；HTTP Date/Age 至多一小时，验证文件路径、base64、大小及 Git blob SHA，按此观察时间判断支持期限                                                        |
+| 端点                                                                                                                | 用途与时效                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `https://registry.npmjs.org/<encoded-public-tool-name>`，Accept `application/vnd.npm.install-v1+json`               | 官方完整版本表，包含已解析版本与最新稳定兼容系列版本的完整 engines/peer/dist 字段；接受 registry 缓存延迟，不能使用 slim 列表或全局 latest 代替系列计算 |
+| `https://nodejs.org/dist/index.json`                                                                                | 官方完整发行索引，接受其缓存延迟，验证精确发行存在，并按稳定版本、LTS 标记和当前 schedule 支持期选择最高 SemVer；格式损坏或冲突仍无法确认               |
+| `https://api.github.com/repos/nodejs/Release/contents/schedule.json?ref=main`，Accept `application/vnd.github+json` | 官方支持周期，接受其缓存延迟，验证文件路径、base64、大小及 Git blob SHA，按当前时间判断支持期限                                                         |
 
 来源政策不读取目标 registry 或任意环境 URL，无重定向、代理、其他源或旧快照回退。官方 npm 完整 packument 的身份、版本键/manifest 一致性、modified 与全部 dist-tag 引用都检查；只从完整稳定候选计算所选系列，准确读取 current/newest
-manifest。缺项、冲突或没有候选都 unconfirmed，不把网络错误当作版本落后。npmx 缓存代理的内部 SWR 时效证据不足，不是生产备选源。
+manifest。缺项、冲突或没有候选都 unconfirmed，不把网络错误当作版本落后。npmx 等其他来源不属于固定生产来源。
 
 历史 Node 索引中的合法 prerelease 记录可被验证和保留，不因无关的 alpha 记录拒绝整个索引；prerelease 不得冒充稳定 LTS 默认开发版本，格式损坏或不一致的历史记录仍无法确认。
 
-查询预算：每次请求最多 10 秒、16MiB，执行累计 128MiB/66 次请求/90 秒；每个完整 packument 最多 32768 个版本，只查询明确支持的公开工具名单，最多缓存 64 个包，仅在本次执行内复用。历史 Node 索引最多 20000 条，生命周期文件最多 256KiB/256 个系列。所有可变事实以 HTTP
-Date/Age 中更老的时间为准；响应标记 stale/expired/revalidating 或过期时不能通过，失败不回退旧成功。Node 组合观察时间取索引与 schedule 两者较旧的时间；保留索引真实缓存年龄作为遥测，不再将其排除于新鲜度之外。重复发行版本、LTS 标记/支持期冲突不能支撑旧版回退。已知工具之外的自由开发依赖不外发名称，也不因未知而报告；已规定工具的必要 peer 未获支持时仍定位该 peer 的证据缺口。只有公开工具名发送给固定端点，不发送源码、配置、秘密或任意目标 URL。问题包含声明、importer、系列、新版、来源与时间等可追溯证据。
+查询预算：每次请求最多 10 秒、16MiB，执行累计 128MiB/66 次请求/90 秒；每个完整 packument 最多 32768 个版本，只查询明确支持的公开工具名单，最多缓存 64 个包，仅在本次执行内复用。历史 Node 索引最多 20000 条，生命周期文件最多 256KiB/256 个系列。接受固定来源本次 HTTP 响应的缓存延迟，不发送强制重新验证的 Cache-Control 请求头，不因缓存年龄或 stale/expired/revalidating 状态单独拒绝。Date 必须可解析且不得异常超前，Age 必须为有效的非负整数；来源身份、响应完整性和数据一致性要求不变。观察时间仍记录 HTTP
+Date/Age 中更老的时间，Node 组合观察时间取索引与 schedule 两者较旧的时间；缓存状态及索引缓存年龄仅作为遥测，LTS 支持期限按当前时间判断。请求失败仍不回退旧成功，重复发行版本、LTS 标记/支持期冲突不能支撑旧版回退。已知工具之外的自由开发依赖不外发名称，也不因未知而报告；已规定工具的必要 peer 未获支持时仍定位该 peer 的证据缺口。只有公开工具名发送给固定端点，不发送源码、配置、秘密或任意目标 URL。问题包含声明、importer、系列、新版、来源与时间等可追溯证据。
 
 测试的内部确定性 provider 不属于业务契约；测试 CAR 明确是确定性元数据验证制品，不是 registry 或真实发布证据。生产 CAR 不含离线豁免。
 

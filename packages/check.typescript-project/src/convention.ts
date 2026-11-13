@@ -11,7 +11,7 @@ import type { ProblemReporter } from "@silvermoon-work/check-task-sdk";
 import type { ProblemCode } from "./contract.js";
 import { type Project } from "./commands.js";
 import { type Files, dataYaml, glob, record, Unconfirmed } from "./files.js";
-import { fresh, type Metadata, type Release } from "./metadata.js";
+import { verified, type Metadata, type Release } from "./metadata.js";
 import { tsconfig } from "./static.js";
 import { repository } from "./repository.js";
 import { privatePublishEvidence } from "./release-evidence.js";
@@ -164,7 +164,7 @@ export async function convention(
     }
     node = selected;
     const observation = await evidence.metadata.node();
-    const facts = fresh(observation);
+    const facts = verified(observation);
     const version = parse(selected)!;
     const lifecycle = facts.schedule[`v${version.major}`];
     if (
@@ -343,7 +343,7 @@ export async function convention(
       current: match[1]!,
       series: stableSeries(match[1]!),
     });
-    const facts = fresh(observation);
+    const facts = verified(observation);
     const versions = facts.releases;
     const newest = maxSatisfying(facts.versions, stableSeries(match[1]!));
     if (!newest)
@@ -539,7 +539,7 @@ export async function convention(
           current: installed,
           series: stableSeries(minimum.version),
         });
-        const facts = fresh(observation);
+        const facts = verified(observation);
         const versions = facts.releases;
         const newest = maxSatisfying(
           facts.versions,
@@ -637,7 +637,7 @@ export async function convention(
                 current: found.version,
                 series: stableSeries(found.version),
               });
-              release = fresh(observed).releases[found.version];
+              release = verified(observed).releases[found.version];
               if (!release)
                 throw new Unconfirmed(
                   `${name}: 已解析 peer ${peer}@${found.version} 缺少准确 manifest`,
