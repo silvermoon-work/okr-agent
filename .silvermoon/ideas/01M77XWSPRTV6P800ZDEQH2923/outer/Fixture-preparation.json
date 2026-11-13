@@ -1,0 +1,49 @@
+{
+  "node": "v24.16.0",
+  "pnpm": "11.28.11",
+  "declarationsAndLockfileResolved": true,
+  "targetScriptsExecuted": false,
+  "source": "authorized-host-canonical-registry",
+  "facts": {
+    "pnpm": {
+      "modified": "2026-11-12T00:23:01.395Z",
+      "versions": 1364
+    },
+    "typescript": {
+      "modified": "2026-11-12T08:23:04.844Z",
+      "versions": 3883
+    },
+    "vitest": {
+      "modified": "2026-11-02T16:12:38.057Z",
+      "versions": 491
+    },
+    "eslint": {
+      "modified": "2026-10-30T14:12:27.351Z",
+      "versions": 433
+    },
+    "typescript-eslint": {
+      "modified": "2026-11-11T17:06:17.305Z",
+      "versions": 1684
+    },
+    "@eslint/js": {
+      "modified": "2026-07-10T20:16:17.404Z",
+      "versions": 88
+    },
+    "prettier": {
+      "modified": "2026-11-12T07:06:22.685Z",
+      "versions": 201
+    },
+    "@vitest/coverage-v8": {
+      "modified": "2026-11-02T16:11:16.000Z",
+      "versions": 185
+    },
+    "publint": {
+      "modified": "2026-10-01T18:03:34.519Z",
+      "versions": 58
+    },
+    "semver": {
+      "modified": "2026-11-02T19:47:44.481Z",
+      "versions": 122
+    }
+  }
+}

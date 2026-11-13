@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile, realpath, writeFile } from "node:fs/promises";
+import { readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
-import { dirname, join, posix, resolve } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { IpfsStore } from "@silvermoon-work/ipfs-store";
 import { readTaskBundleCar } from "@silvermoon-work/task-builder/car";
@@ -51,16 +51,28 @@ const samples = [
   { name: "fixed-document-mismatch", path: "projects/bad", pass: false },
 ];
 const snapshots = new Map();
+async function snapshot(directory) {
+  const entries = (await readdir(directory, { withFileTypes: true })).sort(
+    (a, b) => a.name.localeCompare(b.name),
+  );
+  return Promise.all(
+    entries.map(async (entry) => {
+      assert.ok(entry.isDirectory() || entry.isFile());
+      const path = join(directory, entry.name);
+      return {
+        name: entry.name,
+        content: entry.isDirectory()
+          ? await snapshot(path)
+          : createHash("sha256")
+              .update(await readFile(path))
+              .digest("hex"),
+      };
+    }),
+  );
+}
 for (const sample of samples) {
   const project = join(root, sample.path);
-  for (const path of [
-    "package.json",
-    "pnpm-lock.yaml",
-    "AGENTS.md",
-    ".node-version",
-  ]) {
-    snapshots.set(join(project, path), await readFile(join(project, path)));
-  }
+  snapshots.set(project, await snapshot(project));
 }
 async function submit(input) {
   let response = await engine.submit(
@@ -201,7 +213,7 @@ try {
     }
   }
   for (const [path, before] of snapshots)
-    assert.deepEqual(await readFile(path), before);
+    assert.deepEqual(await snapshot(path), before);
   await engine.close();
   assert.equal((await ipfsStore.read(car.cid)).cid.toString(), car.cid);
   report = {
@@ -230,6 +242,7 @@ try {
     cancel: stopped.canceled,
     reclaimed: true,
     configurationUnchanged: true,
+    configurationSnapshot: "all-project-file-bytes-and-paths",
     borrowedContentSurvivedClose: true,
   };
   await writeFile(

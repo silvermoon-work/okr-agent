@@ -1,0 +1,220 @@
+{
+  "ok": true,
+  "transport": "injected-ip-connect-rejection",
+  "host": "xiaonuo-ubuntu",
+  "platform": "linux",
+  "node": "v24.16.0",
+  "bundleCid": "bafybeibt3cicv25ra5jv5dyj2qitoumoobaiblbjx3ytn6gr7iutjfipuy",
+  "carBytes": 504485,
+  "carSha256": "edcc787456072d71bba461a7895ebd87dcb1e2b2c865efa33a8cea67e8eb3fb5",
+  "dependencies": {
+    "@silvermoon-work/task-engine": "0.2.0-rc.2",
+    "@silvermoon-work/task-builder": "0.2.0-rc.2",
+    "@silvermoon-work/ipfs-store": "0.1.0-rc.1",
+    "ipfs-unixfs-exporter": "16.2.3",
+    "semver": "^7.8.5",
+    "yaml": "2.8.1"
+  },
+  "authorSdkInstalled": false,
+  "authorCheckInstalled": false,
+  "engineEntry": "/tmp/okr-convention-2QcjdAV3/node_modules/.pnpm/@silvermoon-work+task-engine@0.2.0-rc.2/node_modules/@silvermoon-work/task-engine/dist/index.js",
+  "results": [
+    {
+      "name": "application-current",
+      "pass": false,
+      "expectedPass": false,
+      "problems": [
+        {
+          "code": "environment-unconfirmed",
+          "brief": "https://nodejs.org/dist/index.json: TypeError: fetch failed",
+          "documentation": "references/problems/environment-unconfirmed.md"
+        },
+        {
+          "code": "dependency-unconfirmed",
+          "brief": "https://registry.npmjs.org/pnpm: TypeError: fetch failed",
+          "documentation": "references/problems/dependency-unconfirmed.md"
+        },
+        {
+          "code": "dependency-unconfirmed",
+          "brief": "https://registry.npmjs.org/typescript: TypeError: fetch failed",
+          "documentation": "references/problems/dependency-unconfirmed.md"
+        }
+      ],
+      "documentationReadable": true,
+      "assetsExact": true,
+      "outputCid": "bafybeice7r6bicwca62gqao7bomdn3nxhhsvtiugmab6dq7mv2vrpntvoe",
+      "reclaimed": true
+    },
+    {
+      "name": "application-old-config",
+      "pass": false,
+      "expectedPass": false,
+      "problems": [
+        {
+          "code": "environment-unconfirmed",
+          "brief": "https://nodejs.org/dist/index.json: TypeError: fetch failed",
+          "documentation": "references/problems/environment-unconfirmed.md"
+        },
+        {
+          "code": "dependency-unconfirmed",
+          "brief": "https://registry.npmjs.org/pnpm: TypeError: fetch failed",
+          "documentation": "references/problems/dependency-unconfirmed.md"
+        },
+        {
+          "code": "dependency-unconfirmed",
+          "brief": "https://registry.npmjs.org/typescript: TypeError: fetch failed",
+          "documentation": "references/problems/dependency-unconfirmed.md"
+        }
+      ],
+      "documentationReadable": true,
+      "assetsExact": true,
+      "outputCid": "bafybeice7r6bicwca62gqao7bomdn3nxhhsvtiugmab6dq7mv2vrpntvoe",
+      "reclaimed": true
+    },
+    {
+      "name": "npm-current",
+      "pass": false,
+      "expectedPass": false,
+      "problems": [
+        {
+          "code": "environment-unconfirmed",
+          "brief": "https://nodejs.org/dist/index.json: TypeError: fetch failed",
+          "documentation": "references/problems/environment-unconfirmed.md"
+        },
+        {
+          "code": "dependency-unconfirmed",
+          "brief": "https://registry.npmjs.org/pnpm: TypeError: fetch failed",
+          "documentation": "references/problems/dependency-unconfirmed.md"
+        },
+        {
+          "code": "dependency-unconfirmed",
+          "brief": "https://registry.npmjs.org/typescript: TypeError: fetch failed",
+          "documentation": "references/problems/dependency-unconfirmed.md"
+        },
+        {
+          "code": "ci-unconfirmed",
+          "brief": "https://nodejs.org/dist/index.json: TypeError: fetch failed",
+          "documentation": "references/problems/ci-unconfirmed.md"
+        }
+      ],
+      "documentationReadable": true,
+      "assetsExact": true,
+      "outputCid": "bafybeice7r6bicwca62gqao7bomdn3nxhhsvtiugmab6dq7mv2vrpntvoe",
+      "reclaimed": true
+    },
+    {
+      "name": "workspace-current",
+      "pass": false,
+      "expectedPass": false,
+      "problems": [
+        {
+          "code": "environment-unconfirmed",
+          "brief": "https://nodejs.org/dist/index.json: TypeError: fetch failed",
+          "documentation": "references/problems/environment-unconfirmed.md"
+        },
+        {
+          "code": "dependency-unconfirmed",
+          "brief": "https://registry.npmjs.org/pnpm: TypeError: fetch failed",
+          "documentation": "references/problems/dependency-unconfirmed.md"
+        },
+        {
+          "code": "dependency-unconfirmed",
+          "brief": "https://registry.npmjs.org/typescript: TypeError: fetch failed",
+          "documentation": "references/problems/dependency-unconfirmed.md"
+        }
+      ],
+      "documentationReadable": true,
+      "assetsExact": true,
+      "outputCid": "bafybeice7r6bicwca62gqao7bomdn3nxhhsvtiugmab6dq7mv2vrpntvoe",
+      "reclaimed": true
+    },
+    {
+      "name": "workspace-single-current",
+      "pass": false,
+      "expectedPass": false,
+      "problems": [
+        {
+          "code": "environment-unconfirmed",
+          "brief": "https://nodejs.org/dist/index.json: TypeError: fetch failed",
+          "documentation": "references/problems/environment-unconfirmed.md"
+        },
+        {
+          "code": "dependency-unconfirmed",
+          "brief": "https://registry.npmjs.org/pnpm: TypeError: fetch failed",
+          "documentation": "references/problems/dependency-unconfirmed.md"
+        },
+        {
+          "code": "dependency-unconfirmed",
+          "brief": "https://registry.npmjs.org/typescript: TypeError: fetch failed",
+          "documentation": "references/problems/dependency-unconfirmed.md"
+        }
+      ],
+      "documentationReadable": true,
+      "assetsExact": true,
+      "outputCid": "bafybeice7r6bicwca62gqao7bomdn3nxhhsvtiugmab6dq7mv2vrpntvoe",
+      "reclaimed": true
+    },
+    {
+      "name": "fixed-document-mismatch",
+      "pass": false,
+      "expectedPass": false,
+      "problems": [
+        {
+          "code": "gate-mismatch",
+          "brief": "根聚合入口未连接有效能力: typecheck, lint, formatting, test, coverage",
+          "documentation": "references/problems/gate-mismatch.md"
+        },
+        {
+          "code": "coverage-missing",
+          "brief": "未确认启用覆盖率且执行有效阈值的入口；只有 thresholds 不足以接入覆盖率",
+          "documentation": "references/problems/coverage-missing.md"
+        },
+        {
+          "code": "ci-mismatch",
+          "brief": "未确认 PR/main push 同一无条件 job 在 checkout、读取根 Node/pnpm 声明和冻结安装之后调用包含覆盖率的有效 check",
+          "documentation": "references/problems/ci-mismatch.md"
+        },
+        {
+          "code": "environment-unconfirmed",
+          "brief": "https://nodejs.org/dist/index.json: TypeError: fetch failed",
+          "documentation": "references/problems/environment-unconfirmed.md"
+        },
+        {
+          "code": "dependency-unconfirmed",
+          "brief": "https://registry.npmjs.org/pnpm: TypeError: fetch failed",
+          "documentation": "references/problems/dependency-unconfirmed.md"
+        },
+        {
+          "code": "dependency-unconfirmed",
+          "brief": "https://registry.npmjs.org/typescript: TypeError: fetch failed",
+          "documentation": "references/problems/dependency-unconfirmed.md"
+        },
+        {
+          "code": "document-mismatch",
+          "brief": "AGENTS.md 与完整标准 assets/AGENTS.md 不匹配；先保留自定义内容到 docs/agent-project.md，不可直接丢弃",
+          "documentation": "references/problems/document-mismatch.md"
+        },
+        {
+          "code": "gate-mismatch",
+          "brief": "标准 test:coverage 未覆盖全部适用成员的已证明 coverage 能力",
+          "documentation": "references/problems/gate-mismatch.md"
+        },
+        {
+          "code": "gate-unconfirmed",
+          "brief": "test:coverage 未显式启用覆盖率；配置隐式启用尚未连接到此入口",
+          "documentation": "references/problems/gate-unconfirmed.md"
+        }
+      ],
+      "documentationReadable": true,
+      "assetsExact": true,
+      "outputCid": "bafybeice7r6bicwca62gqao7bomdn3nxhhsvtiugmab6dq7mv2vrpntvoe",
+      "reclaimed": true
+    }
+  ],
+  "invalid": ["rejected", "rejected", "rejected", "rejected"],
+  "fault": "failed",
+  "cancel": true,
+  "reclaimed": true,
+  "configurationUnchanged": true,
+  "borrowedContentSurvivedClose": true
+}
