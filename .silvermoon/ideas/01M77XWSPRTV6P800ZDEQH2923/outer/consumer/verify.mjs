@@ -204,18 +204,14 @@ try {
     assert.deepEqual(await readFile(path), before);
   await engine.close();
   assert.equal((await ipfsStore.read(car.cid)).cid.toString(), car.cid);
-  if (offline) {
-    for (const result of results) {
-      assert.ok(
-        result.problems.some((problem) =>
-          problem.code.endsWith("-unconfirmed"),
-        ),
-      );
-    }
-  }
   report = {
-    ok: results.every((r) => r.pass === r.expectedPass),
-    transport: offline ? "injected-fetch-rejection" : "canonical-live",
+    ok:
+      results.every((r) => r.pass === r.expectedPass) &&
+      (!offline ||
+        results.every((r) =>
+          r.problems.some((problem) => problem.code.endsWith("-unconfirmed")),
+        )),
+    transport: offline ? "injected-ip-connect-rejection" : "canonical-live",
     host: hostname(),
     platform: process.platform,
     node: process.version,

@@ -23,7 +23,8 @@ bytes，SHA256
 output 的 problem 相对链接读取标准 assets，核对完整修复字节与目标路径；证明固定文档整份检查、自由扩展只检查约定连接，不依赖硬编码 Check
 CID 或移动模板。
 
-实际生产 CAR 分别验证当前私有应用、npm 单包、根工具共享的单/双成员 workspace 通过，以及旧配置、固定文档变更不通过；用同一 CAR 和仅测试进程的 fetch 拒绝注入验证元数据查询故障不判通过。拒绝注入不更改业务输入、Bundle 或其他进程，也不声称为正常 live 观测。先验证真实 live，再验证明确标记的故障场景。若故障注入未传播到 Worker，不将普通 live 成功冒充故障证据。
+实际生产 CAR 分别验证当前私有应用、npm 单包、根工具共享的单/双成员 workspace 通过，以及旧配置、固定文档变更不通过；用同一 CAR 和仅测试进程的 IP
+connect 拒绝注入验证元数据查询故障不判通过。拒绝注入不更改业务输入、Bundle 或其他进程，也不声称为正常 live 观测。先验证真实 live，再验证明确标记的故障场景。若故障注入未传播到 Worker，不将普通 live 成功冒充故障证据。
 
 实际输出核对四项 assets 全字节及 problem 相对引用；四种旧输入拒绝、I/O 故障与取消无输出、Run 回收、借用 store 生命周期、目标配置不变均由消费者断言。固定文档损坏样本可同时有质量门限错误，不据此声称只有一条问题。
 
@@ -56,12 +57,20 @@ tar -xzf fixture-inputs.tar.gz
 node prepare.mjs
 node workspace.mjs
 node verify.mjs bafybeibt3cicv25ra5jv5dyj2qitoumoobaiblbjx3ytn6gr7iutjfipuy
-node --import ./deny-network.mjs verify.mjs bafybeibt3cicv25ra5jv5dyj2qitoumoobaiblbjx3ytn6gr7iutjfipuy --deny-network
+cc -shared -fPIC -Wall -Wextra -Werror -o deny-network.so deny-network.c
+LD_PRELOAD="$PWD/deny-network.so" node verify.mjs bafybeibt3cicv25ra5jv5dyj2qitoumoobaiblbjx3ytn6gr7iutjfipuy --deny-network
 ```
 
 prepare 仅在自有 fixture 中更新同一非破坏系列的实际声明并生成真实 lockfile；所有安装均 ignore-scripts，不运行目标 test/build/publish。Prettier
 `3.10.1`
-是本次已核准的精确 minimum-release-age 例外，只写在此自有 fixture，不全局关闭供应链政策；未来新增发行被政策阻止时必须显式处理，不能扩大例外。网络失败测试的作用域仅为专用 Node 进程及其 Worker，绝不修改宿主防火墙。
+是本次已核准的精确 minimum-release-age 例外，只写在此自有 fixture，不全局关闭供应链政策；未来新增发行被政策阻止时必须显式处理，不能扩大例外。
+
+宿主不允许无特权网络 namespace；Engine 也主动清空 Worker 的 execArgv/NODE_OPTIONS，因此普通 Node
+import 的 fetch
+mock 不能作为 Worker 失败证据。最终故障测试使用已安装 cc 编译自有
+[deny-network.c](./consumer/deny-network.c)，仅以该次 Node 命令的 LD_PRELOAD 让 IPv4/IPv6
+connect 返回 ENETUNREACH，Unix
+socket 和文件操作保持原样。不修改 Engine、制品、共享网络、其他进程或宿主防火墙，也不需要提权。实际报告必须标记 injected-ip-connect-rejection，所有样本均 nonpass 且含 unconfirmed，不能拿预期值代替观测。
 
 复验成功后把
 `independent-report.json`、`offline-report.json`、fixture/workspace 准备报告保存到本外层，与本契约同步后再提交/审批准确 deploymentRevision；最后只清理已取回证据的独占临时目录。
