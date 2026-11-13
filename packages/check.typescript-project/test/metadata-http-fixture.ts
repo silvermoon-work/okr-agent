@@ -69,10 +69,7 @@ export function canonicalTransport(
     const url = new URL(requestUrl(input));
     const node = { ...(await metadataFixture().node()).data, ...nodeOverride };
     if (url.href === "https://nodejs.org/dist/index.json")
-      return metadataResponse(node.releases, {
-        date: new Date(Date.now() - 8_070_000).toUTCString(),
-        age: "8070",
-      });
+      return metadataResponse(node.releases);
     if (
       url.href ===
       "https://api.github.com/repos/nodejs/Release/contents/schedule.json?ref=main"

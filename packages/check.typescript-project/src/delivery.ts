@@ -1,30 +1,15 @@
-import { argument, type Command, type Project } from "./commands.js";
+import { type Project } from "./commands.js";
 import { type Files, glob, record, Unconfirmed } from "./files.js";
 import { jsonc, tsconfig, tsIncludes } from "./static.js";
 
 type Report = (status: "mismatch" | "unconfirmed", brief: string) => void;
-export async function tscDelivery(
+export async function configuredDelivery(
   files: Files,
   project: Project,
-  command: Command,
-  entry: Record<string, unknown>,
+  path: string,
+  entries: Record<string, Record<string, unknown>>,
   report: Report,
 ) {
-  if (command.args.length !== 2)
-    throw new Unconfirmed(
-      "有限 tsc 交付 profile 要求单个、无覆盖的 -p/--project 配置选择",
-    );
-  for (let i = 0; i < command.args.length; i++) {
-    if (!["-p", "--project"].includes(command.args[i]!))
-      throw new Unconfirmed("有限 tsc 交付 profile 仅支持显式 -p/--project");
-    if (!command.args[++i]) throw new Unconfirmed("build project 参数缺失");
-  }
-  const path = files.path(
-    command.directory,
-    argument(command, "-p") ??
-      argument(command, "--project") ??
-      "tsconfig.json",
-  );
   const raw = jsonc(await files.text(path));
   const own = record(raw.compilerOptions ?? {});
   const config = await tsconfig(files, path);
@@ -114,24 +99,27 @@ export async function tscDelivery(
       if (!allowed(target))
         report(
           "mismatch",
-          `files 未交付 tsc 产物/映射所需真实源文件 ${relative(target)}`,
+          `files 未选择配置预期产物/映射所需真实源文件 ${relative(target)}`,
         );
     return {
       javascript: `./${relative(javascript)}`,
       declaration: `./${relative(declaration)}`,
     };
   });
-  if (
-    !outputs.some(
-      (output) =>
-        entry.import === output.javascript &&
-        entry.types === output.declaration,
+  for (const [name, entry] of Object.entries(entries))
+    if (
+      typeof entry.import === "string" &&
+      typeof entry.types === "string" &&
+      !outputs.some(
+        (output) =>
+          entry.import === output.javascript &&
+          entry.types === output.declaration,
+      )
     )
-  )
-    report(
-      "mismatch",
-      `${path}: 根 import/types 不对应同一实际源码的 tsc 输出`,
-    );
+      report(
+        "mismatch",
+        `${path}: exports ${name} 的 import/types 不对应同一源码的配置预期输出`,
+      );
   if (
     project.tests.some(allowed) ||
     files.paths.some(

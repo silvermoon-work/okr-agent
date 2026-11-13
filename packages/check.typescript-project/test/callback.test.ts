@@ -7,6 +7,7 @@ import contract from "../src/contract.js";
 import { projectCheck } from "../src/callback.js";
 import { fixture, testEvidence } from "./fixture.js";
 import { metadataFixture } from "./metadata-fixture.js";
+import { scriptResources } from "../src/script-profile.js";
 
 it("loads the actual supplied Bundle asset and preserves output link faults rather than returning success", async () => {
   const directory = resolve("dist", `.callback-${randomUUID()}`);
@@ -35,6 +36,12 @@ it("loads the actual supplied Bundle asset and preserves output link faults rath
                     "resources/assets/npm-publish.yaml":
                       evidence.publishWorkflow,
                     "resources/assets/npm-ci.yaml": evidence.ciWorkflow,
+                    ...Object.fromEntries(
+                      scriptResources.map(([name, asset]) => [
+                        `resources/assets/${asset}`,
+                        evidence.scripts[name]!,
+                      ]),
+                    ),
                   } as Record<string, Uint8Array>
                 )[path];
                 expect(bytes).toBeDefined();

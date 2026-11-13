@@ -30,7 +30,14 @@ export function metadataFixture(): Metadata {
             { version: "v24.11.0", lts: "Krypton" },
             { version: "v22.15.0", lts: "Jod" },
           ],
-          schedule: { v24: { lts: "2025-10-28", end: "2028-04-30" } },
+          schedule: {
+            v24: { lts: "2025-10-28", end: "2028-04-30" },
+            v22: { lts: "2024-10-29", end: "2027-04-30" },
+          },
+          historicalIndex: {
+            source: "https://fixture.invalid/node-index",
+            cacheAgeMs: 0,
+          },
         },
       });
     },

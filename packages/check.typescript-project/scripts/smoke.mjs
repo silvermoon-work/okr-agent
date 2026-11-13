@@ -96,6 +96,17 @@ try {
     "npm-publish.mjs",
     "npm-publish.yaml",
     "npm-ci.yaml",
+    "typecheck.mjs",
+    "lint.mjs",
+    "format.mjs",
+    "format-check.mjs",
+    "test.mjs",
+    "test-coverage.mjs",
+    "lint-package.mjs",
+    "check.mjs",
+    "commands.mjs",
+    "release.mjs",
+    "release-dry-run.mjs",
   ];
   for (const projectDirectory of directories) {
     console.error("smoke: project", projectDirectory);

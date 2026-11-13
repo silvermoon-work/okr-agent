@@ -5,6 +5,7 @@ import type {
 import type { Input, ProblemCode } from "./contract.js";
 import { inspect } from "./inspect.js";
 import { publicMetadata, type Metadata } from "./metadata.js";
+import { scriptResources } from "./script-profile.js";
 
 export function projectCheck(
   metadata: (signal: AbortSignal) => Metadata = publicMetadata,
@@ -33,6 +34,13 @@ export function projectCheck(
       publisher,
       publishWorkflow,
       ciWorkflow,
+      scripts: Object.fromEntries(
+        await Promise.all(
+          scriptResources.map(
+            async ([name, path]) => [name, await resource(path)] as const,
+          ),
+        ),
+      ),
       metadata: metadata(context.signal),
     });
   };

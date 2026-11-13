@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { inspect } from "../src/inspect.js";
 import type { InspectionEvidence } from "../src/convention.js";
 import type { ProblemCode } from "../src/contract.js";
-import { fixture, manifest, put, testEvidence } from "./fixture.js";
+import { catalog, fixture, manifest, put, testEvidence } from "./fixture.js";
 import { packageFacts } from "./metadata-fixture.js";
 import { dataYaml, record } from "../src/files.js";
 import { stringify } from "yaml";
@@ -76,6 +76,169 @@ it("requires the free extension and does not silently ignore nested Agent overri
   const codes = (await check()).map((p) => p.code);
   expect(codes).toContain("document-missing");
   expect(codes).toContain("document-unconfirmed");
+});
+it("recognizes an explicitly bundled exact standard asset without exempting modified or ordinary nested guidance", async () => {
+  const canonical = Buffer.from(evidence.agents).toString("utf8");
+  await put(root, "assets/AGENTS.md", canonical);
+  await put(root, "check.build.yaml", {
+    include: [{ from: "assets/**", to: "resources/assets/" }],
+  });
+  expect(await check()).toEqual([]);
+  await put(root, "assets/AGENTS.md", `${canonical}\ncustom\n`);
+  expect((await check()).map((p) => p.code)).toEqual(["document-unconfirmed"]);
+  await put(root, "assets/AGENTS.md", canonical);
+  await put(root, "src/AGENTS.md", canonical);
+  const problems = await check();
+  expect(problems.map((p) => p.code)).toEqual(["document-unconfirmed"]);
+  expect(problems[0]?.brief).toContain("src/AGENTS.md");
+});
+it("ignores freely added development and runtime dependencies without querying their metadata", async () => {
+  const queried: string[] = [];
+  const provider = evidence.metadata.package;
+  evidence.metadata.package = async (name, selection) => {
+    queried.push(name);
+    return provider(name, selection);
+  };
+  await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
+  for (const name of ["a", "b"]) {
+    const member = join(root, "packages", name);
+    await fixture(member);
+    await put(member, "package.json", {
+      ...manifest,
+      name,
+      devDependencies: {
+        "custom-tool": "1.0.0-rc.2",
+        "@private/tool": "file:./tool",
+        ...manifest.devDependencies,
+      },
+      dependencies: { semver: "7.0.0", "@private/runtime": "latest" },
+    });
+  }
+  const lock = dataYaml(await readFile(join(root, "pnpm-lock.yaml"), "utf8"));
+  const importers = record(lock.importers);
+  for (const name of ["a", "b"])
+    importers[`packages/${name}`] = structuredClone(importers["."]);
+  await put(root, "pnpm-lock.yaml", stringify(lock));
+  expect(
+    (await check()).filter((p) => p.code.startsWith("dependency-")),
+  ).toEqual([]);
+  expect(queried).not.toContain("custom-tool");
+  expect(queried).not.toContain("@private/tool");
+  expect(queried).not.toContain("@private/runtime");
+  expect(queried).not.toContain("semver");
+});
+it("reports an incomplete existing ID mapping without treating a private non-code member as a release target", async () => {
+  await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
+  await put(root, "package.json", {
+    ...manifest,
+    private: false,
+    publishConfig: {
+      access: "public",
+      registry: "https://registry.npmjs.org/",
+    },
+  });
+  await put(root, "packages/core/package.json", {
+    name: "@acme/core",
+    private: true,
+  });
+  await put(
+    root,
+    "scripts/lib/release-packages.mjs",
+    'export const releasePackages = [{id:"core",name:"@acme/core",directory:"packages/core"}];',
+  );
+  const problems = await check();
+  expect(problems.some((p) => p.brief.includes("目录/name"))).toBe(false);
+  expect(problems).toContainEqual(
+    expect.objectContaining({
+      code: "release-unconfirmed",
+      brief: expect.stringContaining("#single-package") as unknown,
+    }),
+  );
+  expect(problems.some((p) => p.brief.includes("尚未支持的门卫包括"))).toBe(
+    false,
+  );
+});
+it("rejects direct publication precisely instead of speculating about custom guard internals", async () => {
+  await put(root, "package.json", {
+    ...manifest,
+    private: false,
+    publishConfig: {
+      access: "public",
+      registry: "https://registry.npmjs.org/",
+    },
+  });
+  await put(
+    root,
+    ".github/workflows/release.yaml",
+    `
+on:
+  push:
+    tags: ["pkg-v*"]
+  workflow_dispatch: {}
+jobs:
+  release:
+    environment: npm
+    permissions:
+      id-token: write
+    steps:
+      - name: Publish
+        run: npm publish artifact.tgz --tag "$DIST_TAG"
+      - name: Dry run
+        run: npm publish artifact.tgz --dry-run --tag oidc-dry-run
+`,
+  );
+  const release = (await check()).filter((p) => p.code.startsWith("release-"));
+  const mismatch = release.filter((p) => p.code === "release-mismatch");
+  expect(mismatch).toHaveLength(1);
+  expect(mismatch[0]?.brief).toContain("Dry run");
+  expect(mismatch[0]?.brief).toContain("oidc-dry-run");
+  expect(
+    release.some(
+      (p) =>
+        p.code === "release-missing" && p.brief.includes("release.config.json"),
+    ),
+  ).toBe(false);
+});
+it("locates each package's consumer-minimum matrix gap without inventing a conflict between compatible engines", async () => {
+  await put(root, ".node-version", "24.11.1");
+  await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
+  for (const [name, range] of [
+    ["sdk", ">=22.13"],
+    ["builder", ">=22.15.0"],
+  ])
+    await put(root, `packages/${name}/package.json`, {
+      name,
+      private: false,
+      engines: { node: range },
+      publishConfig: {
+        access: "public",
+        registry: "https://registry.npmjs.org/",
+      },
+    });
+  const workflow = dataYaml(new TextDecoder().decode(evidence.ciWorkflow));
+  record(record(record(record(workflow.jobs).compatibility).strategy).matrix)[
+    "node-version"
+  ] = ["22.15.0", "24.11.0"];
+  await put(root, ".github/workflows/ci.yaml", workflow);
+  const ci = (await check()).filter(
+    (problem) => problem.code === "ci-mismatch",
+  );
+  const sdk = ci.find((problem) =>
+    problem.brief.includes("packages/sdk/package.json"),
+  );
+  expect(sdk?.brief).toContain('engines.node = ">=22.13"');
+  expect(sdk?.brief).toContain("22.13.0");
+  expect(sdk?.brief).toContain(".github/workflows/ci.yaml");
+  expect(sdk?.brief).toContain('["22.15.0","24.11.0"]');
+  expect(sdk?.brief).toContain("不将包之间不同下限视作冲突");
+  expect(
+    ci.some((problem) =>
+      problem.brief.includes("packages/builder/package.json"),
+    ),
+  ).toBe(false);
+  expect(ci.some((problem) => problem.brief.includes("固定发布绑定"))).toBe(
+    false,
+  );
 });
 it("uses official lifecycle and exact release LTS status, not an even major or minimum", async () => {
   const provider = evidence.metadata.node;
@@ -172,7 +335,7 @@ it("requires current same-major pnpm and does not compare against another major 
   expect((await check()).map((p) => p.code)).toContain("dependency-mismatch");
 });
 it("checks catalog declaration and peer/default Node compatibility of installed tools", async () => {
-  await put(root, "pnpm-workspace.yaml", 'catalog:\n  typescript: "^6.0.3"\n');
+  await put(root, "pnpm-workspace.yaml", { catalog });
   await put(root, "package.json", {
     ...manifest,
     devDependencies: { ...manifest.devDependencies, typescript: "catalog:" },
@@ -206,6 +369,121 @@ it("checks catalog declaration and peer/default Node compatibility of installed 
   );
   expect(mismatch.some((p) => p.brief.includes("engines.node"))).toBe(true);
   expect(mismatch.some((p) => p.brief.includes("peer typescript"))).toBe(true);
+});
+it("requires catalog references even for single packages and resolves named catalogs with the exact importer", async () => {
+  await put(root, "package.json", {
+    ...manifest,
+    devDependencies: { ...manifest.devDependencies, typescript: "^6.0.3" },
+  });
+  expect(await check()).toContainEqual(
+    expect.objectContaining({
+      code: "dependency-mismatch",
+      brief: expect.stringContaining("typescript 必须引用根") as unknown,
+    }),
+  );
+  await put(root, "package.json", {
+    ...manifest,
+    devDependencies: {
+      ...manifest.devDependencies,
+      typescript: "catalog:compiler",
+    },
+  });
+  await put(root, "pnpm-workspace.yaml", {
+    catalog,
+    catalogs: { compiler: { typescript: "^6.0.3" } },
+  });
+  const lock = await readFile(join(root, "pnpm-lock.yaml"), "utf8");
+  await put(
+    root,
+    "pnpm-lock.yaml",
+    lock.replace(
+      "'typescript':\n        specifier: 'catalog:'",
+      "'typescript':\n        specifier: 'catalog:compiler'",
+    ),
+  );
+  expect(await check()).toEqual([]);
+  await put(root, "pnpm-lock.yaml", lock);
+  expect(await check()).toContainEqual(
+    expect.objectContaining({
+      code: "dependency-mismatch",
+      brief: expect.stringContaining(
+        "specifier != catalog:compiler",
+      ) as unknown,
+    }),
+  );
+  await put(root, "pnpm-workspace.yaml", { catalog });
+  expect(await check()).toContainEqual(
+    expect.objectContaining({
+      code: "dependency-unconfirmed",
+      brief: expect.stringContaining(
+        "typescript: catalog 无对应版本声明",
+      ) as unknown,
+    }),
+  );
+  await rm(join(root, "pnpm-workspace.yaml"));
+  expect(
+    (await check()).some((p) => p.brief.includes("catalog 无对应版本声明")),
+  ).toBe(true);
+});
+it("preserves internal workspace protocols without querying internal tools as public packages", async () => {
+  await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
+  await put(root, "packages/internal/package.json", {
+    name: "@private/internal",
+    private: true,
+  });
+  await put(root, "package.json", {
+    ...manifest,
+    devDependencies: {
+      ...manifest.devDependencies,
+      "@private/internal": "workspace:*",
+    },
+  });
+  expect(
+    (await check()).filter((p) => p.code.startsWith("dependency-")),
+  ).toEqual([]);
+  await put(root, "package.json", {
+    ...manifest,
+    devDependencies: {
+      ...manifest.devDependencies,
+      "@private/missing": "workspace:*",
+    },
+  });
+  expect(await check()).toContainEqual(
+    expect.objectContaining({
+      code: "dependency-mismatch",
+      brief: expect.stringContaining("workspace 引用无对应成员") as unknown,
+    }),
+  );
+});
+it("still requires evidence for an unknown peer of a prescribed tool, not arbitrary development dependencies", async () => {
+  const provider = evidence.metadata.package;
+  evidence.metadata.package = async (name, selection) => {
+    const observed = await provider(name, selection);
+    return name === "vitest"
+      ? {
+          ...observed,
+          data: packageFacts({
+            "5.0.4": {
+              version: "5.0.4",
+              peerDependencies: { "custom-peer": "^1.0.0" },
+            },
+          }),
+        }
+      : observed;
+  };
+  await put(root, "package.json", {
+    ...manifest,
+    devDependencies: { ...manifest.devDependencies, "custom-peer": "1.0.0" },
+  });
+  await peerLock("custom-peer", "1.0.0");
+  expect(await check()).toContainEqual(
+    expect.objectContaining({
+      code: "dependency-unconfirmed",
+      brief: expect.stringContaining(
+        "已解析 peer custom-peer 尚无公开元数据支持",
+      ) as unknown,
+    }),
+  );
 });
 it.each([false, true])(
   "uses the selected snapshot for required/optional auto-installed Vite, not another importer: optional=%s",
@@ -329,13 +607,16 @@ it("follows only patches in a 0.minor series and never auto-upgrades an exact 0.
       ...manifest,
       devDependencies: {
         ...manifest.devDependencies,
-        publint: declaration,
+        publint: "catalog:",
       },
+    });
+    await put(root, "pnpm-workspace.yaml", {
+      catalog: { ...catalog, publint: declaration },
     });
     await put(
       root,
       "pnpm-lock.yaml",
-      `${lock}      publint:\n        specifier: '${declaration}'\n        version: '${version}'\n`,
+      `${lock}      publint:\n        specifier: 'catalog:'\n        version: '${version}'\n`,
     );
   };
   await select("^0.3.25", "0.3.25");
@@ -374,6 +655,7 @@ it("does not accept an unrelated safe CI job as proof of the actual check job en
 it("rejects known unsafe release configuration without accepting guard keywords as semantics", async () => {
   await put(root, "package.json", {
     ...manifest,
+    private: false,
     publishConfig: {
       access: "public",
       registry: "https://registry.npmjs.org/",
@@ -398,10 +680,11 @@ jobs:
   );
   const problems = await check();
   expect(problems.map((p) => p.code)).toContain("release-mismatch");
-  expect(problems).toContainEqual(
-    expect.objectContaining({
-      code: "release-unconfirmed",
-      brief: expect.stringContaining("准确 SHA") as unknown,
-    }),
-  );
+  expect(
+    problems.some(
+      (problem) =>
+        problem.code === "release-missing" &&
+        problem.brief.includes("release.config.json"),
+    ),
+  ).toBe(false);
 });

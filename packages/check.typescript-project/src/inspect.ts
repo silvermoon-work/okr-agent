@@ -18,23 +18,17 @@ import {
   typeAwarePreset,
   typescriptPreset,
 } from "./static.js";
-import {
-  Scripts,
-  argument,
-  flag,
-  words,
-  type Command,
-  type Project,
-} from "./commands.js";
+import { Scripts, words, projectStrategy, type Project } from "./commands.js";
 import {
   metrics,
   fixedRequirements,
-  type Capability,
   type Requirements,
 } from "./requirements.js";
 import { relative, resolve } from "node:path";
 import { convention, type InspectionEvidence } from "./convention.js";
 import { repository } from "./repository.js";
+import { scriptProfile } from "./script-profile.js";
+import { qualityWorkflow, type QualityProfile } from "./quality-workflow.js";
 
 type Domain =
   | "dependency"
@@ -101,6 +95,34 @@ export async function inspect(
   const requirements = fixedRequirements();
   const files = new Files(input.projectDirectory, signal);
   const failures = new Map<Domain, number>();
+  let scopeContext:
+    { member: string; path: string | undefined; details: string } | undefined;
+  const scoped = new Map<
+    string,
+    { domain: Domain; status: Status; evidence: string; members: string[] }
+  >();
+  const scopeIssue = (
+    domain: Domain,
+    status: Status,
+    path: string,
+    reason: string,
+    member: string,
+    evidence: string,
+  ) => {
+    failures.set(domain, (failures.get(domain) ?? 0) + 1);
+    const key = JSON.stringify([domain, status, path, reason]);
+    const entry = scoped.get(key);
+    if (entry) {
+      entry.members.push(evidence);
+      return;
+    }
+    scoped.set(key, {
+      domain,
+      status,
+      evidence: `${path}: ${reason}`,
+      members: [evidence || member],
+    });
+  };
   const issue = (domain: Domain, status: Status, evidence: string) => {
     failures.set(domain, (failures.get(domain) ?? 0) + 1);
     report(`${domain}-${status}` as ProblemCode, evidence);
@@ -115,7 +137,21 @@ export async function inspect(
       await action();
     } catch (error) {
       if (!(error instanceof Unconfirmed)) throw error;
-      issue(domain, "unconfirmed", error.message);
+      if (scopeContext?.path)
+        scopeIssue(
+          domain,
+          "unconfirmed",
+          scopeContext.path,
+          error.message,
+          scopeContext.member,
+          `成员=${scopeContext.member}；配置=${scopeContext.path}；实际 root=${scopeContext.member}；${scopeContext.details}`,
+        );
+      else
+        issue(
+          domain,
+          "unconfirmed",
+          `${scopeContext ? `成员=${scopeContext.member}；实际 root=${scopeContext.member}；` : ""}${error.message}`,
+        );
     }
     return (failures.get(domain) ?? 0) === before;
   };
@@ -143,6 +179,7 @@ export async function inspect(
     return;
   }
   const root = projects[0]!;
+  const strategy = projectStrategy(projects);
   try {
     if (files.exists("pnpm-workspace.yaml")) {
       const workspace = yaml(await files.text("pnpm-workspace.yaml"));
@@ -179,34 +216,30 @@ export async function inspect(
     report("scope-unconfirmed", error.message);
     return;
   }
-  const scripts = new Scripts(files, projects);
-  const allCommands = new Map<string, Command[]>();
-  const scriptErrors: string[] = [];
-  // Inspect commands as data, never invoke them. Unrelated scripts do not poison a known gate.
+  const scripts = new Scripts(files);
+  const configurationPaths = files.paths.filter(
+    (path) =>
+      !projects.some((project) =>
+        path.startsWith(`${files.path(project.directory, "scripts")}/`),
+      ),
+  );
   for (const project of projects) {
-    for (const name of Object.keys(
-      record(project.manifest.scripts ?? {}),
-    ).sort()) {
-      try {
-        allCommands.set(
-          `${project.directory}:${name}`,
-          await scripts.expand(project, name),
-        );
-      } catch (error) {
-        if (!(error instanceof Unconfirmed)) throw error;
-        scriptErrors.push(`${project.directory}:${name}: ${error.message}`);
-      }
-    }
+    await section("gate", () => {
+      for (const problem of scripts.validate(project))
+        issue("gate", problem.status, problem.brief);
+    });
   }
-  const commandKey = (command: Command) =>
-    JSON.stringify([command.directory, command.tool, command.args]);
-  const commands = [
-    ...new Map(
-      [...allCommands.values()]
-        .flat()
-        .map((command) => [commandKey(command), command]),
-    ).values(),
-  ];
+  await section("gate", async () => {
+    await scriptProfile(
+      files,
+      projects,
+      internal.scripts,
+      internal.publisher,
+      (status, brief) => {
+        issue("gate", status, brief);
+      },
+    );
+  });
   await section("dependency", () => {
     const r = requirements.dependencyManagement;
     if (!r.enabled) return;
@@ -231,18 +264,6 @@ export async function inspect(
     if (r.lockfile && !files.exists("pnpm-lock.yaml"))
       issue("dependency", "missing", "缺少 pnpm-lock.yaml");
   });
-  const proved = new Map<Command, Set<Capability>>();
-  const prove = (command: Command, capability: Capability) => {
-    let set = proved.get(command);
-    if (!set) {
-      set = new Set();
-      proved.set(command, set);
-    }
-    set.add(capability);
-  };
-  // Commands reconstructed for each script are distinct objects; stable keys reconnect their evidence.
-  const key = commandKey;
-  const evidence = new Map<string, Set<Capability>>();
   if (
     requirements.typescript.enabled &&
     !projects.some(
@@ -254,9 +275,9 @@ export async function inspect(
       "unconfirmed",
       "启用 TypeScript 要求，但项目范围内没有可观察的 TS 源码或测试",
     );
-  for (const project of projects) {
+  for (const project of strategy.scopes) {
     const prefix = project.directory || ".";
-    const own = commands.filter((c) => c.directory === project.directory);
+    scopeContext = { member: prefix, path: undefined, details: "" };
     const applicable = project.sources.length + project.tests.length > 0;
     await section("typescript", async () => {
       const r = requirements.typescript;
@@ -275,514 +296,404 @@ export async function inspect(
           );
       }
       const targets = chosen(project, r.includeSource, r.includeTests);
-      const candidates = own.filter((c) => c.tool === "tsc");
-      if (!candidates.length) {
+      const path = findConfig(files, project.directory, ["tsconfig.json"]);
+      scopeContext!.path = path;
+      if (!path) {
         issue(
           "typescript",
-          scriptErrors.length ? "unconfirmed" : "missing",
-          `${prefix}: 未确认 tsc 检查入口`,
+          "missing",
+          `${files.path(project.directory, "tsconfig.json")}: 自身及共享根配置缺失`,
         );
         return;
       }
-      let valid = false;
-      const failuresByCandidate: { status: Status; brief: string }[] = [];
-      for (const command of candidates) {
-        try {
-          validateArguments(
-            command,
-            ["--noEmit", "--incremental", "--pretty"],
-            ["-p", "--project"],
-          );
-          if (positional(command, ["-p", "--project"]).length)
-            throw new Unconfirmed("tsc positional files are not supported");
-          const path = files.path(
-            project.directory,
-            argument(command, "-p") ??
-              argument(command, "--project") ??
-              "tsconfig.json",
-          );
-          if (!files.exists(path)) {
-            failuresByCandidate.push({
-              status: "missing",
-              brief: `${path}: 配置缺失`,
-            });
-            continue;
-          }
-          const config = await tsconfig(files, path);
-          if (config.references.length)
-            throw new Unconfirmed(
-              "tsc project-reference execution requires tsc --build (not supported)",
-            );
-          const failures = compilerConsistency(config.options);
-          for (const option of ["strict", ...strictFlags, ...r.safetyOptions]) {
-            if (
-              config.options[option] !== undefined &&
-              typeof config.options[option] !== "boolean"
-            )
-              throw new Unconfirmed(`${path}: ${option} is not a boolean`);
-          }
-          if (
-            r.strict &&
-            strictFlags.some(
-              (name) =>
-                config.options[name] === false ||
-                (config.options.strict !== true &&
-                  config.options[name] !== true),
-            )
-          )
-            failures.push("有效 strict 子选项不完整或被关闭");
-          for (const option of r.safetyOptions)
-            if (config.options[option] !== true)
-              failures.push(`${option} != true`);
-          if (!targets.every((target) => tsIncludes(files, config, target)))
-            failures.push("源文件/测试未全部纳入该 tsc 配置");
-          if (failures.length)
-            failuresByCandidate.push({
-              status: "mismatch",
-              brief: `${path}: ${failures.join("; ")}`,
-            });
-          else {
-            prove(command, "typecheck");
-            valid = true;
-          }
-        } catch (error) {
-          if (!(error instanceof Unconfirmed)) throw error;
-          failuresByCandidate.push({
-            status: "unconfirmed",
-            brief: `${prefix}: ${error.message}`,
-          });
-        }
+      const config = await tsconfig(files, path);
+      const failures = compilerConsistency(config.options);
+      for (const option of ["strict", ...strictFlags, ...r.safetyOptions]) {
+        if (
+          config.options[option] !== undefined &&
+          typeof config.options[option] !== "boolean"
+        )
+          throw new Unconfirmed(`${path}: ${option} is not a boolean`);
       }
-      if (!valid)
-        for (const failure of failuresByCandidate)
-          issue("typescript", failure.status, failure.brief);
-      if (!valid && !targets.length)
-        issue("typescript", "unconfirmed", `${prefix}: 无可确认的检查范围`);
+      if (
+        r.strict &&
+        strictFlags.some(
+          (name) =>
+            config.options[name] === false ||
+            (config.options.strict !== true && config.options[name] !== true),
+        )
+      )
+        failures.push("有效 strict 子选项不完整或被关闭");
+      for (const option of r.safetyOptions)
+        if (config.options[option] !== true) failures.push(`${option} != true`);
+      const unmatched = targets.filter(
+        (target) => !tsIncludes(files, config, target),
+      );
+      if (unmatched.length) failures.push("源文件/测试未全部纳入该类型配置");
+      if (failures.length)
+        scopeIssue(
+          "typescript",
+          "mismatch",
+          path,
+          failures.join("; "),
+          prefix,
+          `成员=${prefix}；配置=${path}；执行 root=${prefix}；TS include 按配置来源解析；include=${JSON.stringify(config.includes)}；exclude=${JSON.stringify(config.excludes)}；未匹配文件=${JSON.stringify(unmatched)}`,
+        );
     });
     await section("lint", async () => {
+      scopeContext!.path = undefined;
+      scopeContext!.details = "";
       const r = requirements.lint;
       if (!r.enabled || !applicable) return;
       const targets = chosen(project, r.includeSource, r.includeTests);
-      const candidates = own.filter((c) => c.tool === "eslint");
-      if (!candidates.length) {
-        issue(
-          "lint",
-          scriptErrors.length ? "unconfirmed" : "missing",
-          `${prefix}: 未确认 ESLint 检查入口`,
-        );
+      const path = findConfig(files, project.directory, [
+        "eslint.config.js",
+        "eslint.config.mjs",
+        "eslint.config.ts",
+        "eslint.config.cjs",
+        "eslint.config.mts",
+        "eslint.config.cts",
+      ]);
+      scopeContext!.path = path;
+      if (!path) {
+        issue("lint", "missing", `${prefix}: 缺少 ESLint flat config`);
         return;
       }
-      for (const command of candidates) {
-        validateArguments(
-          command,
-          ["--no-warn-ignored"],
-          ["--max-warnings", "--config", "-c"],
+      const raw = javascript(await files.text(path));
+      if (!Array.isArray(raw))
+        throw new Unconfirmed(
+          "ESLint default export must be a flat array/config wrapper",
         );
-        const explicit =
-          argument(command, "--config") ?? argument(command, "-c");
-        const path = explicit
-          ? files.path(project.directory, explicit)
-          : findConfig(files, project.directory, [
-              "eslint.config.js",
-              "eslint.config.mjs",
-              "eslint.config.ts",
-              "eslint.config.cjs",
-              "eslint.config.mts",
-              "eslint.config.cts",
-            ]);
-        if (!path) {
-          issue("lint", "missing", `${prefix}: 缺少 ESLint flat config`);
-          continue;
-        }
-        const raw = javascript(await files.text(path));
-        if (!Array.isArray(raw))
-          throw new Unconfirmed(
-            "ESLint default export must be a flat array/config wrapper",
-          );
-        const configs = raw.flat().map(record);
-        const configBase = files.parent(path);
-        const positions = positional(command, [
-          "--max-warnings",
-          "--config",
-          "-c",
-        ]);
-        if (!positions.length)
-          throw new Unconfirmed("ESLint target is implicit");
-        const failures: string[] = [];
-        for (const target of targets) {
-          if (!explicit) {
-            const effective = findConfig(files, files.parent(target), [
-              "eslint.config.js",
-              "eslint.config.mjs",
-              "eslint.config.ts",
-              "eslint.config.cjs",
-              "eslint.config.mts",
-              "eslint.config.cts",
-            ]);
-            if (effective !== path)
-              throw new Unconfirmed(
-                `${target}: per-file ESLint configuration differs from the CLI scope config`,
-              );
-          }
-          const rel = localPath(files.path("", configBase), target);
-          if (!commandTargets(files, command, positions, target)) {
-            failures.push(`${target}: CLI 未覆盖`);
-            continue;
-          }
-          let typed = false;
-          let tsPreset = false;
-          let projectService = false;
-          let ignored = false;
-          for (const config of configs) {
-            const allowed = [
-              "files",
-              "ignores",
-              "languageOptions",
-              "rules",
-              "name",
-              "settings",
-            ];
-            if (Object.keys(config).some((k) => !allowed.includes(k)))
-              throw new Unconfirmed("unsupported ESLint configuration key");
-            if (config.ignores !== undefined) {
-              const isIgnored = matches(config.ignores, rel);
-              if (
-                Object.keys(config).every(
-                  (k) => k === "ignores" || k === "name",
-                )
-              ) {
-                if (isIgnored) ignored = true;
-                continue;
-              }
-              if (isIgnored) continue;
-            }
-            if (config.files !== undefined && !matches(config.files, rel))
-              continue;
-            if ((config as Record<symbol, unknown>)[typeAwarePreset] === true)
-              typed = true;
-            if ((config as Record<symbol, unknown>)[typescriptPreset] === true)
-              tsPreset = true;
-            if (config.languageOptions !== undefined) {
-              const language = record(config.languageOptions);
-              if (
-                language.parser !== undefined ||
-                language.processor !== undefined
-              )
-                throw new Unconfirmed(
-                  "custom ESLint parser/processor is unsupported",
-                );
-              if (language.parserOptions !== undefined) {
-                const parser = record(language.parserOptions);
-                if (
-                  Object.keys(parser).some(
-                    (key) =>
-                      ![
-                        "project",
-                        "projectService",
-                        "tsconfigRootDir",
-                        "ecmaVersion",
-                        "sourceType",
-                      ].includes(key),
-                  )
-                )
-                  throw new Unconfirmed("unsupported ESLint parserOptions key");
-                if (parser.project !== undefined)
-                  throw new Unconfirmed(
-                    "explicit ESLint parserOptions.project is not supported; use projectService",
-                  );
-                if (parser.projectService !== undefined)
-                  projectService = parser.projectService === true;
-                if (
-                  parser.tsconfigRootDir !== undefined &&
-                  parser.tsconfigRootDir !== "__CONFIG_DIRECTORY__"
-                )
-                  throw new Unconfirmed("unsupported tsconfigRootDir");
-              }
-            }
-            if (config.rules !== undefined) {
-              const rules = record(config.rules);
-              if (
-                Object.keys(rules).some(
-                  (rule) =>
-                    rule.startsWith("@typescript-eslint/") &&
-                    (rules[rule] === "off" ||
-                      rules[rule] === 0 ||
-                      (Array.isArray(rules[rule]) &&
-                        [0, "off"].includes(
-                          rules[rule][0] as string | number,
-                        ))),
-                )
-              )
-                typed = false;
-            }
-          }
-          if (ignored) failures.push(`${target}: 被全局 ignores 排除`);
-          if (!tsPreset || (r.typeAware && (!typed || !projectService)))
-            failures.push(
-              `${target}: TS preset/type-aware projectService 未生效`,
-            );
-          if (r.typeAware) {
-            const tsPath = findConfig(files, files.parent(target), [
-              "tsconfig.json",
-            ]);
+      const configs = raw.flat().map(record);
+      scopeContext!.details = `files=${JSON.stringify(configs.map((config) => config.files))}；目标文件=${JSON.stringify(targets)}`;
+      // The fixed runner passes --config explicitly: ESLint resolves globs from cwd.
+      const configBase = project.directory || ".";
+      const failures: string[] = [];
+      for (const target of targets) {
+        const rel = localPath(files.path("", configBase), target);
+        let typed = false;
+        let tsPreset = false;
+        let projectService = false;
+        let ignored = false;
+        for (const config of configs) {
+          const allowed = [
+            "files",
+            "ignores",
+            "languageOptions",
+            "rules",
+            "name",
+            "settings",
+          ];
+          if (Object.keys(config).some((k) => !allowed.includes(k)))
+            throw new Unconfirmed("unsupported ESLint configuration key");
+          if (config.ignores !== undefined) {
+            const isIgnored = matches(config.ignores, rel);
             if (
-              !tsPath ||
-              !tsIncludes(files, await tsconfig(files, tsPath), target)
+              Object.keys(config).every((k) => k === "ignores" || k === "name")
+            ) {
+              if (isIgnored) ignored = true;
+              continue;
+            }
+            if (isIgnored) continue;
+          }
+          if (config.files !== undefined && !matches(config.files, rel))
+            continue;
+          if ((config as Record<symbol, unknown>)[typeAwarePreset] === true)
+            typed = true;
+          if ((config as Record<symbol, unknown>)[typescriptPreset] === true)
+            tsPreset = true;
+          if (config.languageOptions !== undefined) {
+            const language = record(config.languageOptions);
+            if (
+              language.parser !== undefined ||
+              language.processor !== undefined
             )
-              failures.push(`${target}: projectService 默认 tsconfig 未覆盖`);
+              throw new Unconfirmed(
+                "custom ESLint parser/processor is unsupported",
+              );
+            if (language.parserOptions !== undefined) {
+              const parser = record(language.parserOptions);
+              if (
+                Object.keys(parser).some(
+                  (key) =>
+                    ![
+                      "project",
+                      "projectService",
+                      "tsconfigRootDir",
+                      "ecmaVersion",
+                      "sourceType",
+                    ].includes(key),
+                )
+              )
+                throw new Unconfirmed("unsupported ESLint parserOptions key");
+              if (parser.project !== undefined)
+                throw new Unconfirmed(
+                  "explicit ESLint parserOptions.project is not supported; use projectService",
+                );
+              if (parser.projectService !== undefined)
+                projectService = parser.projectService === true;
+              if (
+                parser.tsconfigRootDir !== undefined &&
+                parser.tsconfigRootDir !== "__CONFIG_DIRECTORY__"
+              )
+                throw new Unconfirmed("unsupported tsconfigRootDir");
+            }
+          }
+          if (config.rules !== undefined) {
+            const rules = record(config.rules);
+            if (
+              Object.keys(rules).some(
+                (rule) =>
+                  rule.startsWith("@typescript-eslint/") &&
+                  (rules[rule] === "off" ||
+                    rules[rule] === 0 ||
+                    (Array.isArray(rules[rule]) &&
+                      [0, "off"].includes(rules[rule][0] as string | number))),
+              )
+            )
+              typed = false;
           }
         }
-        if (failures.length)
-          issue("lint", "mismatch", `${path}: ${failures.join("; ")}`);
-        else prove(command, "lint");
+        if (ignored) failures.push(`${target}: 被全局 ignores 排除`);
+        if (!tsPreset || (r.typeAware && (!typed || !projectService)))
+          failures.push(
+            `${target}: TS preset/type-aware projectService 未生效`,
+          );
+        if (r.typeAware) {
+          const tsPath = findConfig(files, files.parent(target), [
+            "tsconfig.json",
+          ]);
+          if (
+            !tsPath ||
+            !tsIncludes(files, await tsconfig(files, tsPath), target)
+          )
+            failures.push(`${target}: projectService 默认 tsconfig 未覆盖`);
+        }
       }
+      if (failures.length)
+        scopeIssue(
+          "lint",
+          "mismatch",
+          path,
+          [
+            ...new Set(
+              failures.map((failure) =>
+                failure.slice(failure.indexOf(": ") + 2),
+              ),
+            ),
+          ].join("; "),
+          prefix,
+          `成员=${prefix}；配置=${path}；执行 root=${configBase}；${scopeContext!.details}；${failures.join("; ")}`,
+        );
     });
-    const coverageFailures = failures.get("coverage") ?? 0;
-    const testingValid = await section("testing", async () => {
+    await section("testing", async () => {
+      scopeContext!.path = undefined;
+      scopeContext!.details = "";
       const r = requirements.testing;
       if (!r.enabled || !applicable) return;
-      const candidates = own.filter((c) => c.tool === "vitest");
-      if (!candidates.length) {
-        issue(
+      const path = findConfig(files, project.directory, [
+        "vitest.config.ts",
+        "vitest.config.js",
+        "vitest.config.mjs",
+        "vitest.config.mts",
+        "vitest.config.cjs",
+        "vitest.config.cts",
+        "vite.config.ts",
+        "vite.config.js",
+      ]);
+      scopeContext!.path = path;
+      if (!path) {
+        issue("testing", "missing", `${prefix}: 缺少 Vitest 配置`);
+        return;
+      }
+      const config = record(javascript(await files.text(path)));
+      const test = record(config.test ?? {});
+      scopeContext!.details = `include=${JSON.stringify(test.include)}；exclude=${JSON.stringify(test.exclude)}`;
+      for (const key of ["watch", "passWithNoTests"]) {
+        if (test[key] !== undefined && typeof test[key] !== "boolean")
+          throw new Unconfirmed(`Vitest test.${key} is not a boolean`);
+      }
+      const allowed = [
+        "include",
+        "exclude",
+        "coverage",
+        "passWithNoTests",
+        "watch",
+        "environment",
+        "globals",
+        "name",
+        "testTimeout",
+      ];
+      if (
+        Object.keys(config).some((k) => !["test"].includes(k)) ||
+        Object.keys(test).some((k) => !allowed.includes(k))
+      )
+        throw new Unconfirmed(
+          `unsupported Vitest configuration key (including projects/workspace/root)；观察字段=${JSON.stringify(Object.keys(config))}/${JSON.stringify(Object.keys(test))}`,
+        );
+      const testBase = project.directory || ".";
+      const actualTests = project.tests.filter((path) =>
+        /\.(?:test|spec)\.[cm]?tsx?$/.test(path),
+      );
+      const included = test.include ?? [
+        "**/*.test.ts",
+        "**/*.spec.ts",
+        "**/*.test.tsx",
+        "**/*.spec.tsx",
+        "**/*.test.mts",
+        "**/*.test.cts",
+      ];
+      const excluded = test.exclude ?? ["**/node_modules/**", "**/.git/**"];
+      const unmatched = actualTests.filter(
+        (target) =>
+          !patternsCover(files, testBase, included, [target]) ||
+          matches(excluded, localPath(files.path("", testBase), target)),
+      );
+      if (unmatched.length) {
+        scopeIssue(
           "testing",
-          scriptErrors.length ? "unconfirmed" : "missing",
-          `${prefix}: 未确认 Vitest 入口`,
+          "mismatch",
+          path,
+          `测试发现未覆盖全部已识别测试；include=${JSON.stringify(included)}；exclude=${JSON.stringify(excluded)}`,
+          prefix,
+          `成员=${prefix}；配置=${path}；实际 root=${testBase}；未匹配文件=${JSON.stringify(unmatched)}`,
         );
         return;
       }
-      for (const command of candidates) {
-        validateArguments(
-          command,
-          [
-            "run",
-            "--run",
-            "--coverage",
-            "--coverage.enabled",
-            "--watch=false",
-            "--passWithNoTests=false",
-            "--passWithNoTests",
-            "--passWithNoTests=true",
-          ],
-          ["--root", "--config", "-c"],
+      if (
+        (r.nonWatch && test.watch === true) ||
+        (r.failOnNoTests && test.passWithNoTests === true)
+      ) {
+        scopeIssue(
+          "testing",
+          "mismatch",
+          path,
+          `watch=${JSON.stringify(test.watch)} 或 passWithNoTests=${JSON.stringify(test.passWithNoTests)} 配置不满足要求`,
+          prefix,
+          `成员=${prefix}；配置=${path}；实际 root=${testBase}；include=${JSON.stringify(included)}`,
         );
-        const explicit =
-          argument(command, "--config") ?? argument(command, "-c");
-        const path = explicit
-          ? files.path(project.directory, explicit)
-          : findConfig(files, project.directory, [
-              "vitest.config.ts",
-              "vitest.config.js",
-              "vitest.config.mjs",
-              "vitest.config.mts",
-              "vitest.config.cjs",
-              "vitest.config.cts",
-              "vite.config.ts",
-              "vite.config.js",
-            ]);
-        if (!path) {
-          issue("testing", "missing", `${prefix}: 缺少 Vitest 配置`);
-          continue;
-        }
-        const config = record(javascript(await files.text(path)));
-        const test = record(config.test ?? {});
-        for (const key of ["watch", "passWithNoTests"]) {
-          if (test[key] !== undefined && typeof test[key] !== "boolean")
-            throw new Unconfirmed(`Vitest test.${key} is not a boolean`);
-        }
-        const allowed = [
-          "include",
-          "exclude",
-          "coverage",
-          "passWithNoTests",
-          "watch",
-          "environment",
-          "globals",
-          "name",
-          "testTimeout",
-        ];
-        if (
-          Object.keys(config).some((k) => !["test"].includes(k)) ||
-          Object.keys(test).some((k) => !allowed.includes(k))
-        )
-          throw new Unconfirmed(
-            "unsupported Vitest configuration key (including projects/workspace/root)",
-          );
-        const testBase = files.path(
-          project.directory,
-          argument(command, "--root") ?? ".",
-        );
-        const actualTests = project.tests.filter((path) =>
-          /\.(?:test|spec)\.[cm]?tsx?$/.test(path),
-        );
-        const included = test.include ?? [
-          "**/*.test.ts",
-          "**/*.spec.ts",
-          "**/*.test.tsx",
-          "**/*.spec.tsx",
-          "**/*.test.mts",
-          "**/*.test.cts",
-        ];
-        const excluded = test.exclude ?? ["**/node_modules/**", "**/.git/**"];
-        if (
-          !patternsCover(files, testBase, included, actualTests) ||
-          actualTests.some((target) =>
-            matches(excluded, localPath(testBase, target)),
-          )
-        ) {
-          issue("testing", "mismatch", `${path}: 测试发现未覆盖全部已识别测试`);
-          continue;
-        }
-        const nonWatch =
-          command.args.includes("run") ||
-          flag(command, "--run") ||
-          command.args.includes("--watch=false") ||
-          test.watch === false;
-        if (
-          (r.nonWatch && !nonWatch) ||
-          (r.failOnNoTests &&
-            (command.args.includes("--passWithNoTests=false")
-              ? false
-              : flag(command, "--passWithNoTests") ||
-                test.passWithNoTests === true))
-        ) {
-          issue(
-            "testing",
-            "mismatch",
-            `${path}: watch 或 passWithNoTests 配置不满足要求`,
-          );
-          continue;
-        }
-        prove(command, "test");
-        if (r.coverage.enabled)
-          await section("coverage", async () => {
-            const coverage =
-              test.coverage === undefined ? undefined : record(test.coverage);
-            if (!coverage) {
-              issue("coverage", "missing", `${path}: coverage 未配置`);
-              return;
-            }
-            if (
-              Object.keys(coverage).some(
-                (k) =>
-                  ![
-                    "provider",
-                    "reporter",
-                    "reportsDirectory",
-                    "include",
-                    "exclude",
-                    "thresholds",
-                    "enabled",
-                    "all",
-                    "skipFull",
-                  ].includes(k),
-              )
-            )
-              throw new Unconfirmed("unsupported Vitest coverage key");
-            if (
-              coverage.provider !== undefined &&
-              !["v8", "istanbul"].includes(coverage.provider as string)
-            )
-              throw new Unconfirmed("unsupported coverage provider");
-            const major = await declaredMajor(
-              files,
-              projects,
-              project,
-              "vitest",
-            );
-            if (major === undefined || major < 4 || major > 5)
-              throw new Unconfirmed(
-                "untested-source semantics verified only for declared Vitest 4.x/5.x",
-              );
-            const c = r.coverage;
-            if (!c.enabled) return;
-            const failures: string[] = [];
-            const thresholds = record(coverage.thresholds ?? {});
-            if (thresholds.autoUpdate === true)
-              failures.push("thresholds.autoUpdate 会修改门槛");
-            for (const metric of metrics) {
-              const observed = thresholds[metric];
-              if (
-                typeof observed === "number" &&
-                (!Number.isFinite(observed) || observed < 0 || observed > 100)
-              )
-                failures.push(`${metric} 必须是有限的 0..100 百分比`);
-              else if (
-                typeof thresholds[metric] !== "number" ||
-                thresholds[metric] < c.minimum[metric]
-              )
-                failures.push(`${metric} < ${c.minimum[metric]}`);
-            }
-            if (
-              Object.keys(thresholds).some(
-                (k) =>
-                  ![...metrics, "perFile", "autoUpdate", "100"].includes(k),
-              )
-            )
-              throw new Unconfirmed(
-                "per-glob coverage thresholds are unsupported",
-              );
-            if (c.includeUntested) {
-              if (
-                !coverage.include ||
-                !patternsCover(
-                  files,
-                  testBase,
-                  coverage.include,
-                  project.sources,
-                )
-              )
-                failures.push("coverage.include 未覆盖全部源码");
-              if (
-                coverage.exclude !== undefined &&
-                project.sources.some((p) =>
-                  matches(coverage.exclude, localPath(testBase, p)),
-                )
-              )
-                failures.push("coverage.exclude 排除源码");
-            }
-            const enabled =
-              flag(command, "--coverage") ||
-              flag(command, "--coverage.enabled") ||
-              coverage.enabled === true;
-            if (failures.length)
-              issue("coverage", "mismatch", `${path}: ${failures.join("; ")}`);
-            else if (enabled) prove(command, "coverage");
-            // Thresholds without an enabled invocation never prove the coverage capability.
-          });
+        return;
       }
+      if (r.coverage.enabled)
+        await section("coverage", async () => {
+          const coverage =
+            test.coverage === undefined ? undefined : record(test.coverage);
+          if (!coverage) {
+            issue("coverage", "missing", `${path}: coverage 未配置`);
+            return;
+          }
+          scopeContext!.details = `include=${JSON.stringify(coverage.include)}；exclude=${JSON.stringify(coverage.exclude)}；源码=${JSON.stringify(project.sources)}`;
+          if (
+            Object.keys(coverage).some(
+              (k) =>
+                ![
+                  "provider",
+                  "reporter",
+                  "reportsDirectory",
+                  "include",
+                  "exclude",
+                  "thresholds",
+                  "enabled",
+                  "all",
+                  "skipFull",
+                ].includes(k),
+            )
+          )
+            throw new Unconfirmed("unsupported Vitest coverage key");
+          if (
+            coverage.provider !== undefined &&
+            !["v8", "istanbul"].includes(coverage.provider as string)
+          )
+            throw new Unconfirmed("unsupported coverage provider");
+          const major = await declaredMajor(files, projects, project, "vitest");
+          if (major === undefined || major < 4 || major > 5)
+            throw new Unconfirmed(
+              "untested-source semantics verified only for declared Vitest 4.x/5.x",
+            );
+          const c = r.coverage;
+          if (!c.enabled) return;
+          const failures: string[] = [];
+          const unmatched: string[] = [];
+          const thresholds = record(coverage.thresholds ?? {});
+          if (thresholds.autoUpdate === true)
+            failures.push("thresholds.autoUpdate 会修改门槛");
+          for (const metric of metrics) {
+            const observed = thresholds[metric];
+            if (
+              typeof observed === "number" &&
+              (!Number.isFinite(observed) || observed < 0 || observed > 100)
+            )
+              failures.push(`${metric} 必须是有限的 0..100 百分比`);
+            else if (
+              typeof thresholds[metric] !== "number" ||
+              thresholds[metric] < c.minimum[metric]
+            )
+              failures.push(`${metric} < ${c.minimum[metric]}`);
+          }
+          if (
+            Object.keys(thresholds).some(
+              (k) => ![...metrics, "perFile", "autoUpdate", "100"].includes(k),
+            )
+          )
+            throw new Unconfirmed(
+              "per-glob coverage thresholds are unsupported",
+            );
+          if (c.includeUntested) {
+            unmatched.push(
+              ...project.sources.filter(
+                (target) =>
+                  !coverage.include ||
+                  !patternsCover(files, testBase, coverage.include, [target]) ||
+                  (coverage.exclude !== undefined &&
+                    matches(
+                      coverage.exclude,
+                      localPath(files.path("", testBase), target),
+                    )),
+              ),
+            );
+            if (
+              !coverage.include ||
+              !patternsCover(files, testBase, coverage.include, project.sources)
+            )
+              failures.push("coverage.include 未覆盖全部源码");
+            if (
+              coverage.exclude !== undefined &&
+              project.sources.some((p) =>
+                matches(
+                  coverage.exclude,
+                  localPath(files.path("", testBase), p),
+                ),
+              )
+            )
+              failures.push("coverage.exclude 排除源码");
+          }
+          if (failures.length)
+            scopeIssue(
+              "coverage",
+              "mismatch",
+              path,
+              failures.join("; "),
+              prefix,
+              `成员=${prefix}；配置=${path}；实际 root=${testBase}；include=${JSON.stringify(coverage.include)}；exclude=${JSON.stringify(coverage.exclude)}；源码=${JSON.stringify(project.sources)}；未匹配文件=${JSON.stringify(unmatched)}`,
+            );
+        });
     });
-    if (
-      applicable &&
-      requirements.testing.enabled &&
-      requirements.testing.coverage.enabled &&
-      testingValid &&
-      (failures.get("coverage") ?? 0) === coverageFailures &&
-      !own.some((command) => proved.get(command)?.has("coverage"))
-    )
-      issue(
-        "coverage",
-        scriptErrors.length ? "unconfirmed" : "missing",
-        `${prefix}: 未确认启用覆盖率且执行有效阈值的入口；只有 thresholds 不足以接入覆盖率`,
-      );
   }
+  scopeContext = undefined;
+  for (const entry of scoped.values())
+    report(
+      `${entry.domain}-${entry.status}` as ProblemCode,
+      `${entry.evidence}；影响范围: ${entry.members.join("；")}`,
+    );
   await section("formatting", async () => {
     const r = requirements.formatting;
     if (!r.enabled) return;
-    const candidates = commands.filter((c) => c.tool === "prettier");
-    if (!candidates.length) {
-      issue(
-        "formatting",
-        scriptErrors.length ? "unconfirmed" : "missing",
-        "未确认 Prettier 检查入口",
-      );
-      return;
-    }
     const targets = [
       ...new Set([
         ...projects.flatMap((p) => [...p.sources, ...p.tests]),
-        ...files.paths.filter(
+        ...configurationPaths.filter(
           (path) =>
-            /(?:^|\/)(?:package\.json|pnpm-(?:lock|workspace)\.yaml|turbo\.json|tsconfig[^/]*\.json|(?:eslint|vitest|vite|prettier)\.config\.[cm]?[jt]s|\.prettierrc(?:\.[^/]+)?)$/.test(
+            /(?:^|\/)(?:package\.json|pnpm-workspace\.yaml|turbo\.json|release\.config\.json|tsconfig[^/]*\.json|(?:eslint|vitest|vite|prettier)\.config\.[cm]?[jt]s|\.prettierrc(?:\.[^/]+)?)$/.test(
               path,
             ) || /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path),
         ),
@@ -797,42 +708,25 @@ export async function inspect(
           );
       }
     }
-    for (const command of candidates) {
-      if (r.checkOnly && !flag(command, "--check") && !flag(command, "-c"))
-        continue;
-      if (r.checkOnly && (flag(command, "--write") || flag(command, "-w")))
-        continue;
-      validateArguments(
-        command,
-        ["--check", "-c", "--list-different", "--write", "-w"],
-        ["--config", "--ignore-path"],
-      );
-      const positions = positional(command, ["--config", "--ignore-path"]);
-      if (
-        !positions.length ||
-        !targets.every((p) => commandTargets(files, command, positions, p))
-      )
-        continue;
-      const path = argument(command, "--config")
-        ? files.path(command.directory, argument(command, "--config")!)
-        : findConfig(files, command.directory, [
-            ".prettierrc",
-            ".prettierrc.json",
-            ".prettierrc.yaml",
-            ".prettierrc.yml",
-            ".prettierrc.js",
-            ".prettierrc.mjs",
-            ".prettierrc.cjs",
-            ".prettierrc.ts",
-            ".prettierrc.toml",
-            "prettier.config.js",
-            "prettier.config.mjs",
-            "prettier.config.cjs",
-            "prettier.config.ts",
-          ]);
+    for (const project of projects) {
+      const path = findConfig(files, project.directory, [
+        ".prettierrc",
+        ".prettierrc.json",
+        ".prettierrc.yaml",
+        ".prettierrc.yml",
+        ".prettierrc.js",
+        ".prettierrc.mjs",
+        ".prettierrc.cjs",
+        ".prettierrc.ts",
+        ".prettierrc.toml",
+        "prettier.config.js",
+        "prettier.config.mjs",
+        "prettier.config.cjs",
+        "prettier.config.ts",
+      ]);
       const configurations = new Set(path ? [path] : []);
-      if (!argument(command, "--config")) {
-        for (const candidate of files.paths) {
+      {
+        for (const candidate of configurationPaths) {
           if (
             !/(?:^|\/)(?:\.prettierrc(?:\.[^/]+)?|prettier\.config\.[^/]+)$/.test(
               candidate,
@@ -866,98 +760,41 @@ export async function inspect(
         if (config.plugins !== undefined || config.overrides !== undefined)
           throw new Unconfirmed("Prettier plugins/overrides are unsupported");
       }
-      const ignore = argument(command, "--ignore-path")
-        ? files.path(command.directory, argument(command, "--ignore-path")!)
-        : files.path(command.directory, ".prettierignore");
+      const ignore = files.path(project.directory, ".prettierignore");
       if (files.exists(ignore)) {
         const patterns = ignorePatterns(await files.text(ignore));
-        if (
-          targets.some((p) =>
-            ignoreMatch(patterns, localPath(command.directory, p)),
-          )
-        ) {
-          issue("formatting", "mismatch", `${ignore}: 排除了源码或测试`);
+        const excluded = targets.filter((p) =>
+          ignoreMatch(patterns, localPath(project.directory, p)),
+        );
+        if (excluded.length) {
+          issue(
+            "formatting",
+            "mismatch",
+            `${ignore}: 排除了必要格式检查目标: ${excluded.join(", ")}`,
+          );
           continue;
         }
       }
-      if (!argument(command, "--ignore-path")) {
-        const gitignore = files.path(command.directory, ".gitignore");
+      {
+        const gitignore = files.path(project.directory, ".gitignore");
         if (files.exists(gitignore)) {
           const patterns = ignorePatterns(await files.text(gitignore));
-          if (
-            targets.some((p) =>
-              ignoreMatch(patterns, localPath(command.directory, p)),
-            )
-          ) {
-            issue("formatting", "mismatch", `${gitignore}: 排除了源码或测试`);
+          const excluded = targets.filter((p) =>
+            ignoreMatch(patterns, localPath(project.directory, p)),
+          );
+          if (excluded.length) {
+            issue(
+              "formatting",
+              "mismatch",
+              `${gitignore}: 排除了必要格式检查目标: ${excluded.join(", ")}`,
+            );
             continue;
           }
         }
       }
-      prove(command, "formatting");
     }
-    if (!candidates.some((c) => proved.get(c)?.has("formatting")))
-      issue(
-        "formatting",
-        "mismatch",
-        "未确认覆盖全部源码/测试且不写入的格式入口",
-      );
   });
-  for (const [command, set] of proved) {
-    const existing = evidence.get(key(command)) ?? new Set();
-    for (const capability of set) existing.add(capability);
-    evidence.set(key(command), existing);
-  }
-  const covers = (commands: Command[], capability: Capability): boolean => {
-    if (capability === "formatting")
-      return commands.some((c) => evidence.get(key(c))?.has(capability));
-    const applicable = projects.filter(
-      (p) => p.sources.length + p.tests.length > 0,
-    );
-    return (
-      applicable.length > 0 &&
-      applicable.every((p) =>
-        commands.some(
-          (c) =>
-            c.directory === p.directory &&
-            evidence.get(key(c))?.has(capability),
-        ),
-      )
-    );
-  };
-  const gateNames: string[] = [];
-  const capabilityDomains: Record<Capability, Domain> = {
-    typecheck: "typescript",
-    lint: "lint",
-    formatting: "formatting",
-    test: "testing",
-    coverage: "coverage",
-  };
-  const blocked = (capability: Capability) =>
-    failures.has(capabilityDomains[capability]) ||
-    (capability === "coverage" && failures.has("testing"));
-  await section("gate", () => {
-    const r = requirements.qualityGate;
-    if (!r.enabled || r.capabilities.some(blocked)) return;
-    for (const name of Object.keys(
-      record(root.manifest.scripts ?? {}),
-    ).sort()) {
-      if (name !== "check") continue;
-      const expanded = allCommands.get(`:${name}`);
-      if (expanded && r.capabilities.every((c) => covers(expanded, c)))
-        gateNames.push(name);
-    }
-    if (!gateNames.length)
-      issue(
-        "gate",
-        Object.keys(record(root.manifest.scripts ?? {})).length === 0
-          ? "missing"
-          : scriptErrors.length
-            ? "unconfirmed"
-            : "mismatch",
-        `根聚合入口未连接有效能力: ${r.capabilities.join(", ")}${scriptErrors.length ? `; ${scriptErrors.join("; ")}` : ""}`,
-      );
-  });
+  let quality: QualityProfile | undefined;
   await section("ci", async () => {
     if (!requirements.ci.enabled) return;
     const origin = await repository(files);
@@ -966,33 +803,10 @@ export async function inspect(
       throw new Unconfirmed(
         `首版尚不支持主分支 ${origin.primary} 的触发覆盖证明`,
       );
-    await ci(
-      files,
-      scripts,
-      root,
-      requirements,
-      gateNames,
-      {
-        gate:
-          (!requirements.qualityGate.enabled ||
-            !requirements.qualityGate.capabilities.some(blocked)) &&
-          !failures.has("gate"),
-        coverage: !blocked("coverage"),
-      },
-      covers,
-      issue,
-    );
+    quality = await qualityWorkflow(files, internal.ciWorkflow, issue);
+    if (quality) await ci(files, requirements, issue);
   });
-  await convention(
-    files,
-    projects,
-    scripts,
-    allCommands,
-    internal,
-    report,
-    covers,
-    blocked,
-  );
+  await convention(files, projects, internal, report, quality ?? null);
 }
 
 async function discover(files: Files): Promise<Project[]> {
@@ -1122,68 +936,6 @@ function findConfig(
     current = files.parent(current);
   }
 }
-function validateArguments(
-  command: Command,
-  flags: string[],
-  options: string[],
-): void {
-  const seen = new Set<string>();
-  for (let i = 0; i < command.args.length; i++) {
-    const value = command.args[i]!;
-    if (!value.startsWith("-")) continue;
-    const name = value.split("=")[0]!;
-    const canonical =
-      name === "-p"
-        ? "--project"
-        : name === "-c"
-          ? command.tool === "prettier"
-            ? "--check"
-            : "--config"
-          : name;
-    if (seen.has(canonical))
-      throw new Unconfirmed(`${command.tool}: duplicate option ${canonical}`);
-    seen.add(canonical);
-    if (flags.includes(value)) continue;
-    if (options.includes(name)) {
-      const optionValue = value.includes("=")
-        ? value.slice(value.indexOf("=") + 1)
-        : command.args[i + 1];
-      if (!optionValue || optionValue.startsWith("-"))
-        throw new Unconfirmed(`${command.tool}: missing value for ${name}`);
-      if (!value.includes("=")) i++;
-      continue;
-    }
-    throw new Unconfirmed(`${command.tool}: unsupported option ${value}`);
-  }
-}
-function positional(command: Command, options: string[]): string[] {
-  const output: string[] = [];
-  for (let i = 0; i < command.args.length; i++) {
-    const value = command.args[i]!;
-    if (options.includes(value)) {
-      i++;
-      continue;
-    }
-    if (!value.startsWith("-")) output.push(value);
-  }
-  return output;
-}
-function commandTargets(
-  files: Files,
-  command: Command,
-  targets: string[],
-  path: string,
-): boolean {
-  for (const target of targets)
-    if (target.includes("*") || target.includes("?")) glob(target, "");
-  return targets.some((target) => {
-    const relative = localPath(command.directory, path);
-    if (target.includes("*") || target.includes("?"))
-      return glob(target, relative);
-    const root = files.path(command.directory, target);
-    return root === path || !root || path.startsWith(`${root}/`);
-  });
-}
 function ignorePatterns(text: string): string[] {
   const patterns = text
     .split(/\r?\n/)
@@ -1205,18 +957,11 @@ function ignoreMatch(patterns: string[], path: string): boolean {
 
 async function ci(
   files: Files,
-  scripts: Scripts,
-  root: Project,
   requirements: Requirements,
-  gateNames: string[],
-  prerequisites: { gate: boolean; coverage: boolean },
-  covers: (commands: Command[], capability: Capability) => boolean,
   issue: (domain: Domain, status: Status, brief: string) => void,
 ): Promise<void> {
   const r = requirements.ci;
   if (!r.enabled) return;
-  const checkGate = r.qualityGate && prerequisites.gate;
-  const checkCoverage = r.coverage && prerequisites.coverage;
   const paths = files.paths.filter((p) =>
     /^\.github\/workflows\/[^/]+\.ya?ml$/.test(p),
   );
@@ -1225,6 +970,7 @@ async function ci(
     return;
   }
   let valid = false;
+  const reasons = new Set<string>();
   let unknown = false;
   for (const path of paths) {
     const workflow = yaml(await files.text(path));
@@ -1274,6 +1020,19 @@ async function ci(
     for (const job of Object.values(record(workflow.jobs))) {
       const j = record(job);
       if (
+        !Array.isArray(j.steps) ||
+        !j.steps.some((step) => {
+          const run = record(step).run;
+          return (
+            typeof run === "string" &&
+            /^pnpm (?:(?:run )?check|install(?: --frozen-lockfile)?)$/.test(
+              run.trim(),
+            )
+          );
+        })
+      )
+        continue;
+      if (
         j.if !== undefined ||
         j["continue-on-error"] !== undefined ||
         j.env !== undefined ||
@@ -1310,14 +1069,28 @@ async function ci(
       }
       if (!Array.isArray(j.steps)) continue;
       let installed = !r.frozenInstall;
+      let installedWithTools = !r.frozenInstall;
       let checkedOut = false;
       let selectedNode = false;
       let selectedPnpm = false;
       let supportedJob = true;
-      let passed = !checkGate && !checkCoverage;
+      let passed = false;
+      let declaredCheck = false;
+      const observedNode: unknown[] = [];
+      const observedPnpm: unknown[] = [];
       for (const step of j.steps) {
         const s = record(step);
         const settings = record(s.with ?? {});
+        if (
+          typeof s.uses === "string" &&
+          s.uses.startsWith("actions/setup-node@")
+        )
+          observedNode.push(settings);
+        if (
+          typeof s.uses === "string" &&
+          s.uses.startsWith("pnpm/action-setup@")
+        )
+          observedPnpm.push(settings);
         const unconditional =
           s.if === undefined &&
           s["continue-on-error"] === undefined &&
@@ -1358,7 +1131,8 @@ async function ci(
           typeof s.uses === "string" &&
           s.uses.startsWith("pnpm/action-setup@") &&
           settings.version === undefined &&
-          settings.run_install === undefined &&
+          (settings.run_install === undefined ||
+            settings.run_install === false) &&
           (settings.package_json_file === undefined ||
             settings.package_json_file === "package.json")
         )
@@ -1404,7 +1178,14 @@ async function ci(
           throw error;
         }
         if (tokens.join(" ") === "pnpm install --frozen-lockfile") {
-          if (checkedOut && selectedNode && selectedPnpm) installed = true;
+          if (checkedOut) installed = true;
+          if (checkedOut && selectedNode && selectedPnpm)
+            installedWithTools = true;
+          continue;
+        }
+        if (tokens.join(" ") === "pnpm install") {
+          supportedJob = false;
+          reasons.add(`${path}: check job 使用了非冻结安装 pnpm install`);
           continue;
         }
         if (
@@ -1414,14 +1195,12 @@ async function ci(
           supportedJob = false;
           unknown = true;
         }
-        if (!checkGate && !checkCoverage) continue;
-        if (!checkedOut || !installed || tokens[0] !== "pnpm") continue;
+        if (tokens[0] !== "pnpm") continue;
         const name = tokens[1] === "run" ? tokens[2] : tokens[1];
         if (!name || tokens.length !== (tokens[1] === "run" ? 3 : 2)) continue;
-        if (checkGate && !gateNames.includes(name)) continue;
-        const expanded = await scripts.expand(root, name);
-        if (checkCoverage && !covers(expanded, "coverage")) continue;
-        passed = true;
+        if (name !== "check") continue;
+        declaredCheck = true;
+        if (checkedOut && installed) passed = true;
       }
       if (
         installed &&
@@ -1429,15 +1208,51 @@ async function ci(
         checkedOut &&
         selectedNode &&
         selectedPnpm &&
+        installedWithTools &&
         supportedJob
       )
         valid = true;
+      else {
+        if (!checkedOut) reasons.add(`${path}: check job 缺少有效 checkout`);
+        if (!selectedNode)
+          reasons.add(
+            `${path}: check job actions/setup-node.with 观察 ${JSON.stringify(observedNode)}；要求 node-version-file: .node-version 且不覆盖 node-version`,
+          );
+        if (!selectedPnpm)
+          reasons.add(
+            `${path}: check job pnpm/action-setup.with 观察 ${JSON.stringify(observedPnpm)}；要求读取根 packageManager，不覆盖 version/package_json_file，不隐式安装`,
+          );
+        if (!installed)
+          reasons.add(
+            `${path}: check job 未在 checkout 后声明 pnpm install --frozen-lockfile；要求先冻结安装`,
+          );
+        else if (selectedNode && selectedPnpm && !installedWithTools)
+          reasons.add(
+            `${path}: pnpm install --frozen-lockfile 位于根工具选择之前；要求先选择根工具再冻结安装`,
+          );
+        if (!supportedJob)
+          reasons.add(`${path}: check job 含不受支持的动作或执行覆盖`);
+        if (!declaredCheck)
+          reasons.add(
+            `${path}: check job steps.run 未声明根 pnpm check 入口；要求 pnpm check`,
+          );
+        else if (!passed && installed)
+          reasons.add(
+            `${path}: 已声明 pnpm check，但不在 checkout/冻结安装之后；要求先安装后 check`,
+          );
+        if ((!selectedNode || !selectedPnpm) && installed && passed)
+          reasons.add(
+            `${path}: 已观察 pnpm install --frozen-lockfile 和 pnpm check；执行有效性受根工具选择阻断，未断言入口缺失`,
+          );
+      }
     }
   }
   if (!valid)
     issue(
       "ci",
       unknown ? "unconfirmed" : "mismatch",
-      "未确认 PR/main push 同一无条件 job 按序完成 checkout、读取根 Node/pnpm 声明、冻结安装及前置检查通过的 check/覆盖率连接",
+      reasons.size
+        ? [...reasons].join("; ")
+        : "未确认覆盖 PR/main push 的同一无条件 check job，按序完成 checkout、根工具选择、冻结安装及 pnpm check 入口调用",
     );
 }

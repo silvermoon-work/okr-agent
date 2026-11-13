@@ -1,10 +1,12 @@
-import { createHash } from "node:crypto";
-import { gt, minVersion, parse, satisfies, valid, validRange } from "semver";
-import type { Project } from "./commands.js";
+import { gt, minVersion, parse, satisfies, validRange } from "semver";
+import { projectStrategy, type Project } from "./commands.js";
 import type { InspectionEvidence } from "./convention.js";
 import { type Files, dataYaml, record, Unconfirmed } from "./files.js";
 import { fresh, type Metadata } from "./metadata.js";
 import { repository } from "./repository.js";
+import { fixedFile } from "./script-profile.js";
+import { releaseMappings } from "./release-evidence.js";
+import { qualityWorkflow, type QualityProfile } from "./quality-workflow.js";
 
 type Report = (
   domain: "release" | "ci" | "dependency",
@@ -13,12 +15,10 @@ type Report = (
 ) => void;
 export interface PublisherProfile {
   nodeVersions: string[];
+  directory?: string;
 }
 function text(bytes: Uint8Array) {
   return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-}
-function lf(value: string) {
-  return value.replace(/\r\n?/g, "\n");
 }
 function sameData(left: unknown, right: unknown): boolean {
   const normalize = (value: unknown): unknown => {
@@ -33,9 +33,48 @@ function sameData(left: unknown, right: unknown): boolean {
   };
   return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
 }
-function fields(value: Record<string, unknown>, names: string[]) {
+function fields(
+  value: Record<string, unknown>,
+  names: string[],
+  source = "release.config.json",
+) {
   if (Object.keys(value).sort().join() !== [...names].sort().join())
-    throw new Unconfirmed("npm publisher v1 的声明必须是完整闭合对象");
+    throw new Unconfirmed(
+      `${source}: 观察字段 ${JSON.stringify(Object.keys(value))}；npm publisher v1 要求闭合字段 ${JSON.stringify(names)}`,
+    );
+}
+function difference(
+  observed: unknown,
+  expected: unknown,
+  path = "",
+): string | undefined {
+  const display = (value: unknown) =>
+    (value === undefined ? "未声明" : JSON.stringify(value)).slice(0, 1000);
+  if (
+    observed &&
+    expected &&
+    typeof observed === "object" &&
+    typeof expected === "object" &&
+    !Array.isArray(observed) &&
+    !Array.isArray(expected)
+  ) {
+    const left = record(observed);
+    const right = record(expected);
+    for (const key of [
+      ...new Set([...Object.keys(left), ...Object.keys(right)]),
+    ].sort()) {
+      const found = difference(
+        left[key],
+        right[key],
+        path ? `${path}.${key}` : key,
+      );
+      if (found) return found;
+    }
+    return undefined;
+  }
+  return sameData(observed, expected)
+    ? undefined
+    : `${path}: 观察 ${display(observed)}；标准要求 ${display(expected)}`;
 }
 
 export async function publisherProfile(
@@ -43,134 +82,293 @@ export async function publisherProfile(
   projects: Project[],
   assets: InspectionEvidence,
   report: Report,
+  quality?: QualityProfile | null,
 ): Promise<PublisherProfile | undefined> {
-  if (!files.exists("release.config.json")) return undefined;
-  const origin = await repository(files);
-  if (!origin.github || origin.primary !== "main")
-    throw new Unconfirmed(
-      "npm publisher v1 只证明明确 GitHub/main 上的发布接口",
-    );
-  const config = await files.json("release.config.json");
-  fields(config, ["schemaVersion", "package", "ci"]);
-  const target = record(config.package);
-  const ci = record(config.ci);
-  fields(target, ["id", "name", "directory"]);
-  fields(ci, ["nodeVersions"]);
+  const targets = projects.filter(
+    (project) =>
+      project.manifest.private !== true &&
+      (project.manifest.publishConfig !== undefined ||
+        record(project.manifest.scripts ?? {})["lint-package"] !== undefined),
+  );
+  if (!targets.length && !files.exists("release.config.json")) return undefined;
   if (
-    config.schemaVersion !== 1 ||
-    projects.length !== 1 ||
-    target.directory !== "."
+    !targets.length &&
+    projects.every((project) => project.manifest.private === true)
   )
-    throw new Unconfirmed(
-      "npm publisher v1 只支持显式映射到根的单个 npm ESM 包",
-    );
-  const project = projects[0]!;
-  if (
-    typeof target.id !== "string" ||
-    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(target.id) ||
-    target.name !== project.manifest.name
-  ) {
-    report(
-      "release",
-      "mismatch",
-      "release.config.json 的包 ID/name 不匹配真实根包",
-    );
     return undefined;
-  }
-  if (
-    !Array.isArray(ci.nodeVersions) ||
-    ci.nodeVersions.length < 2 ||
-    ci.nodeVersions.length > 8 ||
-    new Set(ci.nodeVersions as unknown[]).size !== ci.nodeVersions.length ||
-    (ci.nodeVersions as unknown[]).some(
-      (value) =>
-        typeof value !== "string" ||
-        valid(value) !== value ||
-        parse(value)!.prerelease.length,
-    )
-  )
-    throw new Unconfirmed(
-      "npm publisher v1 需要 2..8 个唯一精确稳定 Node 矩阵版本",
-    );
-  let okay = true;
-  for (const [path, canonical] of [
-    [".github/workflows/npm-publish.yaml", assets.publishWorkflow],
-    [".github/workflows/ci.yaml", assets.ciWorkflow],
-  ] as const) {
-    if (!files.exists(path)) {
-      report("release", "missing", `${path}: 标准 publisher workflow 缺失`);
-      okay = false;
-      continue;
-    }
-    const expected = dataYaml(text(canonical));
-    if (path.endsWith("/ci.yaml"))
-      record(
-        record(record(record(expected.jobs).compatibility).strategy).matrix,
-      )["node-version"] = ci.nodeVersions;
-    if (!sameData(dataYaml(await files.text(path)), expected)) {
-      report(
-        "release",
-        "unconfirmed",
-        `${path}: 不等同已审查 npm publisher v1 workflow；不猜测额外动作、channel、OIDC、dispatch 或 CI 聚合语义`,
+  const topology =
+    projectStrategy(projects).kind === "monorepo"
+      ? "workspace"
+      : "single-package";
+  const reference = `references/npm-publisher-v1.md#${topology}；标准 assets/release.mjs、assets/release-dry-run.mjs、assets/npm-publish.mjs`;
+  const originalReport = report;
+  report = (domain, status, brief) => {
+    originalReport(domain, status, `${brief}；修复参考 ${reference}`);
+  };
+  try {
+    const origin = await repository(files);
+    if (!origin.github || origin.primary !== "main")
+      throw new Unconfirmed(
+        "npm publisher v1 只证明明确 GitHub/main 上的发布接口",
       );
-      okay = false;
-    }
-  }
-  const helper = ".github/scripts/npm-publish.mjs";
-  if (!files.exists(helper)) {
-    report("release", "missing", `${helper}: 标准发布门卫缺失`);
-    okay = false;
-  } else {
-    const digest = (value: string) =>
-      createHash("sha256").update(lf(value), "utf8").digest("hex");
-    const expected = digest(text(assets.publisher));
-    if (digest(await files.text(helper)) !== expected) {
-      report(
-        "release",
-        "unconfirmed",
-        `${helper}: 实际源字节不是 Bundle 中已审查 publisher v1，期望 SHA256 ${expected}；不执行目标脚本`,
+    const workflowPath = ".github/workflows/ci.yaml";
+    const verifiedQuality =
+      quality === undefined
+        ? await qualityWorkflow(files, assets.ciWorkflow, report)
+        : quality;
+    if (!verifiedQuality) return undefined;
+    const { nodeVersions } = verifiedQuality;
+    const mappingPaths = [
+      "scripts/lib/release-packages.mjs",
+      "scripts/release-packages.js",
+    ].filter((path) => files.exists(path));
+    if (mappingPaths.length > 1)
+      throw new Unconfirmed("存在多个发布映射文件，不能确定唯一静态映射");
+    const mappings = mappingPaths.length
+      ? releaseMappings(await files.text(mappingPaths[0]!))
+      : [];
+    if (mappings.length && files.exists("release.config.json"))
+      throw new Unconfirmed(
+        "存在重复发布映射来源；复用已有映射，不维护第二份 release.config.json",
       );
-      okay = false;
-    }
-  }
-  if (files.exists(".npmrc")) {
-    report(
-      "release",
-      "unconfirmed",
-      "npm publisher v1 尚不解释目标 .npmrc 的认证/客户端覆盖；不会假定无长效 token",
-    );
-    okay = false;
-  }
-  const dependencies = record(project.manifest.devDependencies ?? {});
-  for (const name of ["semver", "publint"]) {
     if (
-      typeof dependencies[name] !== "string" ||
-      dependencies[name].startsWith("workspace:")
+      targets.length > 1 &&
+      !mappings.length &&
+      !files.exists("release.config.json")
+    )
+      throw new Unconfirmed(
+        `多个 npm 目标需已有明确 ID/tag 映射及每次唯一选择；观察成员=${targets.map((p) => p.directory || ".").join(", ")}`,
+      );
+    for (const key of ["id", "name", "directory"] as const)
+      if (
+        new Set(mappings.map((mapping) => mapping[key])).size !==
+        mappings.length
+      )
+        throw new Unconfirmed(`发布映射 ${key} 不唯一`);
+    for (const mapping of mappings)
+      if (
+        !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(mapping.id) ||
+        !projects.some(
+          (project) =>
+            (project.directory || ".") === mapping.directory &&
+            project.manifest.name === mapping.name,
+        )
+      )
+        throw new Unconfirmed(
+          `发布映射 ${JSON.stringify(mapping)} 与真实成员身份不一致`,
+        );
+    if (
+      mappings.length &&
+      targets.some(
+        (project) =>
+          !mappings.some(
+            (mapping) =>
+              mapping.directory === (project.directory || ".") &&
+              mapping.name === project.manifest.name,
+          ),
+      )
+    )
+      throw new Unconfirmed("开放 npm 目标缺少唯一已有 ID/tag 映射");
+    const inferred = targets[0]!;
+    const source = files.exists("release.config.json")
+      ? "release.config.json"
+      : (mappingPaths[0] ?? files.path(inferred.directory, "package.json"));
+    const config = files.exists("release.config.json")
+      ? await files.json("release.config.json")
+      : {
+          schemaVersion: 1,
+          package: mappings.find(
+            (mapping) => mapping.directory === (inferred.directory || "."),
+          ) ?? {
+            id:
+              typeof inferred.manifest.name === "string"
+                ? inferred.manifest.name.split("/").at(-1)
+                : undefined,
+            name: inferred.manifest.name,
+            directory: inferred.directory || ".",
+          },
+          ci: { nodeVersions },
+        };
+    fields(config, ["schemaVersion", "package", "ci"], source);
+    const target = record(config.package);
+    const ci = record(config.ci);
+    fields(target, ["id", "name", "directory"], source);
+    fields(ci, ["nodeVersions"], workflowPath);
+    if (!sameData(ci.nodeVersions, nodeVersions))
+      throw new Unconfirmed(
+        "release.config.json 的旧矩阵与真实 workflow 不一致；以实际 workflow 为准，删除重复矩阵",
+      );
+    if (config.schemaVersion !== 1 || typeof target.directory !== "string")
+      throw new Unconfirmed(
+        `${source}: directory 无法确认；要求唯一真实根/成员 npm ESM 包`,
+      );
+    const project = projects.find(
+      (candidate) => (candidate.directory || ".") === target.directory,
+    );
+    if (
+      projects.filter((candidate) => candidate.manifest.name === target.name)
+        .length > 1
+    )
+      throw new Unconfirmed(
+        `${source}: package.name = ${JSON.stringify(target.name)}；观察多个同名项目，要求唯一成员身份；修复参考 ${reference}`,
+      );
+    if (
+      !project ||
+      project.manifest.private === true ||
+      !targets.includes(project)
     ) {
       report(
-        "dependency",
-        "missing",
-        `npm publisher v1 必须在根 devDependencies 显式声明公开 ${name}`,
+        "release",
+        "mismatch",
+        `${source}: package.directory = ${JSON.stringify(target.directory)}；要求映射唯一真实非 private npm 交付包，观察职责 ${JSON.stringify(projects.map((candidate) => ({ directory: candidate.directory || ".", private: candidate.manifest.private, npm: targets.includes(candidate) })))}`,
+      );
+      return undefined;
+    }
+    if (topology === "workspace" && !project.directory) {
+      report(
+        "release",
+        "mismatch",
+        `${source}: package.directory = "."；实际有多个代码项目，要求显式选择一个 workspace npm 成员，不用聚合根身份发布`,
+      );
+      return undefined;
+    }
+    if (
+      typeof target.id !== "string" ||
+      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(target.id) ||
+      target.name !== project.manifest.name
+    ) {
+      report(
+        "release",
+        "mismatch",
+        `${source}: package = ${JSON.stringify(target)}；要求 id 为规范包标识，name = ${JSON.stringify(project.manifest.name)}，directory = ${JSON.stringify(project.directory || ".")}；无法推导 ID/tag 时复用最小显式映射`,
+      );
+      return undefined;
+    }
+    let okay = true;
+    for (const [path, canonical] of [
+      [".github/workflows/npm-publish.yaml", assets.publishWorkflow],
+    ] as const) {
+      if (!files.exists(path)) {
+        report("release", "missing", `${path}: 标准 publisher workflow 缺失`);
+        okay = false;
+        continue;
+      }
+      const expected = dataYaml(text(canonical));
+      const observed = dataYaml(await files.text(path));
+      if (!sameData(observed, expected)) {
+        report(
+          "release",
+          "mismatch",
+          `${path}: 固定 publisher workflow 不匹配；${difference(observed, expected)}；必须使用标准触发器、权限、CI 聚合与 pnpm release/release-dry-run 调用`,
+        );
+        okay = false;
+      }
+    }
+    const scripts = record(projects[0]!.manifest.scripts ?? {});
+    const affected: string[] = [];
+    for (const name of ["release", "release-dry-run"]) {
+      if (scripts[name] === undefined) {
+        report(
+          "release",
+          "missing",
+          `package.json scripts.${name}: 未声明；要求 node scripts/${name}.mjs`,
+        );
+        okay = false;
+        continue;
+      }
+      if (scripts[name] !== `node scripts/${name}.mjs`) {
+        okay = false;
+        continue;
+      }
+      // Generic script validation already reports an absent entry.
+      if (!files.exists(`scripts/${name}.mjs`)) {
+        okay = false;
+        continue;
+      }
+      if (
+        !(await fixedFile(
+          files,
+          `scripts/${name}.mjs`,
+          assets.scripts[name]!,
+          (status, brief) => {
+            report("release", status, brief);
+          },
+        ))
+      )
+        okay = false;
+      else affected.push(`package.json scripts.${name}`);
+    }
+    if (
+      affected.length &&
+      !(await fixedFile(
+        files,
+        "scripts/lib/npm-publish.mjs",
+        assets.publisher,
+        (status, brief) => {
+          report(
+            "release",
+            status,
+            `${brief}；影响范围: ${affected.join(", ")}`,
+          );
+        },
+      ))
+    )
+      okay = false;
+    for (const path of new Set([
+      ".npmrc",
+      files.path(project.directory, ".npmrc"),
+    ]))
+      if (files.exists(path)) {
+        report(
+          "release",
+          "unconfirmed",
+          `${path}: npm publisher v1 尚不解释目标认证/客户端覆盖；要求可证明无长效 token 的配置，不能假定安全`,
+        );
+        okay = false;
+      }
+    const dependencies = record(projects[0]!.manifest.devDependencies ?? {});
+    for (const name of ["semver", "publint", "yaml", "acorn"]) {
+      if (
+        typeof dependencies[name] !== "string" ||
+        dependencies[name].startsWith("workspace:")
+      ) {
+        report(
+          "dependency",
+          "missing",
+          `npm publisher v1 必须在根 devDependencies 显式声明公开 ${name}`,
+        );
+        okay = false;
+      }
+    }
+    if (
+      !files.exists(".gitignore") ||
+      !(await files.text(".gitignore"))
+        .split(/\r?\n/)
+        .some((line) =>
+          [".release-artifacts", ".release-artifacts/"].includes(line.trim()),
+        )
+    ) {
+      report(
+        "release",
+        "unconfirmed",
+        "npm publisher v1 的专属 .release-artifacts/ 输出必须明确忽略",
       );
       okay = false;
     }
+    return okay
+      ? {
+          nodeVersions: ci.nodeVersions as string[],
+          // A shared workspace profile does not select the first mapped package.
+          ...(targets.length === 1 || files.exists("release.config.json")
+            ? { directory: project.directory }
+            : {}),
+        }
+      : undefined;
+  } catch (error) {
+    if (!(error instanceof Unconfirmed)) throw error;
+    report("release", "unconfirmed", error.message);
+    return undefined;
   }
-  if (
-    !files.exists(".gitignore") ||
-    !(await files.text(".gitignore"))
-      .split(/\r?\n/)
-      .some((line) =>
-        [".release-artifacts", ".release-artifacts/"].includes(line.trim()),
-      )
-  ) {
-    report(
-      "release",
-      "unconfirmed",
-      "npm publisher v1 的专属 .release-artifacts/ 输出必须明确忽略",
-    );
-    okay = false;
-  }
-  return okay ? { nodeVersions: ci.nodeVersions as string[] } : undefined;
 }
 
 export async function compatibilityMatrix(
@@ -178,7 +376,7 @@ export async function compatibilityMatrix(
   project: Project,
   metadata: Metadata,
   report: Report,
-  toolEngines: string[],
+  toolEngines: { name: string; range: string }[],
 ) {
   const range = record(project.manifest.engines ?? {}).node;
   const minimum =
@@ -195,18 +393,18 @@ export async function compatibilityMatrix(
     report(
       "ci",
       "mismatch",
-      "npm 兼容矩阵必须包含 engines.node 的实际最低版本，且各条目满足该范围",
+      `${project.directory ? `${project.directory}/` : ""}package.json engines.node = ${JSON.stringify(range)}，最低版本 ${minimum?.version ?? "无法解析"}；.github/workflows/ci.yaml compatibility matrix = ${JSON.stringify(profile.nodeVersions)}；要求包含该包最低版本且每个条目满足其范围，不将包之间不同下限视作冲突`,
     );
     return;
   }
-  for (const engine of toolEngines) {
+  for (const { name, range: engine } of toolEngines) {
     if (!validRange(engine))
       throw new Unconfirmed("兼容矩阵工具 engines 无法解析");
     if (profile.nodeVersions.some((version) => !satisfies(version, engine)))
       report(
         "ci",
-        "mismatch",
-        `此 publisher profile 在矩阵执行完整 check，工具 Node 要求 ${engine} 必须兼容每个条目`,
+        "unconfirmed",
+        `package.json devDependencies ${name} 的 engines.node=${engine}；.github/workflows/ci.yaml matrix=${JSON.stringify(profile.nodeVersions)} 仍运行开发 check；当前固定 profile 尚不能独立证明消费者运行兼容，不要求消费者最低 Node 运行现代开发工具，也不要求缩窄包 engines`,
       );
   }
   const observed = await metadata.node();

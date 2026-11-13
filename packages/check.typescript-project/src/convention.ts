@@ -9,26 +9,20 @@ import {
 } from "semver";
 import type { ProblemReporter } from "@silvermoon-work/check-task-sdk";
 import type { ProblemCode } from "./contract.js";
-import {
-  argument,
-  flag,
-  type Command,
-  type Project,
-  type Scripts,
-} from "./commands.js";
+import { type Project } from "./commands.js";
 import { type Files, dataYaml, glob, record, Unconfirmed } from "./files.js";
 import { fresh, type Metadata, type Release } from "./metadata.js";
 import { tsconfig } from "./static.js";
 import { repository } from "./repository.js";
-import type { Capability } from "./requirements.js";
-import { ciReuseEvidence, mappingEvidence } from "./release-evidence.js";
+import { privatePublishEvidence } from "./release-evidence.js";
 import {
   publisherProfile,
   compatibilityMatrix,
   type PublisherProfile,
 } from "./publisher-profile.js";
-import { tscDelivery } from "./delivery.js";
 import { resolvedPeer } from "./lockfile.js";
+import { configuredDelivery } from "./delivery.js";
+import type { QualityProfile } from "./quality-workflow.js";
 
 type Domain =
   | "environment"
@@ -45,6 +39,7 @@ export interface InspectionEvidence {
   publisher: Uint8Array;
   publishWorkflow: Uint8Array;
   ciWorkflow: Uint8Array;
+  scripts: Record<string, Uint8Array>;
 }
 export function stableSeries(version: string): string {
   const v = parse(version);
@@ -107,26 +102,29 @@ function artifact(project: Project): boolean {
       scripts &&
       typeof scripts === "object" &&
       !Array.isArray(scripts) &&
-      Object.hasOwn(scripts, "lint:package")
+      Object.hasOwn(scripts, "lint-package")
     )
   );
 }
-
 export async function convention(
   files: Files,
   projects: Project[],
-  scripts: Scripts,
-  commands: Map<string, Command[]>,
   evidence: InspectionEvidence,
   report: ProblemReporter<ProblemCode>,
-  covers: (commands: Command[], capability: Capability) => boolean,
-  blocked: (capability: Capability) => boolean,
+  quality: QualityProfile | null,
 ): Promise<void> {
   const root = projects[0]!;
+  const reported = new Set<string>();
   const issue = (domain: Domain, status: Status, message: string) => {
+    const key = JSON.stringify([domain, status, message]);
+    if (reported.has(key)) return;
+    reported.add(key);
     report(`${domain}-${status}` as ProblemCode, message);
   };
-  const section = async (domain: Domain, action: () => Promise<void>) => {
+  const section = async (
+    domain: Domain,
+    action: () => Promise<void> | void,
+  ) => {
     try {
       await action();
     } catch (error) {
@@ -173,18 +171,61 @@ export async function convention(
     );
     if (!release)
       throw new Unconfirmed(`官方发行列表不能确认 Node ${selected}`);
-    const now = observation.observedAt;
+    const now = Date.now();
     const lts: unknown = release.lts;
     if (typeof lts !== "string" && lts !== false)
       throw new Unconfirmed("官方 Node 发行 LTS 标记缺项");
+    if (release.lts && Date.parse(lifecycle.lts) > now)
+      throw new Unconfirmed(
+        `${observation.source}: .node-version ${selected} 的发行已标 LTS，但官方 lts=${lifecycle.lts} 尚未开始，来源冲突，不能回退旧版`,
+      );
     if (
       !release.lts ||
       !(Date.parse(lifecycle.lts) <= now && now < Date.parse(lifecycle.end))
-    )
+    ) {
       issue(
         "environment",
         "mismatch",
-        `Node ${selected} 不是当前受支持 LTS; ${observation.source}; ${new Date(now).toISOString()}`,
+        `.node-version 观察 ${selected}；该官方发行不是当前受支持 LTS，要求精确采用最高 SemVer 的稳定、已标 LTS 且当前仍受支持的发行；${observation.source}；${new Date(now).toISOString()}`,
+      );
+      return;
+    }
+    const candidates: string[] = [];
+    for (const candidate of facts.releases) {
+      if (!candidate.lts) continue;
+      const parsed = parse(candidate.version.replace(/^v/, ""));
+      if (!parsed || parsed.prerelease.length)
+        throw new Unconfirmed(
+          `${observation.source}: 发行 ${candidate.version} 的稳定版本/LTS 标记冲突`,
+        );
+      const key =
+        parsed.major === 0 ? `v0.${parsed.minor}` : `v${parsed.major}`;
+      const support = facts.schedule[key];
+      if (
+        !support?.lts ||
+        !Number.isFinite(Date.parse(support.lts)) ||
+        !Number.isFinite(Date.parse(support.end)) ||
+        Date.parse(support.lts) >= Date.parse(support.end)
+      )
+        throw new Unconfirmed(
+          `${observation.source}: LTS 发行 ${candidate.version} 对应 ${key} 的官方支持周期缺失或冲突`,
+        );
+      if (Date.parse(support.lts) > now)
+        throw new Unconfirmed(
+          `${observation.source}: ${candidate.version} 已标 LTS，但官方 ${key}.lts=${support.lts} 尚未开始，不能回退旧版`,
+        );
+      if (now < Date.parse(support.end)) candidates.push(parsed.version);
+    }
+    const latest = maxSatisfying(candidates, "*");
+    if (!latest)
+      throw new Unconfirmed(
+        `${observation.source}: 没有可确认的稳定、标记 LTS 且当前仍受支持的官方发行`,
+      );
+    if (selected !== latest)
+      issue(
+        "environment",
+        "mismatch",
+        `.node-version 观察 ${selected}；要求最高 SemVer 的稳定、官方标 LTS 且当前仍受支持的发行 ${latest}；${observation.source}；${new Date(observation.observedAt).toISOString()}`,
       );
   });
   await section("environment", async () => {
@@ -323,32 +364,30 @@ export async function convention(
     importer: string;
   }
   const actual = new Map<string, Map<string, InstalledTool>>();
-  const tools = new Set([...commands.values()].flat().map((c) => c.tool));
   for (const project of projects) {
     await section("dependency", async () => {
       const own = record(project.manifest.devDependencies ?? {});
       const shared = record(root.manifest.devDependencies ?? {});
-      const selected = [
-        ...[...commands.values()].flat(),
-        ...scripts.schedulers.values(),
-      ].filter((c) => c.directory === project.directory);
       const required = new Set<string>();
-      for (const command of selected) {
-        const name = (
-          {
-            tsc: "typescript",
-            eslint: "eslint",
-            prettier: "prettier",
-            vitest: "vitest",
-            publint: "publint",
-            turbo: "turbo",
-          } as Record<string, string>
-        )[command.tool];
-        if (name) required.add(name);
-      }
+      if (project.sources.length + project.tests.length > 0)
+        for (const name of [
+          "typescript",
+          "eslint",
+          "typescript-eslint",
+          "@eslint/js",
+          "vitest",
+        ])
+          required.add(name);
+      if (!project.directory) required.add("prettier");
+      if (artifact(project)) required.add("publint");
+      if (!project.directory && files.exists("turbo.json"))
+        required.add("turbo");
       for (const path of files.paths.filter(
         (p) =>
           (!project.directory || p.startsWith(`${project.directory}/`)) &&
+          !projects.some((owner) =>
+            p.startsWith(`${files.path(owner.directory, "scripts")}/`),
+          ) &&
           /(?:eslint|vitest)\.config\.[cm]?[jt]s$/.test(p),
       )) {
         const source = await files.text(path);
@@ -359,7 +398,7 @@ export async function convention(
             .join("/");
           if (known.has(name)) required.add(name);
         }
-        if (/vitest\.config/.test(path) && tools.has("vitest")) {
+        if (/vitest\.config/.test(path)) {
           const provider =
             /\bprovider\s*:\s*["'](v8|istanbul)["']/.exec(source)?.[1] ?? "v8";
           required.add(`@vitest/coverage-${provider}`);
@@ -375,6 +414,13 @@ export async function convention(
       const resolved = new Map<string, InstalledTool>();
       actual.set(project.directory, resolved);
       for (const [name, raw] of Object.entries(own)) {
+        const internal = projects.some((p) => p.manifest.name === name);
+        if (
+          !known.has(name) &&
+          !internal &&
+          !(typeof raw === "string" && raw.startsWith("workspace:"))
+        )
+          continue;
         if (typeof raw !== "string")
           throw new Unconfirmed(`${name}: 依赖声明不是字符串`);
         if (raw.startsWith("workspace:")) {
@@ -386,22 +432,26 @@ export async function convention(
             );
           continue;
         }
-        // Unknown/custom tools still need an explicit support decision, never an implicit pass.
-        if (!known.has(name)) {
+        if (internal) {
           issue(
             "dependency",
-            "unconfirmed",
-            `${name}: 首版没有该开发依赖的公开元数据/能力支持，未发送该名称`,
+            "mismatch",
+            `${name}: 内部包必须使用 workspace 协议`,
           );
           continue;
         }
-        let value: unknown = raw;
-        if (raw.startsWith("catalog:")) {
-          const catalogName = raw.slice(8);
-          value = catalogName
-            ? record(record(workspace.catalogs ?? {})[catalogName] ?? {})[name]
-            : record(workspace.catalog ?? {})[name];
+        if (!raw.startsWith("catalog:")) {
+          issue(
+            "dependency",
+            "mismatch",
+            `${project.directory || "."}: ${name} 必须引用根 pnpm-workspace.yaml 的 catalog`,
+          );
+          continue;
         }
+        const catalogName = raw.slice(8);
+        const value = catalogName
+          ? record(record(workspace.catalogs ?? {})[catalogName] ?? {})[name]
+          : record(workspace.catalog ?? {})[name];
         if (typeof value !== "string")
           throw new Unconfirmed(`${name}: catalog 无对应版本声明`);
         let range: string;
@@ -591,11 +641,37 @@ export async function convention(
     for (const path of files.paths.filter(
       (p) => p !== "AGENTS.md" && /(?:^|\/)AGENTS\.md$/.test(p),
     ))
-      issue(
-        "document",
-        "unconfirmed",
-        `${path}: 嵌套 Agent 入口可能覆盖根规则，首版不解释其自由正文`,
-      );
+      await section("document", async () => {
+        const owner = projects
+          .filter((p) => !p.directory || path.startsWith(`${p.directory}/`))
+          .sort((a, b) => b.directory.length - a.directory.length)[0]!;
+        const asset = files.path(owner.directory, "assets/AGENTS.md");
+        const build = files.path(owner.directory, "check.build.yaml");
+        if (
+          path === asset &&
+          files.exists(build) &&
+          lf(await files.text(path)) === lf(canonical)
+        ) {
+          const include = dataYaml(await files.text(build)).include;
+          if (
+            Array.isArray(include) &&
+            include.some((raw: unknown) => {
+              const entry = record(raw);
+              return (
+                entry.from === "assets/**" &&
+                (entry.to === "resources/assets" ||
+                  entry.to === "resources/assets/")
+              );
+            })
+          )
+            return;
+        }
+        issue(
+          "document",
+          "unconfirmed",
+          `${path}: 嵌套 Agent 入口可能覆盖根规则，首版不解释其自由正文`,
+        );
+      });
     if (!files.exists(".gitignore")) {
       issue("document", "missing", ".gitignore 缺失");
       return;
@@ -634,181 +710,42 @@ export async function convention(
       if (ignored(path))
         issue("document", "mismatch", `.gitignore 排除了必要文件 ${path}`);
   });
-  await section("gate", async () => {
+  await section("gate", () => {
     const names = [
       "typecheck",
       "lint",
-      "format:check",
+      "format-check",
       "format",
       "test",
-      "test:coverage",
+      "test-coverage",
       "check",
     ];
     const rootScripts = record(root.manifest.scripts ?? {});
     for (const name of names) {
       if (rootScripts[name] === undefined) {
-        issue("gate", "missing", `根标准 script ${name} 缺失`);
-        continue;
-      }
-      const expanded = commands.get(`:${name}`);
-      if (!expanded) {
-        issue("gate", "unconfirmed", `根 ${name} 未能静态展开`);
-        continue;
-      }
-      const expected = (
-        {
-          typecheck: "tsc",
-          lint: "eslint",
-          "format:check": "prettier",
-          format: "prettier",
-          test: "vitest",
-          "test:coverage": "vitest",
-        } as Record<string, string>
-      )[name];
-      if (expected && !expanded.some((c) => c.tool === expected))
-        issue("gate", "unconfirmed", `${name}: 未确认受支持 ${expected} 语义`);
-      const capability = (
-        {
-          typecheck: "typecheck",
-          lint: "lint",
-          "format:check": "formatting",
-          test: "test",
-          "test:coverage": "coverage",
-        } as Record<string, Capability>
-      )[name];
-      if (capability && !blocked(capability) && !covers(expanded, capability))
         issue(
           "gate",
-          "mismatch",
-          `标准 ${name} 未覆盖全部适用成员的已证明 ${capability} 能力`,
+          "missing",
+          `package.json scripts[${JSON.stringify(name)}] 未声明；要求 node scripts/${name}.mjs 固定标准入口`,
         );
-      if (expected && expanded.some((c) => c.tool !== expected))
-        issue(
-          "gate",
-          "unconfirmed",
-          `${name}: 包含非 ${expected} 的未知动作，不能推断标准操作语义`,
-        );
-      if (
-        name === "format" &&
-        !expanded.some(
-          (c) => c.tool === "prettier" && (flag(c, "--write") || flag(c, "-w")),
-        )
-      )
-        issue("gate", "mismatch", "format 必须明确执行写入格式修正");
-      if (name === "format") {
-        const checks = commands.get(":format:check") ?? [];
-        const signature = (command: Command) =>
-          JSON.stringify([
-            command.directory,
-            command.tool,
-            command.args.filter(
-              (value) => !["--check", "-c", "--write", "-w"].includes(value),
-            ),
-          ]);
-        if (
-          !checks.every((check) =>
-            expanded.some((write) => signature(write) === signature(check)),
-          )
-        )
-          issue(
-            "gate",
-            "unconfirmed",
-            "format 与已证明 format:check 的目标/配置范围不一致",
-          );
-      }
-      if (
-        name === "format:check" &&
-        expanded.some(
-          (c) =>
-            c.tool === "prettier" &&
-            ((!flag(c, "--check") && !flag(c, "-c")) ||
-              flag(c, "--write") ||
-              flag(c, "-w")),
-        )
-      )
-        issue("gate", "mismatch", "format:check 必须只检查，不写入");
-      if (name === "typecheck")
-        for (const command of expanded.filter((c) => c.tool === "tsc")) {
-          const config = await tsconfig(
-            files,
-            files.path(
-              command.directory,
-              argument(command, "-p") ??
-                argument(command, "--project") ??
-                "tsconfig.json",
-            ),
-          );
-          if (!flag(command, "--noEmit") && config.options.noEmit !== true)
-            issue("gate", "mismatch", "typecheck 必须 noEmit");
-        }
-      if (name === "check") {
-        const safe = new Set([
-          "tsc",
-          "eslint",
-          "prettier",
-          "vitest",
-          "publint",
-        ]);
-        if (expanded.some((c) => !safe.has(c.tool)))
-          issue(
-            "gate",
-            "unconfirmed",
-            "check 包含未知终端命令，不能证明无安装/发布/删除或失败吞没",
-          );
-        if (
-          expanded.some(
-            (c) =>
-              (c.tool === "prettier" && flag(c, "--write")) ||
-              (c.tool === "eslint" && flag(c, "--fix")),
-          )
-        )
-          issue("gate", "mismatch", "check 调用了源码修正命令");
-      }
-      if (name === "test" || name === "test:coverage") {
-        if (
-          expanded.some(
-            (c) =>
-              c.tool === "vitest" &&
-              !c.args.includes("run") &&
-              !flag(c, "--run"),
-          )
-        )
-          issue("gate", "mismatch", `${name} 必须单次执行`);
-        if (
-          name === "test:coverage" &&
-          !blocked("coverage") &&
-          !expanded.some(
-            (c) =>
-              c.tool === "vitest" &&
-              (flag(c, "--coverage") || flag(c, "--coverage.enabled")),
-          )
-        )
-          issue(
-            "gate",
-            "unconfirmed",
-            "test:coverage 未显式启用覆盖率；配置隐式启用尚未连接到此入口",
-          );
       }
     }
   });
   let profile: PublisherProfile | undefined;
   await section("release", async () => {
-    profile = await publisherProfile(files, projects, evidence, issue);
+    profile = await publisherProfile(files, projects, evidence, issue, quality);
   });
   const deliveries = projects.filter(
     (project) =>
-      artifact(project) || (!project.directory && profile !== undefined),
+      project.manifest.private !== true &&
+      (artifact(project) || project.directory === profile?.directory),
   );
   for (const project of projects) {
     if (deliveries.includes(project))
       await section("delivery", async () => {
-        await delivery(files, project, commands, nonempty, issue);
+        await delivery(files, project, nonempty, issue);
       });
-    else if (
-      project.manifest.private !== true ||
-      project.manifest.exports !== undefined ||
-      project.manifest.types !== undefined
-    )
+    else if (project.manifest.private !== true)
       issue(
         "delivery",
         "unconfirmed",
@@ -816,7 +753,7 @@ export async function convention(
       );
     if (project.sources.length)
       await section("delivery", async () => {
-        const build = commands.get(`${project.directory}:build`);
+        const build = record(project.manifest.scripts ?? {}).build;
         if (
           !build &&
           typeof project.manifest.main === "string" &&
@@ -825,140 +762,70 @@ export async function convention(
           issue(
             "delivery",
             "unconfirmed",
-            `${project.directory || "."}: 应用 main 声明可能指向构建产物，但缺少已证明 build；不将其断言为 npm 库`,
+            `${project.directory || "."}: 应用 main 声明可能指向构建产物，但缺少 build 接口；不将其断言为 npm 库`,
           );
-        if (
-          record(project.manifest.scripts ?? {}).build !== undefined &&
-          !build
-        )
-          throw new Unconfirmed(`${project.directory}: build 动态语义不支持`);
-        if (build)
-          for (const command of build) {
-            if (command.tool !== "tsc")
-              throw new Unconfirmed(
-                `${project.directory}: 构建器 ${command.tool} 未受支持`,
-              );
-            const path = files.path(
-              command.directory,
-              argument(command, "-p") ??
-                argument(command, "--project") ??
-                "tsconfig.json",
-            );
-            const config = await tsconfig(files, path);
-            if (flag(command, "--noEmit") || config.options.noEmit === true)
-              issue("delivery", "mismatch", `${path}: build 不得 noEmit`);
+        const path = files.path(project.directory, "tsconfig.build.json");
+        if (build && files.exists(path)) {
+          const config = await tsconfig(files, path);
+          if (config.options.noEmit === true)
+            issue("delivery", "mismatch", `${path}: build 不得 noEmit`);
+          if (
+            typeof config.options.outDir === "string" &&
+            files.exists(".gitignore")
+          ) {
+            const ignore = await files.text(".gitignore");
+            const output = config.options.outDir
+              .replace(/^\.\//, "")
+              .replace(/\/$/, "");
             if (
-              typeof config.options.outDir === "string" &&
-              files.exists(".gitignore")
-            ) {
-              const ignore = await files.text(".gitignore");
-              const output = config.options.outDir
-                .replace(/^\.\//, "")
-                .replace(/\/$/, "");
-              if (
-                !ignore
-                  .split(/\r?\n/)
-                  .some((p) =>
-                    [output, `${output}/`, `**/${output}/`].includes(p.trim()),
-                  )
-              )
-                issue(
-                  "document",
-                  "unconfirmed",
-                  `${path}: 未确认 gitignore 排除实际输出 ${output}`,
-                );
-            }
+              !ignore
+                .split(/\r?\n/)
+                .some((p) =>
+                  [output, `${output}/`, `**/${output}/`].includes(p.trim()),
+                )
+            )
+              issue(
+                "document",
+                "unconfirmed",
+                `${path}: 未确认 gitignore 排除实际输出 ${output}`,
+              );
           }
+        }
       });
   }
   if (deliveries.length)
     await section("release", async () => {
-      await release(files, deliveries, issue, profile !== undefined);
+      await release(files, issue);
     });
+  await section("release", async () => {
+    await privatePublishEvidence(files, projects, (status, brief) => {
+      issue("release", status, brief);
+    });
+  });
   await section("ci", async () => {
     const origin = await repository(files);
     if (!origin.github) return;
-    const workflows = files.paths.filter((p) =>
-      /^\.github\/workflows\/[^/]+\.ya?ml$/.test(p),
-    );
-    let nodeSelection = false;
-    let pnpmSelection = false;
-    for (const path of workflows) {
-      const workflow = dataYaml(await files.text(path));
-      const trigger = record(workflow.on ?? {});
-      if (
-        !Object.hasOwn(trigger, "pull_request") ||
-        !Object.hasOwn(trigger, "push")
-      )
-        continue;
-      for (const raw of Object.values(record(workflow.jobs ?? {}))) {
-        const job = record(raw);
-        if (
-          !Array.isArray(job.steps) ||
-          job.if !== undefined ||
-          job["continue-on-error"] !== undefined
-        )
-          continue;
-        let selectedNode = false;
-        let selectedPnpm = false;
-        for (const rawStep of job.steps) {
-          const step = record(rawStep);
-          if (step.if !== undefined || step["continue-on-error"] !== undefined)
-            continue;
-          const settings = record(step.with ?? {});
-          if (
-            typeof step.uses === "string" &&
-            step.uses.startsWith("actions/setup-node@") &&
-            settings["node-version-file"] === ".node-version" &&
-            settings["node-version"] === undefined
-          )
-            selectedNode = true;
-          if (
-            typeof step.uses === "string" &&
-            step.uses.startsWith("pnpm/action-setup@") &&
-            settings.version === undefined &&
-            (settings.package_json_file === undefined ||
-              settings.package_json_file === "package.json")
-          )
-            selectedPnpm = true;
-          if (step.run === "pnpm check" || step.run === "pnpm run check") {
-            nodeSelection ||= selectedNode;
-            pnpmSelection ||= selectedPnpm;
-          }
-        }
-      }
-    }
-    if (!nodeSelection || !pnpmSelection)
-      issue(
-        "ci",
-        "unconfirmed",
-        "未确认同一 PR/push check job 在执行前读取根 .node-version 和 packageManager",
-      );
-    if (deliveries.length && profile)
-      await compatibilityMatrix(
-        profile,
-        root,
-        evidence.metadata,
-        issue,
-        [...(actual.get("")?.values() ?? [])].flatMap((value) =>
-          value.release.engines?.node ? [value.release.engines.node] : [],
-        ),
-      );
-    else if (deliveries.length)
-      issue(
-        "ci",
-        "unconfirmed",
-        "npm engines 最低运行版本与更高受支持 Node 的实际兼容矩阵尚不能完整静态证明",
-      );
+    if (deliveries.length && quality)
+      for (const project of deliveries)
+        await section("ci", () =>
+          compatibilityMatrix(
+            quality,
+            project,
+            evidence.metadata,
+            issue,
+            [...(actual.get("")?.entries() ?? [])].flatMap(([name, value]) =>
+              value.release.engines?.node
+                ? [{ name, range: value.release.engines.node }]
+                : [],
+            ),
+          ),
+        );
   });
-  // Keep the expansion object alive only for this run; no target commands are ever invoked.
-  void scripts;
 }
 
 async function delivery(
   files: Files,
   project: Project,
-  commands: Map<string, Command[]>,
   nonempty: (path: string, domain: Domain) => Promise<void>,
   issue: (domain: Domain, status: Status, message: string) => void,
 ): Promise<void> {
@@ -999,20 +866,32 @@ async function delivery(
     issue("delivery", "mismatch", `${prefix}: type 必须 module`);
   const exports = record(m.exports ?? {});
   const entry = record(exports["."] ?? {});
-  if (
-    Object.keys(exports).some(
-      (key) => ![".", "./package.json"].includes(key),
-    ) ||
-    Object.keys(entry).some((key) => !["types", "import"].includes(key))
-  )
-    throw new Unconfirmed(
-      `${prefix}: 有限 npm ESM profile 不推测额外 subpath/CJS/default 条件出口`,
-    );
-  for (const key of ["import", "types"]) {
-    const path = entry[key];
-    if (typeof path !== "string" || !path.startsWith("./"))
-      issue("delivery", "missing", `${prefix}: 根 exports.${key} 缺失`);
-    else packagePath(files, project, path);
+  const entries: Record<string, Record<string, unknown>> = { ".": entry };
+  for (const [name, raw] of Object.entries(exports)) {
+    if (name === "./package.json") continue;
+    if (
+      name !== "." &&
+      (!/^\.\/[A-Za-z0-9._/-]+$/.test(name) ||
+        name
+          .slice(2)
+          .split("/")
+          .some((part) => !part || part === "." || part === ".."))
+    )
+      throw new Unconfirmed(`${prefix}: 未支持的 exports 子路径 ${name}`);
+    const value = record(raw);
+    if (Object.keys(value).some((key) => !["types", "import"].includes(key)))
+      throw new Unconfirmed(
+        `${prefix}: exports ${name} 含未知条件，不推测 CJS/default 语义`,
+      );
+    entries[name] = value;
+  }
+  for (const [name, value] of Object.entries(entries)) {
+    for (const key of ["import", "types"]) {
+      const path = value[key];
+      if (typeof path !== "string" || !path.startsWith("./"))
+        issue("delivery", "missing", `${prefix}: exports ${name}.${key} 缺失`);
+      else packagePath(files, project, path);
+    }
   }
   if (exports["./package.json"] !== "./package.json")
     issue(
@@ -1060,124 +939,77 @@ async function delivery(
           `${prefix}: files 含开发/秘密/过宽路径 ${value}`,
         );
     }
-    for (const key of ["import", "types"])
-      if (typeof entry[key] === "string") {
-        const path = entry[key].replace(/^\.\//, "");
-        for (const target of [path, `${path}.map`])
-          if (
-            !list.some(
-              (p) =>
-                glob(p, target) ||
-                target.startsWith(`${p.replace(/\/$/, "")}/`),
+    for (const value of Object.values(entries))
+      for (const key of ["import", "types"])
+        if (typeof value[key] === "string") {
+          const path = value[key].replace(/^\.\//, "");
+          for (const target of [path, `${path}.map`])
+            if (
+              !list.some(
+                (p) =>
+                  glob(p, target) ||
+                  target.startsWith(`${p.replace(/\/$/, "")}/`),
+              )
             )
-          )
-            issue("delivery", "mismatch", `${prefix}: files 未覆盖 ${target}`);
-      }
+              issue(
+                "delivery",
+                "mismatch",
+                `${prefix}: files 未覆盖 ${target}`,
+              );
+        }
   }
-  const build = commands.get(`${project.directory}:build`);
-  if (!build?.length) issue("delivery", "missing", `${prefix}: 未确认 build`);
-  else {
-    for (const command of build) {
-      if (command.tool !== "tsc")
-        throw new Unconfirmed(`${prefix}: 未支持的构建器 ${command.tool}`);
-      const config = await tsconfig(
-        files,
-        files.path(
-          command.directory,
-          argument(command, "-p") ??
-            argument(command, "--project") ??
-            "tsconfig.json",
-        ),
+  const declared = record(m.scripts ?? {});
+  for (const name of ["build", "lint-package"])
+    if (declared[name] === undefined)
+      issue("delivery", "missing", `${prefix}: ${name} 接口缺失`);
+  const path = files.path(project.directory, "tsconfig.build.json");
+  if (files.exists(path)) {
+    const config = await tsconfig(files, path);
+    if (
+      config.options.noEmit === true ||
+      config.options.declaration !== true ||
+      config.options.sourceMap !== true ||
+      config.options.declarationMap !== true
+    )
+      issue(
+        "delivery",
+        "mismatch",
+        `${path}: 构建配置必须 emit JS/declaration/sourceMap/declarationMap`,
       );
-      if (
-        config.options.noEmit === true ||
-        flag(command, "--noEmit") ||
-        config.options.declaration !== true ||
-        config.options.sourceMap !== true ||
-        config.options.declarationMap !== true
-      )
-        issue(
-          "delivery",
-          "mismatch",
-          `${prefix}: build 必须 emit JS/declaration/sourceMap/declarationMap`,
-        );
-      if (
-        ![
-          "ESNext",
-          "ES2022",
-          "NodeNext",
-          "Node16",
-          "Preserve",
-          "esnext",
-          "es2022",
-          "nodenext",
-          "node16",
-          "preserve",
-        ].includes(String(config.options.module))
-      )
-        issue(
-          "delivery",
-          "unconfirmed",
-          `${prefix}: 未确认构建 ESM module 语义`,
-        );
-      await tscDelivery(files, project, command, entry, (status, brief) => {
-        issue("delivery", status, brief);
-      });
-    }
+    if (
+      ![
+        "ESNext",
+        "ES2022",
+        "NodeNext",
+        "Node16",
+        "Preserve",
+        "esnext",
+        "es2022",
+        "nodenext",
+        "node16",
+        "preserve",
+      ].includes(String(config.options.module))
+    )
+      issue(
+        "delivery",
+        "unconfirmed",
+        `${path}: 未确认构建配置 ESM module 语义`,
+      );
+    await configuredDelivery(files, project, path, entries, (status, brief) => {
+      issue("delivery", status, `${prefix}: ${brief}`);
+    });
   }
-  const lint = commands.get(`${project.directory}:lint:package`);
-  if (!lint?.some((c) => c.tool === "publint"))
-    issue("delivery", "missing", `${prefix}: lint:package 未连接 publint`);
-  const gate = commands.get(":check") ?? [];
-  const same = (left: Command, right: Command) =>
-    JSON.stringify(left) === JSON.stringify(right);
-  if (
-    !build?.every((c) => gate.some((g) => same(c, g))) ||
-    !lint?.every((c) => gate.some((g) => same(c, g)))
-  )
-    issue(
-      "delivery",
-      "mismatch",
-      `${prefix}: build/lint:package 未全部连接根 check`,
-    );
-  else if (
-    Math.max(...build.map((c) => gate.findIndex((g) => same(c, g)))) >
-    Math.min(...lint.map((c) => gate.findIndex((g) => same(c, g))))
-  )
-    issue("delivery", "mismatch", `${prefix}: publint 必须在 build 后`);
 }
 
 async function release(
   files: Files,
-  projects: Project[],
   issue: (domain: Domain, status: Status, message: string) => void,
-  standardPublisher: boolean,
 ): Promise<void> {
   const paths = files.paths.filter((p) =>
     /^\.github\/workflows\/[^/]+\.ya?ml$/.test(p),
   );
-  const workflows = await Promise.all(
-    paths.map(async (path) => ({
-      path,
-      workflow: dataYaml(await files.text(path)),
-    })),
-  );
-  const report = (status: Status, brief: string) => {
-    issue("release", status, brief);
-  };
-  await mappingEvidence(files, projects, report);
-  await ciReuseEvidence(files, workflows, report);
-  let applicable = false;
   for (const path of paths) {
-    if (standardPublisher && path === ".github/workflows/npm-publish.yaml") {
-      applicable = true;
-      continue;
-    }
     const workflow = dataYaml(await files.text(path));
-    const on = record(workflow.on ?? {});
-    const push = record(on.push ?? {});
-    if (!on.workflow_dispatch && !push.tags) continue;
-    applicable = true;
     for (const [name, value] of Object.entries(record(workflow.jobs ?? {}))) {
       const job = record(value);
       if (!Array.isArray(job.steps)) continue;
@@ -1185,55 +1017,35 @@ async function release(
       const runs = steps
         .filter((s) => typeof s.run === "string")
         .map((s) => s.run as string);
+      const unsafe = steps.filter(
+        (step) =>
+          typeof step.run === "string" &&
+          (/\b(?:npm|pnpm)\s+(?:(?:-r|--recursive)\s+)?publish\b/.test(
+            step.run,
+          ) ||
+            /\bnode\s+[^\r\n]*(?:npm-publish|scripts\/(?:lib\/)?release)[^\s]*\.mjs\b/.test(
+              step.run,
+            )),
+      );
+      if (unsafe.length)
+        issue(
+          "release",
+          "mismatch",
+          `${path} jobs[${JSON.stringify(name)}] 发布步骤观察值=${JSON.stringify(unsafe.map((step) => ({ name: step.name, run: step.run })))}；CI 只能通过 pnpm release/release-dry-run 调用固定发布入口，禁止裸 publish 或直接运行内部 Node 发布文件`,
+        );
       if (
-        runs.some((s) =>
-          /\b(?:pnpm\s+(?:-r|--recursive)\s+publish|npm\s+publish\s+--workspaces)\b/.test(
-            s,
-          ),
+        path !== ".github/workflows/npm-publish.yaml" &&
+        runs.some((run) =>
+          /\bpnpm\s+(?:run\s+)?release(?:-dry-run)?(?:\s|$)/.test(run),
         )
       )
-        issue("release", "mismatch", `${path}:${name}: 禁止批量发布`);
-      if (runs.some((s) => /\b(?:npm|pnpm)\s+publish\b/.test(s))) {
-        if (
-          job.environment === undefined ||
-          record(job.permissions ?? {})["id-token"] !== "write"
-        )
-          issue(
-            "release",
-            "mismatch",
-            `${path}:${name}: npm 发布 job 必须 environment 和 id-token:write`,
-          );
-        if (JSON.stringify(job).match(/NODE_AUTH_TOKEN|NPM_TOKEN/))
-          issue("release", "mismatch", `${path}:${name}: 不允许长效 npm token`);
-        for (const command of runs.filter((s) =>
-          /\b(?:npm|pnpm)\s+publish\b/.test(s),
-        )) {
-          if (!/--tag(?:=|\s+)(?:latest|rc|\$\{\{)/.test(command))
-            issue(
-              "release",
-              "mismatch",
-              `${path}:${name}: 必须显式 latest/rc channel`,
-            );
-          if (/\b--tag(?:=|\s+)(?:next|beta|canary)\b/.test(command))
-            issue(
-              "release",
-              "mismatch",
-              `${path}:${name}: 不允许其他发布 channel`,
-            );
-        }
-      }
+        issue(
+          "release",
+          "mismatch",
+          `${path}:${name}: 发布入口只能由固定 npm-publish.yaml 的受保护触发路径调用`,
+        );
+      if (JSON.stringify(job).match(/NODE_AUTH_TOKEN|NPM_TOKEN/))
+        issue("release", "mismatch", `${path}:${name}: 不允许长效 npm token`);
     }
-    // A keyword match is evidence only of a potential operation, never of its guards.
-    issue(
-      "release",
-      "unconfirmed",
-      `${path}: 自定义发布语义不能静态证明；尚未支持的门卫包括唯一包映射/private 拒绝、rc 连续历史、版本不存在与内部依赖在线事实、main 可达性、已有准确 SHA/main-push/必需矩阵 CI 复用、OIDC 客户端、单次禁钩子 pack 与同 tarball 身份校验/发布、dispatch 只 dry-run`,
-    );
   }
-  if (!applicable)
-    issue(
-      "release",
-      "missing",
-      `npm 交付目标 ${projects.map((p) => p.directory || ".").join(", ")} 缺少明确发布 workflow`,
-    );
 }

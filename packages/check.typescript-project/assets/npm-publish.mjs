@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
-import { join, posix, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { join, posix, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import { Buffer } from "node:buffer";
 import semver from "semver";
+import { parse } from "acorn";
+import { parseDocument } from "yaml";
 
 // This program runs only in the explicitly selected GitHub publishing workflow.
 // The Check reads its bytes; it never imports or executes a target's copy.
@@ -45,8 +46,19 @@ export function configuration(value) {
     "Invalid package identity",
   );
   assert(
-    value.package.directory === ".",
-    "This profile supports one root npm package only",
+    typeof value.package.directory === "string" &&
+      (value.package.directory === "." ||
+        (!/[:\\]/.test(value.package.directory) &&
+          value.package.directory
+            .split("/")
+            .every(
+              (part) =>
+                part &&
+                part !== "." &&
+                part !== ".." &&
+                /^[a-zA-Z0-9._-]+$/.test(part),
+            ))),
+    "Invalid selected package directory",
   );
   keys(value.ci, ["nodeVersions"]);
   assert(
@@ -60,6 +72,208 @@ export function configuration(value) {
     "Invalid compatibility matrix",
   );
   return value;
+}
+export function releaseMappings(source) {
+  const tree = parse(source, { ecmaVersion: "latest", sourceType: "module" });
+  const statement = tree.body[0];
+  assert(
+    tree.body.length === 1 && statement.type === "ExportNamedDeclaration",
+    "Only static releasePackages mapping is supported",
+  );
+  const declaration = statement.declaration;
+  assert(
+    declaration?.kind === "const" &&
+      declaration.declarations.length === 1 &&
+      declaration.declarations[0].id.name === "releasePackages",
+    "Invalid releasePackages declaration",
+  );
+  const array = declaration.declarations[0].init;
+  assert(array.type === "ArrayExpression", "Mapping must be a static array");
+  return array.elements.map((entry) => {
+    assert(
+      entry?.type === "ObjectExpression",
+      "Mapping must contain static objects",
+    );
+    const result = {};
+    for (const property of entry.properties) {
+      assert(
+        property.type === "Property" &&
+          property.kind === "init" &&
+          !property.computed &&
+          !property.method &&
+          !property.shorthand &&
+          property.value.type === "Literal" &&
+          typeof property.value.value === "string",
+        "Mapping fields must be literal strings",
+      );
+      const key = property.key.name ?? property.key.value;
+      assert(
+        ["id", "name", "directory"].includes(key) &&
+          !Object.hasOwn(result, key),
+        "Invalid/duplicate mapping field",
+      );
+      result[key] = property.value.value;
+    }
+    keys(result, ["id", "name", "directory"]);
+    return result;
+  });
+}
+export function workflowMatrix(source) {
+  const document = parseDocument(source, { uniqueKeys: true });
+  assert(
+    document.errors.length === 0 && document.warnings.length === 0,
+    "Invalid CI workflow YAML",
+  );
+  const workflow = document.toJS({ maxAliasCount: 32 });
+  const nodes =
+    workflow?.jobs?.compatibility?.strategy?.matrix?.["node-version"];
+  const expected = qualityWorkflow(nodes === undefined ? [] : nodes);
+  const normalize = (value) => {
+    if (Array.isArray(value)) return value.map(normalize);
+    if (value && typeof value === "object")
+      return Object.fromEntries(
+        Object.entries(value)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, child]) => [key, normalize(child)]),
+      );
+    return value;
+  };
+  assert(
+    JSON.stringify(normalize(workflow)) === JSON.stringify(normalize(expected)),
+    "Fixed quality workflow structure mismatch; expected check/compatibility/release-verification with standard triggers, permissions and failure propagation",
+  );
+  // configuration performs the bounded exact-stable-version validation.
+  configuration({
+    schemaVersion: 1,
+    package: { id: "validation", name: "validation", directory: "." },
+    ci: { nodeVersions: nodes },
+  });
+  keys(workflow.jobs.compatibility.strategy.matrix, ["node-version"]);
+  return nodes;
+}
+export function qualityWorkflow(nodes) {
+  const setup = [
+    { uses: "actions/checkout@v4" },
+    {
+      uses: "actions/setup-node@v4",
+      with: { "node-version-file": ".node-version" },
+    },
+    { uses: "pnpm/action-setup@v4" },
+    { run: "pnpm install --frozen-lockfile" },
+    { run: "pnpm check" },
+  ];
+  return {
+    name: "CI",
+    on: { push: { branches: ["main"] }, pull_request: null },
+    permissions: { contents: "read" },
+    jobs: {
+      check: {
+        name: "Quality default",
+        "runs-on": "ubuntu-latest",
+        steps: setup,
+      },
+      compatibility: {
+        name: "Node.js ${{ matrix.node-version }}",
+        "runs-on": "ubuntu-latest",
+        strategy: { "fail-fast": false, matrix: { "node-version": nodes } },
+        steps: setup.map((step, index) =>
+          index === 1
+            ? {
+                uses: "actions/setup-node@v4",
+                with: { "node-version": "${{ matrix.node-version }}" },
+              }
+            : step,
+        ),
+      },
+      "release-verification": {
+        name: "Release verification (v1)",
+        needs: ["check", "compatibility"],
+        if: "always()",
+        "runs-on": "ubuntu-latest",
+        steps: [
+          {
+            name: "Confirm required checks succeeded",
+            env: {
+              CHECK_RESULT: "${{ needs.check.result }}",
+              COMPATIBILITY_RESULT: "${{ needs.compatibility.result }}",
+            },
+            run: 'if [ "$CHECK_RESULT" != success ] || [ "$COMPATIBILITY_RESULT" != success ]; then\n  echo "::error::Every required validation job and matrix must succeed."\n  exit 1\nfi\n',
+          },
+        ],
+      },
+    },
+  };
+}
+export function resolveConfiguration(
+  projects,
+  mappings,
+  nodeVersions,
+  event,
+  ref,
+  input,
+) {
+  const targets = projects.filter(
+    (project) =>
+      project.manifest.private !== true &&
+      (project.manifest.publishConfig !== undefined ||
+        project.manifest.scripts?.["lint-package"] !== undefined),
+  );
+  assert(targets.length > 0, "No non-private npm publishing target");
+  assert(
+    targets.every(
+      (project) =>
+        typeof project.manifest.name === "string" &&
+        packageName.test(project.manifest.name),
+    ),
+    "Npm target manifest.name is unavailable/invalid",
+  );
+  for (const key of ["id", "name", "directory"])
+    assert(
+      new Set(mappings.map((mapping) => mapping[key])).size === mappings.length,
+      `Ambiguous mapping ${key}`,
+    );
+  for (const mapping of mappings) {
+    configuration({ schemaVersion: 1, package: mapping, ci: { nodeVersions } });
+    assert(
+      projects.some(
+        (project) =>
+          project.directory === mapping.directory &&
+          project.manifest.name === mapping.name,
+      ),
+      "Mapping does not identify a real declared project",
+    );
+  }
+  assert(
+    mappings.length || targets.length === 1,
+    "Multiple npm targets require an existing explicit ID/tag mapping",
+  );
+  const candidates = mappings.length
+    ? mappings
+    : targets.map((project) => ({
+        id: project.manifest.name.split("/").at(-1),
+        name: project.manifest.name,
+        directory: project.directory,
+      }));
+  const selected = candidates.filter((mapping) =>
+    event === "push"
+      ? projects.some(
+          (project) =>
+            project.directory === mapping.directory &&
+            ref === `${mapping.id}-v${project.manifest.version}`,
+        )
+      : event === "workflow_dispatch" && input === mapping.id,
+  );
+  assert(
+    selected.length === 1,
+    "Release event must explicitly select exactly one package ID/tag",
+  );
+  const config = configuration({
+    schemaVersion: 1,
+    package: selected[0],
+    ci: { nodeVersions },
+  });
+  publicationPlan(config, projects);
+  return config;
 }
 export function releaseIdentity(config, manifest, event, ref, input) {
   keys(manifest.publishConfig, ["access", "registry"]);
@@ -169,13 +383,15 @@ export function artifactIdentity(release, manifest) {
 }
 export function successfulRun(run, sha) {
   assert(
-    run.head_sha === sha &&
+    /^[0-9a-f]{40}$/.test(sha) &&
+      run.head_sha === sha &&
       run.head_branch === "main" &&
       run.event === "push" &&
       run.path === ".github/workflows/ci.yaml" &&
       run.status === "completed" &&
       run.conclusion === "success" &&
       Number.isSafeInteger(run.id) &&
+      run.id > 0 &&
       Number.isSafeInteger(run.run_attempt) &&
       run.run_attempt > 0,
     "No successful exact-commit main-push CI",
@@ -195,7 +411,7 @@ export function successfulJobs(jobs, nodes) {
     "Required CI jobs/matrix incomplete or unsuccessful",
   );
   const aggregate = jobs.find((j) => j.name === "Release verification (v1)");
-  const steps = aggregate.steps.filter(
+  const steps = (Array.isArray(aggregate.steps) ? aggregate.steps : []).filter(
     (s) => s.name === "Confirm required checks succeeded",
   );
   assert(
@@ -247,7 +463,7 @@ async function json(url, token, absent = false) {
   assert(response.ok, `Registry/API HTTP ${response.status}`);
   return object(value);
 }
-async function verifyCi(config, sha) {
+export async function verifyCi(config, sha) {
   const repo = process.env.GITHUB_REPOSITORY;
   const token = process.env.GITHUB_TOKEN;
   assert(
@@ -303,31 +519,107 @@ function tarballMaps(tarball, artifact) {
       entry.startsWith("package/") && !entry.split("/").includes(".."),
       "Tarball path escape",
     );
-  for (const path of [
-    artifact.exports["."].import,
-    artifact.exports["."].types,
-  ]) {
-    const target = `package/${path.replace(/^\.\//, "")}`;
-    assert(
-      entries.includes(target) && entries.includes(`${target}.map`),
-      "Missing public entry or map",
-    );
-    const map = JSON.parse(command("tar", ["-xOf", tarball, `${target}.map`]));
-    assert(
-      !map.sourceRoot &&
-        Array.isArray(map.sources) &&
-        map.sources.length &&
-        map.sources.every((source) => {
-          const path = posix.normalize(
-            posix.join(posix.dirname(target), source),
-          );
-          return path.startsWith("package/") && entries.includes(path);
-        }),
-      "Map source content not delivered",
-    );
-  }
+  const publicEntries = Object.entries(object(artifact.exports)).filter(
+    ([name]) => name !== "./package.json",
+  );
+  assert(publicEntries.length > 0, "Public exports are required");
+  for (const [, entry] of publicEntries)
+    for (const path of [object(entry).import, object(entry).types]) {
+      assert(
+        typeof path === "string" &&
+          path.startsWith("./") &&
+          !path.split("/").includes(".."),
+        "Unsupported/escaping public export",
+      );
+      const target = `package/${path.replace(/^\.\//, "")}`;
+      assert(
+        entries.includes(target) && entries.includes(`${target}.map`),
+        "Missing public entry or map",
+      );
+      const map = JSON.parse(
+        command("tar", ["-xOf", tarball, `${target}.map`]),
+      );
+      assert(
+        !map.sourceRoot &&
+          Array.isArray(map.sources) &&
+          map.sources.length &&
+          map.sources.every((source) => {
+            const path = posix.normalize(
+              posix.join(posix.dirname(target), source),
+            );
+            return path.startsWith("package/") && entries.includes(path);
+          }),
+        "Map source content not delivered",
+      );
+    }
 }
-async function main() {
+export function publicationMode(mode, event) {
+  assert(
+    (mode === "release" && event === "push") ||
+      (mode === "release-dry-run" && event === "workflow_dispatch"),
+    "release requires a tag push; release-dry-run requires manual dispatch",
+  );
+  return mode === "release-dry-run";
+}
+export function verifiedTarball(tarball, digest) {
+  const observed = createHash("sha256")
+    .update(readFileSync(tarball))
+    .digest("hex");
+  assert(observed === digest, "Tarball changed after verification");
+}
+export function publicationPlan(config, projects) {
+  assert(
+    projects.filter((project) => project.manifest.name === config.package.name)
+      .length <= 1,
+    "Mapped package name is ambiguous",
+  );
+  const selected = projects.filter(
+    (project) =>
+      project.directory === config.package.directory &&
+      project.manifest.name === config.package.name,
+  );
+  assert(
+    selected.length === 1,
+    "Mapped package is not a unique declared project",
+  );
+  assert(selected[0].manifest.private !== true, "Wrong/private package");
+  const members = projects.filter((project) => project.directory !== ".");
+  const workspace = members.length > 0;
+  if (config.package.directory === ".")
+    assert(
+      !members.some(
+        (project) =>
+          project.code ||
+          project.manifest.publishConfig ||
+          project.manifest.scripts?.build,
+      ),
+      "Workspace publisher must select one member, not the aggregate root",
+    );
+  assert(
+    config.package.directory === "." || workspace,
+    "Member package requires an actual workspace",
+  );
+  return {
+    directory: config.package.directory,
+    build:
+      config.package.directory === "."
+        ? ["run", "build"]
+        : ["--filter", `${config.package.name}...`, "run", "build"],
+    pack: [
+      "--dir",
+      config.package.directory,
+      "--config.ignore-scripts=true",
+      "pack",
+      "--out",
+    ],
+  };
+}
+export async function publish(mode) {
+  assert(
+    process.argv.length === 2,
+    "Fixed release entries do not accept arguments",
+  );
+  const dryRun = publicationMode(mode, process.env.GITHUB_EVENT_NAME);
   assert(
     !process.env.NPM_TOKEN && !process.env.NODE_AUTH_TOKEN,
     "Stored npm tokens are forbidden",
@@ -336,10 +628,78 @@ async function main() {
     process.env.GITHUB_ACTIONS === "true",
     "Publisher profile runs only in GitHub Actions",
   );
-  const config = configuration(
-    JSON.parse(readFileSync("release.config.json", "utf8")),
+  const directories = existsSync("pnpm-workspace.yaml")
+    ? JSON.parse(
+        command("pnpm", [
+          "--recursive",
+          "--include-workspace-root",
+          "list",
+          "--depth",
+          "-1",
+          "--json",
+        ]),
+      ).map((project) => project.path)
+    : [process.cwd()];
+  const projects = [
+    ...new Set(
+      [process.cwd(), ...directories].map((path) => {
+        const directory =
+          relative(process.cwd(), resolve(path)).split(sep).join("/") || ".";
+        assert(
+          directory === "." ||
+            (!directory.startsWith("/") &&
+              !directory.includes(":") &&
+              !directory.split("/").includes("..")),
+          "Workspace path escape",
+        );
+        return directory;
+      }),
+    ),
+  ].map((directory) => {
+    return {
+      directory,
+      manifest: JSON.parse(
+        readFileSync(join(directory, "package.json"), "utf8"),
+      ),
+    };
+  });
+  const nodes = workflowMatrix(
+    readFileSync(".github/workflows/ci.yaml", "utf8"),
   );
-  const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+  const mappingPaths = [
+    "scripts/lib/release-packages.mjs",
+    "scripts/release-packages.js",
+  ].filter((path) => existsSync(path));
+  assert(
+    mappingPaths.length <= 1,
+    "Multiple release mapping sources are ambiguous",
+  );
+  let mappings = mappingPaths.length
+    ? releaseMappings(readFileSync(mappingPaths[0], "utf8"))
+    : [];
+  if (existsSync("release.config.json")) {
+    const legacy = configuration(
+      JSON.parse(readFileSync("release.config.json", "utf8")),
+    );
+    assert(
+      JSON.stringify(legacy.ci.nodeVersions) === JSON.stringify(nodes),
+      "Legacy matrix differs from the real workflow",
+    );
+    assert(!mappings.length, "Duplicate release mapping sources");
+    mappings = [legacy.package];
+  }
+  const config = resolveConfiguration(
+    projects,
+    mappings,
+    nodes,
+    process.env.GITHUB_EVENT_NAME,
+    process.env.GITHUB_REF_NAME,
+    process.env.PACKAGE_INPUT,
+  );
+  const plan = publicationPlan(config, projects);
+  const manifest = projects.find(
+    (project) => project.directory === plan.directory,
+  ).manifest;
   const event = process.env.GITHUB_EVENT_NAME;
   if (event === "push")
     assert(process.env.GITHUB_REF_TYPE === "tag", "Only release tags publish");
@@ -350,8 +710,16 @@ async function main() {
     process.env.GITHUB_REF_NAME,
     process.env.PACKAGE_INPUT,
   );
-  const sha = command("git", ["rev-parse", "HEAD"]);
+  const sha = command("git", ["rev-parse", "HEAD^{commit}"]);
   assert(/^[0-9a-f]{40}$/.test(sha), "Actual checkout SHA is invalid");
+  if (event === "push")
+    assert(
+      command("git", [
+        "rev-parse",
+        `refs/tags/${process.env.GITHUB_REF_NAME}^{commit}`,
+      ]) === sha,
+      "Dereferenced release tag does not match the checkout commit",
+    );
   command("git", [
     "merge-base",
     "--is-ancestor",
@@ -367,12 +735,12 @@ async function main() {
       true,
     ),
   );
-  command("pnpm", ["run", "build"]);
+  command("pnpm", plan.build);
   const owned = resolve(".release-artifacts", randomUUID());
   mkdirSync(owned, { recursive: true });
   try {
     const tarball = join(owned, "package.tgz");
-    command("pnpm", ["--config.ignore-scripts=true", "pack", "--out", tarball]);
+    command("pnpm", [...plan.pack, tarball]);
     const fingerprint = () =>
       createHash("sha256").update(readFileSync(tarball)).digest("hex");
     const digest = fingerprint();
@@ -413,7 +781,7 @@ async function main() {
         process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
       "OIDC capability unavailable",
     );
-    assert(fingerprint() === digest, "Tarball changed after verification");
+    verifiedTarball(tarball, digest);
     unpublished(
       release,
       await json(
@@ -422,6 +790,7 @@ async function main() {
         true,
       ),
     );
+    verifiedTarball(tarball, digest);
     command("npm", [
       "publish",
       tarball,
@@ -432,15 +801,10 @@ async function main() {
       release.channel,
       "--provenance",
       `--registry=${registry}`,
-      ...(event === "workflow_dispatch" ? ["--dry-run"] : []),
+      ...(dryRun ? ["--dry-run"] : []),
     ]);
-    assert(fingerprint() === digest, "Tarball changed during publication");
+    verifiedTarball(tarball, digest);
   } finally {
     rmSync(owned, { recursive: true, force: true });
   }
 }
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
-)
-  await main();

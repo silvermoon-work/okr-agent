@@ -32,7 +32,7 @@ it("detects nonunique/misdirected package mappings without importing the target"
     await fixture(root);
     await put(
       root,
-      "scripts/release-packages.js",
+      "scripts/lib/release-packages.mjs",
       `export const releasePackages = [
       {id:"lib",name:"@acme/lib",directory:"packages/lib"},
       {id:"lib",name:"@acme/other",directory:"packages/lib"}

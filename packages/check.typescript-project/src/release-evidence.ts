@@ -1,6 +1,6 @@
 import { parse } from "acorn";
 import type { Project } from "./commands.js";
-import { type Files, record, Unconfirmed } from "./files.js";
+import { type Files, dataYaml, record, Unconfirmed } from "./files.js";
 import { repository } from "./repository.js";
 
 type Report = (
@@ -11,6 +11,90 @@ interface Mapping {
   id: string;
   name: string;
   directory: string;
+}
+
+export async function privatePublishEvidence(
+  files: Files,
+  projects: Project[],
+  report: Report,
+) {
+  if (!projects.some((project) => project.manifest.private === true)) return;
+  for (const path of files.paths.filter((path) =>
+    /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path),
+  )) {
+    const source = await files.text(path);
+    if (
+      !/\b(?:npm|pnpm) pkg (?:delete private|set private=false)\b/.test(source)
+    )
+      continue;
+    let workflow: Record<string, unknown>;
+    try {
+      workflow = dataYaml(source);
+    } catch (error) {
+      if (!(error instanceof Unconfirmed)) throw error;
+      continue;
+    }
+    for (const [name, raw] of Object.entries(record(workflow.jobs ?? {}))) {
+      const job = record(raw);
+      if (!Array.isArray(job.steps)) continue;
+      const defaults = record(
+        record(job.defaults ?? workflow.defaults ?? {}).run ?? {},
+      );
+      const unprotected = new Set<string>();
+      for (const rawStep of job.steps as unknown[]) {
+        const step = record(rawStep);
+        if (typeof step.run !== "string" || step.if !== undefined) {
+          unprotected.clear();
+          continue;
+        }
+        const commands = step.run
+          .split(/\r?\n|&&/)
+          .map((part) => part.trim())
+          .filter(Boolean);
+        const change =
+          /^(?:npm|pnpm) pkg (?:delete private|set private=(?:true|false))$/;
+        const publish =
+          /^(?:npm|pnpm) publish(?:\s+--[\w-]+(?:[= ][\w.-]+)?)*$/;
+        if (
+          commands.some(
+            (command) => !change.test(command) && !publish.test(command),
+          )
+        ) {
+          unprotected.clear();
+          continue;
+        }
+        const directory =
+          step["working-directory"] ?? defaults["working-directory"] ?? ".";
+        if (typeof directory !== "string" || directory.includes("${{"))
+          continue;
+        const project = projects.find(
+          (project) => files.path("", directory) === project.directory,
+        );
+        if (project?.manifest.private !== true) continue;
+        // Only a literal removal of protection followed by publishing this directory
+        // proves a bypass. A mapping or a publish keyword alone proves nothing.
+        for (const command of commands) {
+          if (
+            /^(?:npm|pnpm) pkg (?:delete private|set private=false)$/.test(
+              command,
+            )
+          )
+            unprotected.add(project.directory);
+          else if (/^(?:npm|pnpm) pkg set private=true$/.test(command))
+            unprotected.delete(project.directory);
+          else if (
+            unprotected.has(project.directory) &&
+            publish.test(command) &&
+            !/\s--dry-run(?:\s|$)/.test(command)
+          )
+            report(
+              "mismatch",
+              `${path}:${name}: 显式移除 ${project.directory || "."} 的 private 保护后发布，禁止发布 private 包`,
+            );
+        }
+      }
+    }
+  }
 }
 
 /** Recognize the repository's existing exported data interface without importing it. */
@@ -78,17 +162,21 @@ export async function mappingEvidence(
   projects: Project[],
   report: Report,
 ) {
-  if (!files.exists("scripts/release-packages.js")) {
+  const paths = [
+    "scripts/lib/release-packages.mjs",
+    "scripts/release-packages.js",
+  ].filter((path) => files.exists(path));
+  if (paths.length > 1)
+    throw new Unconfirmed("存在多个发布映射文件，不能确定唯一静态映射");
+  if (!paths.length) {
     if (projects.filter((p) => p.manifest.private !== true).length > 1)
       report(
         "unconfirmed",
-        "多个开放包没有已识别的 scripts/release-packages.js 映射接口",
+        "多个开放包没有已识别的 scripts/lib/release-packages.mjs 映射数据",
       );
     return;
   }
-  const mappings = releaseMappings(
-    await files.text("scripts/release-packages.js"),
-  );
+  const mappings = releaseMappings(await files.text(paths[0]!));
   for (const key of ["id", "name", "directory"] as const)
     if (new Set(mappings.map((m) => m[key])).size !== mappings.length)
       report("mismatch", `发布映射 ${key} 不唯一`);

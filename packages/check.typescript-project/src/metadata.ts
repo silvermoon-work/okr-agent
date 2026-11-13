@@ -70,7 +70,9 @@ export function fresh<T>(evidence: Observation<T>, now = Date.now()): T {
     now - evidence.observedAt > MAX_AGE ||
     !evidence.source.startsWith("https://")
   )
-    throw new Unconfirmed("发行证据过期、来源无效或观察时间不可信");
+    throw new Unconfirmed(
+      `${evidence.source}: 发行证据过期、来源无效或观察时间不可信，observedAt=${evidence.observedAt}`,
+    );
   return evidence.data;
 }
 interface HttpObservation extends Observation<unknown> {
@@ -139,7 +141,6 @@ export function publicMetadata(signal: AbortSignal): Metadata {
   const json = async (
     url: string,
     accept: string,
-    historical = false,
   ): Promise<HttpObservation> => {
     signal.throwIfAborted();
     if (++requests > 66) throw new Unconfirmed("元数据超过 66 次请求预算");
@@ -171,12 +172,11 @@ export function publicMetadata(signal: AbortSignal): Metadata {
         date > now + 60_000 ||
         (rawAge !== null && !/^\d+$/.test(rawAge)) ||
         !Number.isSafeInteger(age) ||
-        (!historical &&
-          (cacheAgeMs > MAX_AGE ||
-            /stale|expired|revalidating|\b11[01]\b/i.test(state)))
+        cacheAgeMs > MAX_AGE ||
+        /stale|expired|revalidating|\b11[01]\b/i.test(state)
       )
         throw new Unconfirmed(
-          `${url}: 缓存陈旧或无法确认 HTTP 响应新鲜度 (${state.trim() || "no cache status"})`,
+          `${url}: 缓存陈旧或无法确认 HTTP 响应新鲜度；Date=${response.headers.get("date")}, Age=${rawAge ?? "0"}s, cacheAgeMs=${cacheAgeMs}；要求至多 ${MAX_AGE}ms 且无 stale/expired/revalidating (${state.trim() || "no cache status"})`,
         );
       if (
         url.startsWith(registry) &&
@@ -205,7 +205,7 @@ export function publicMetadata(signal: AbortSignal): Metadata {
       }
       return {
         data: JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown,
-        source: `${url} [profile=${METADATA_PROFILE},date=${new Date(date).toISOString()},age=${age / 1000}s,cache=${state.trim() || "unspecified"}${historical ? ",historical-only=true" : ""}]`,
+        source: `${url} [profile=${METADATA_PROFILE},date=${new Date(date).toISOString()},age=${age / 1000}s,cache=${state.trim() || "unspecified"}]`,
         observedAt: now - cacheAgeMs,
         authoritative: true,
         cacheAgeMs,
@@ -322,7 +322,7 @@ export function publicMetadata(signal: AbortSignal): Metadata {
     node() {
       nodeCache ??= (async () => {
         const [index, schedule] = await Promise.all([
-          json("https://nodejs.org/dist/index.json", "application/json", true),
+          json("https://nodejs.org/dist/index.json", "application/json"),
           json(scheduleUrl, "application/vnd.github+json"),
         ]);
         if (!Array.isArray(index.data) || index.data.length > 20_000)
@@ -346,6 +346,13 @@ export function publicMetadata(signal: AbortSignal): Metadata {
             return { version: entry.version, lts: entry.lts };
           },
         );
+        if (
+          new Set(releases.map((release) => release.version)).size !==
+          releases.length
+        )
+          throw new Unconfirmed(
+            `${index.source}: Node 官方发行版本重复或冲突，不能选择最新 LTS`,
+          );
         const file = record(schedule.data);
         if (
           file.path !== "schedule.json" ||
@@ -405,8 +412,8 @@ export function publicMetadata(signal: AbortSignal): Metadata {
             throw new Unconfirmed("Node 官方生命周期日期/系列无效");
         }
         return {
-          source: `${schedule.source}; lifecycleSha=${file.sha}; historicalIndex=${index.source}`,
-          observedAt: schedule.observedAt,
+          source: `${schedule.source}; lifecycleSha=${file.sha}; releaseIndex=${index.source}`,
+          observedAt: Math.min(index.observedAt, schedule.observedAt),
           authoritative: true,
           data: {
             releases,

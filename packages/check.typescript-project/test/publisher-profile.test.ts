@@ -5,6 +5,9 @@ import { beforeEach, afterEach, expect, it } from "vitest";
 import { inspect } from "../src/inspect.js";
 import type { ProblemCode } from "../src/contract.js";
 import { npmFixture, put, testEvidence, fixture, manifest } from "./fixture.js";
+import { Files, dataYaml, record } from "../src/files.js";
+import { publisherProfile } from "../src/publisher-profile.js";
+import type { Project } from "../src/commands.js";
 
 let root: string;
 beforeEach(async () => {
@@ -30,6 +33,216 @@ async function check() {
 it("proves a complete single-package tsc ESM/maps/source + exact standard OIDC publisher profile without executing target code", async () => {
   expect(await check()).toEqual([]);
 });
+it("keeps an unknown publisher configuration unconfirmed with topology-specific repair evidence", async () => {
+  const config = {
+    schemaVersion: 1,
+    package: { id: "library", name: "@acme/library", directory: "." },
+    ci: { nodeVersions: ["22.15.0", "24.11.0"] },
+  };
+  await put(root, "release.config.json", { ...config, adapter: "workspace" });
+  const problem = (await check()).find(
+    (item) => item.code === "release-unconfirmed",
+  );
+  expect(problem?.brief).toContain('"adapter"');
+  expect(problem?.brief).toContain("#single-package");
+  expect(problem?.brief).toContain("闭合字段");
+});
+it.each([1, 2])(
+  "supports %s real code members with a private aggregate root and one explicitly selected publisher target",
+  async (count) => {
+    const rootManifest = record(
+      JSON.parse(await readFile(join(root, "package.json"), "utf8")) as unknown,
+    );
+    const rootScripts = { ...record(rootManifest.scripts) };
+    delete rootScripts.build;
+    delete rootScripts["lint-package"];
+    rootManifest.scripts = rootScripts;
+    await put(root, "package.json", {
+      ...rootManifest,
+      name: "@acme/root",
+      private: true,
+    });
+    await rm(join(root, "scripts", "build.mjs"));
+    await rm(join(root, "scripts", "lint-package.mjs"));
+    await rm(join(root, "src"), { recursive: true });
+    await rm(join(root, "test"), { recursive: true });
+    await put(root, "pnpm-workspace.yaml", {
+      ...dataYaml(await readFile(join(root, "pnpm-workspace.yaml"), "utf8")),
+      packages: ["packages/*"],
+    });
+    const projects: Project[] = [
+      {
+        directory: "",
+        manifest: { ...rootManifest, name: "@acme/root", private: true },
+        sources: [] as string[],
+        tests: [] as string[],
+      },
+    ];
+    for (const name of ["library", "core"].slice(0, count)) {
+      const member = join(root, "packages", name);
+      await npmFixture(member);
+      const m = record(
+        JSON.parse(
+          await readFile(join(member, "package.json"), "utf8"),
+        ) as unknown,
+      );
+      m.name = `@acme/${name}`;
+      m.devDependencies = {};
+      const memberScripts = { ...record(m.scripts) };
+      delete memberScripts.release;
+      delete memberScripts["release-dry-run"];
+      m.scripts = memberScripts;
+      await put(member, "package.json", m);
+      await rm(join(member, "scripts", "release.mjs"));
+      await rm(join(member, "scripts", "release-dry-run.mjs"));
+      await rm(join(member, "AGENTS.md"));
+      projects.push({
+        directory: `packages/${name}`,
+        manifest: m,
+        sources: [`packages/${name}/src/index.ts`],
+        tests: [`packages/${name}/test/index.test.ts`],
+      });
+    }
+    const config = {
+      schemaVersion: 1,
+      package: {
+        id: "library",
+        name: "@acme/library",
+        directory: "packages/library",
+      },
+      ci: { nodeVersions: ["22.15.0", "24.11.0"] },
+    };
+    const mappings = projects.slice(1).map((project) => ({
+      id: project.directory.split("/").at(-1),
+      name: project.manifest.name,
+      directory: project.directory,
+    }));
+    const mappingSource = `export const releasePackages = ${JSON.stringify(mappings)};`;
+    await put(root, "scripts/lib/release-packages.mjs", mappingSource);
+    const problems: { code: string; brief: string }[] = [];
+    const run = async () => {
+      const files = new Files(root, new AbortController().signal);
+      await files.scan();
+      return publisherProfile(
+        files,
+        projects,
+        await testEvidence(),
+        (domain, status, brief) => {
+          problems.push({ code: `${domain}-${status}`, brief });
+        },
+      );
+    };
+    expect(await run()).toEqual({
+      nodeVersions: config.ci.nodeVersions,
+      ...(count === 1 ? { directory: "packages/library" } : {}),
+    });
+    expect(problems).toEqual([]);
+    expect(await check()).toEqual([]);
+    await put(
+      root,
+      "scripts/lib/release-packages.mjs",
+      `export const releasePackages = ${JSON.stringify([{ ...mappings[0], directory: ".", name: "@acme/root" }])};`,
+    );
+    expect(await run()).toBeUndefined();
+    expect(problems[0]?.code).toBe("release-unconfirmed");
+    expect(problems[0]?.brief).toContain(
+      `#${count === 1 ? "single-package" : "workspace"}`,
+    );
+    problems.length = 0;
+    await put(root, "scripts/lib/release-packages.mjs", mappingSource);
+    await put(
+      root,
+      "scripts/lib/npm-publish.mjs",
+      "export async function publish() {}",
+    );
+    expect(await run()).toBeUndefined();
+    expect(problems).toHaveLength(1);
+    expect(problems[0]?.brief).toContain("scripts.release-dry-run");
+  },
+);
+it("verifies each static ESM subpath against delivered source and paired tsc outputs", async () => {
+  const m = record(
+    JSON.parse(await readFile(join(root, "package.json"), "utf8")) as unknown,
+  );
+  const exports = {
+    ...record(m.exports),
+    "./extra": { types: "./dist/extra.d.ts", import: "./dist/extra.js" },
+  };
+  await put(root, "src/extra.ts", "export const extra = 1;");
+  await put(root, "package.json", { ...m, exports });
+  expect(await check()).toEqual([]);
+  await put(root, "package.json", {
+    ...m,
+    exports: {
+      ...exports,
+      "./extra": { ...exports["./extra"], types: "./dist/index.d.ts" },
+    },
+  });
+  expect(await check()).toContainEqual(
+    expect.objectContaining({
+      code: "delivery-mismatch",
+      brief: expect.stringContaining("exports ./extra") as unknown,
+    }),
+  );
+  await put(root, "package.json", {
+    ...m,
+    exports: {
+      ...exports,
+      "./*": { types: "./dist/*.d.ts", import: "./dist/*.js" },
+    },
+  });
+  expect(
+    (await check()).some(
+      (p) => p.code === "delivery-unconfirmed" && p.brief.includes("./*"),
+    ),
+  ).toBe(true);
+});
+it("does not repeat a missing package check as a gate connection mismatch", async () => {
+  const m = record(
+    JSON.parse(await readFile(join(root, "package.json"), "utf8")) as unknown,
+  );
+  const scripts = { ...record(m.scripts) };
+  delete scripts["lint-package"];
+  scripts.check = `${manifest.scripts.check} && pnpm build`;
+  await put(root, "package.json", { ...m, scripts });
+  const problems = await check();
+  expect(
+    problems.some(
+      (p) => p.code === "delivery-missing" && p.brief.includes("lint-package"),
+    ),
+  ).toBe(true);
+  expect(
+    problems.some((p) => p.brief.includes("build/lint-package 未全部连接")),
+  ).toBe(false);
+});
+it("keeps identically named missing sources in different npm packages distinct", async () => {
+  await put(root, "pnpm-workspace.yaml", {
+    ...dataYaml(await readFile(join(root, "pnpm-workspace.yaml"), "utf8")),
+    packages: ["packages/*"],
+  });
+  for (const name of ["a", "b"]) {
+    const member = join(root, "packages", name);
+    await npmFixture(member);
+    const m = record(
+      JSON.parse(
+        await readFile(join(member, "package.json"), "utf8"),
+      ) as unknown,
+    );
+    await put(member, "package.json", {
+      ...m,
+      name: `@acme/${name}`,
+      files: ["dist", "README.md", "LICENSE"],
+    });
+  }
+  const missing = (await check()).filter(
+    (p) =>
+      p.code === "delivery-mismatch" &&
+      p.brief.includes("真实源文件 src/index.ts"),
+  );
+  expect(missing).toHaveLength(2);
+  expect(missing.some((p) => p.brief.startsWith("packages/a:"))).toBe(true);
+  expect(missing.some((p) => p.brief.startsWith("packages/b:"))).toBe(true);
+});
 it.each([
   [
     "source delivery",
@@ -53,26 +266,26 @@ it.each([
     "client OIDC support",
     ".github/workflows/npm-publish.yaml",
     (text: string) => text.replace("npm@11.21.0", "npm@10.0.0"),
-    "release-unconfirmed",
+    "release-mismatch",
   ],
   [
     "actual helper bytes",
-    ".github/scripts/npm-publish.mjs",
+    "scripts/lib/npm-publish.mjs",
     (text: string) => `${text}\n// custom bypass\n`,
-    "release-unconfirmed",
+    "release-mismatch",
   ],
   [
     "complete CI aggregate",
     ".github/workflows/ci.yaml",
     (text: string) => text.replace("exit 1", "exit 0"),
-    "release-unconfirmed",
+    "ci-mismatch",
   ],
   [
     "unknown YAML semantics",
     ".github/workflows/ci.yaml",
     (text: string) =>
       text.replace("run: pnpm check", "run: !custom pnpm check"),
-    "release-unconfirmed",
+    "ci-unconfirmed",
   ],
 ] as const)(
   "does not pass after mutation of %s",
@@ -81,6 +294,82 @@ it.each([
     expect((await check()).map((p) => p.code)).toContain(code);
   },
 );
+it("reports the observed nonstandard job structure before any derived matrix or publisher binding problem", async () => {
+  const workflow = dataYaml(
+    await readFile(join(root, ".github", "workflows", "ci.yaml"), "utf8"),
+  );
+  const jobs = record(workflow.jobs);
+  record(jobs.check).strategy = {
+    matrix: { "node-version": ["22.15.0", "24.11.1"] },
+  };
+  delete jobs.compatibility;
+  await put(root, ".github/workflows/ci.yaml", workflow);
+  await rm(join(root, ".github", "workflows", "npm-publish.yaml"));
+  const problems = await check();
+  expect(problems).toEqual([
+    {
+      code: "ci-mismatch",
+      brief: expect.stringContaining(
+        'jobs.check.strategy: 观察 {"matrix":{"node-version":["22.15.0","24.11.1"]}}；标准要求 未声明',
+      ) as unknown,
+    },
+  ]);
+  expect(problems[0]?.brief).toContain("固定质量 workflow 结构不匹配");
+  expect(problems[0]?.brief).toContain(
+    "check/compatibility/release-verification",
+  );
+  await put(root, "package.json", {
+    ...record(
+      JSON.parse(await readFile(join(root, "package.json"), "utf8")) as unknown,
+    ),
+    version: "not-a-version",
+  });
+  expect(await check()).toContainEqual(
+    expect.objectContaining({ code: "delivery-mismatch" }),
+  );
+});
+it("accepts only the bounded matrix parameter on the correct fixed quality workflow", async () => {
+  const workflow = dataYaml(
+    await readFile(join(root, ".github", "workflows", "ci.yaml"), "utf8"),
+  );
+  const matrix = record(
+    record(record(record(workflow.jobs).compatibility).strategy).matrix,
+  );
+  matrix["node-version"] = ["22.15.0", "24.11.0", "24.11.1"];
+  await put(root, ".github/workflows/ci.yaml", workflow);
+  const files = new Files(root, new AbortController().signal);
+  await files.scan();
+  const problems: string[] = [];
+  const profile = await publisherProfile(
+    files,
+    [
+      {
+        directory: "",
+        manifest: await files.json("package.json"),
+        sources: ["src/index.ts"],
+        tests: ["test/index.test.ts"],
+      },
+    ],
+    await testEvidence(),
+    (_domain, _status, brief) => {
+      problems.push(brief);
+    },
+  );
+  expect(profile?.nodeVersions).toEqual(matrix["node-version"]);
+  expect(problems).toEqual([]);
+  matrix.extra = ["ignored"];
+  await put(root, ".github/workflows/ci.yaml", workflow);
+  expect(
+    (await check()).filter((problem) => problem.code.startsWith("ci-")),
+  ).toEqual([
+    expect.objectContaining({
+      code: "ci-mismatch",
+      brief: expect.stringContaining(
+        "jobs.compatibility.strategy.matrix.extra",
+      ) as unknown,
+    }),
+  ]);
+});
 it("requires the actual engine minimum in the compatibility matrix, not just a higher happy path", async () => {
   const text = await readFile(join(root, "package.json"), "utf8");
   await put(root, "package.json", text.replace(">=22.15.0", ">=22.14.0"));
@@ -111,6 +400,79 @@ it("does not infer an npm library from private:false alone", async () => {
     exports: { ".": "./src/index.ts" },
   });
   const internal = await check();
-  expect(internal.some((p) => p.code === "delivery-unconfirmed")).toBe(true);
+  expect(internal.some((p) => p.code === "delivery-unconfirmed")).toBe(false);
   expect(internal.some((p) => p.code.startsWith("release-"))).toBe(false);
+});
+it("skips npm delivery and publisher requirements for private packages even with explicit publishing declarations", async () => {
+  const m = record(
+    JSON.parse(await readFile(join(root, "package.json"), "utf8")) as unknown,
+  );
+  const scripts = { ...record(m.scripts) };
+  delete scripts.release;
+  delete scripts["release-dry-run"];
+  await rm(join(root, "scripts", "release.mjs"));
+  await rm(join(root, "scripts", "release-dry-run.mjs"));
+  await put(root, "package.json", {
+    ...m,
+    scripts,
+    private: true,
+    exports: { ".": "not-an-npm-entry" },
+    types: "./missing.d.ts",
+    publishConfig: { access: "restricted" },
+    license: undefined,
+  });
+  await put(root, "release.config.json", {
+    package: { directory: ".", name: "@acme/library" },
+  });
+  await put(
+    root,
+    "scripts/lib/release-packages.mjs",
+    'export const releasePackages = [{id:"library",name:"@acme/library",directory:"."}];',
+  );
+  await rm(join(root, ".github", "workflows", "npm-publish.yaml"));
+  await rm(join(root, "scripts", "lib", "npm-publish.mjs"));
+  expect(await check()).toEqual([]);
+  await put(root, "tsconfig.build.json", {
+    compilerOptions: { noEmit: true },
+    include: ["src/**/*.ts"],
+  });
+  expect(
+    (await check()).some(
+      (p) =>
+        p.code === "delivery-mismatch" && p.brief.includes("build 不得 noEmit"),
+    ),
+  ).toBe(true);
+});
+it("reports explicit private-protection removal followed by publication without requiring npm delivery configuration", async () => {
+  await rm(root, { recursive: true, force: true });
+  await mkdir(root, { recursive: true });
+  await fixture(root);
+  const workflow = {
+    on: { workflow_dispatch: {} },
+    jobs: {
+      release: {
+        steps: [
+          { run: "npm pkg delete private" },
+          { run: "npm publish --tag latest" },
+        ],
+      },
+    },
+  };
+  await put(root, ".github/workflows/release.yaml", workflow);
+  expect(await check()).toEqual([
+    expect.objectContaining({
+      code: "release-mismatch",
+      brief: expect.stringContaining("禁止发布 private 包") as unknown,
+    }),
+  ]);
+  workflow.jobs.release.steps[1]!.run = "npm publish --dry-run --tag latest";
+  await put(root, ".github/workflows/release.yaml", workflow);
+  expect(await check()).toEqual([]);
+  workflow.jobs.release.steps = [
+    { run: "npm pkg delete private" },
+    { run: "npm pkg set private=true" },
+    { run: "npm publish --tag latest" },
+  ];
+  await put(root, ".github/workflows/release.yaml", workflow);
+  expect(await check()).toEqual([]);
 });

@@ -159,28 +159,35 @@ it.each([
     );
   },
 );
-it("keeps historical Node cache age separate from fresh lifecycle evidence", async () => {
+it("requires fresh Node index and lifecycle evidence together", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(canonicalTransport());
   const observed = await publicMetadata(new AbortController().signal).node();
   expect(Date.now() - observed.observedAt).toBeLessThan(5_000);
-  expect(fresh(observed).historicalIndex?.cacheAgeMs).toBeGreaterThan(
-    3_600_000,
-  );
-  expect(observed.source).toContain("historical-only=true");
+  expect(fresh(observed).historicalIndex?.cacheAgeMs).toBeLessThan(5_000);
+  expect(observed.source).not.toContain("historical-only=true");
   expect(observed.source).toContain(
     "api.github.com/repos/nodejs/Release/contents/schedule.json",
   );
 });
 it.each([
+  "stale-index",
   "stale-schedule",
   "missing-content",
   "wrong-sha",
   "invalid-date",
 ] as const)(
-  "never uses historical Node facts to excuse invalid current lifecycle evidence: %s",
+  "never uses stale index or invalid lifecycle evidence to select a latest LTS: %s",
   async (failure) => {
     const transport = canonicalTransport();
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (
+        failure === "stale-index" &&
+        requestUrl(input) === "https://nodejs.org/dist/index.json"
+      ) {
+        const response = await transport(input);
+        response.headers.set("age", "3601");
+        return response;
+      }
       if (!requestUrl(input).startsWith("https://api.github.com/"))
         return transport(input);
       const body: Record<string, unknown> = githubContents({
@@ -232,6 +239,9 @@ it("preserves cancellation and unexpected faults, while network errors are uncon
   await expect(
     publicMetadata(controller.signal).package("typescript", selection),
   ).rejects.toBe(cancelled);
+  await expect(publicMetadata(controller.signal).node()).rejects.toBe(
+    cancelled,
+  );
   const fetcher = vi
     .spyOn(globalThis, "fetch")
     .mockRejectedValue(new TypeError("network unavailable"));

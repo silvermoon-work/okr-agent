@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { inspect } from "../src/inspect.js";
 import type { Input, ProblemCode } from "../src/contract.js";
 import {
+  catalog,
   fixture,
   put,
   manifest,
@@ -40,34 +41,397 @@ async function check(requirements?: unknown) {
 it("passes configuration despite deliberately broken types and failing test code", async () => {
   expect(await check()).toEqual([]);
 });
+it("checks the fixed shared implementation rather than only its wrapper", async () => {
+  const assets = await testEvidence();
+  await put(
+    root,
+    "scripts/lib/commands.mjs",
+    `${Buffer.from(assets.scripts["commands"]!).toString("utf8")}\n// changed\n`,
+  );
+  const problems = await check();
+  expect(problems).toEqual([
+    expect.objectContaining({
+      code: "gate-mismatch",
+      brief: expect.stringContaining("scripts/lib/commands.mjs") as unknown,
+    }),
+  ]);
+  expect(problems[0]?.brief).toContain("观察 SHA256");
+});
+it("does not require a duplicate scripts topology configuration", async () => {
+  expect(await check()).toEqual([]);
+});
+it("short-circuits each invalid invocation before file/lib checks while retaining independent scripts and configuration issues", async () => {
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: { check: "pnpm check", lint: "node scripts/lint.mjs" },
+  });
+  for (const name of Object.keys(manifest.scripts))
+    await rm(join(root, "scripts", `${name}.mjs`));
+  await rm(join(root, "scripts", "lib", "commands.mjs"));
+  await put(root, "tsconfig.json", { compilerOptions: { strict: false } });
+  const problems = await check();
+  expect(
+    problems.filter((p) => p.brief.includes("scripts/check.mjs:")),
+  ).toEqual([]);
+  expect(
+    problems.filter((p) => p.brief.includes("scripts/lint.mjs:")),
+  ).toHaveLength(1);
+  expect(
+    problems.filter((p) => p.brief.includes("scripts/lib/commands.mjs")),
+  ).toEqual([]);
+  expect(problems.some((p) => p.code === "typescript-mismatch")).toBe(true);
+});
+it("reports one shared-library failure with the affected valid entrypoints", async () => {
+  await rm(join(root, "scripts", "lib", "commands.mjs"));
+  const failures = (await check()).filter((p) =>
+    p.brief.includes("scripts/lib/commands.mjs"),
+  );
+  expect(failures).toHaveLength(1);
+  expect(failures[0]?.brief).toContain("scripts.check");
+  expect(failures[0]?.brief).toContain("scripts.lint");
+});
+it("keeps voluntarily declared private release entries fixed without imposing npm delivery requirements", async () => {
+  const evidence = await testEvidence();
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: { ...manifest.scripts, release: "node scripts/release.mjs" },
+  });
+  await put(
+    root,
+    "scripts/release.mjs",
+    Buffer.from(evidence.scripts.release!).toString("utf8"),
+  );
+  const problems = await check();
+  expect(problems).toEqual([
+    expect.objectContaining({
+      code: "gate-missing",
+      brief: expect.stringContaining("scripts/lib/npm-publish.mjs") as unknown,
+    }),
+  ]);
+  await put(
+    root,
+    "scripts/lib/npm-publish.mjs",
+    Buffer.from(evidence.publisher).toString("utf8"),
+  );
+  expect(await check()).toEqual([]);
+});
+it("supports shared root configuration and scheduling without duplicating member scripts or a topology file", async () => {
+  await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
+  await put(root, "packages/a/package.json", {
+    name: "member",
+    private: true,
+    engines: { node: ">=22" },
+  });
+  await put(root, "packages/a/code/index.ts", "export const member = 1;");
+  await put(root, "tsconfig.json", {
+    extends: "./tsconfig.base.json",
+    include: ["src/**/*.ts", "test/**/*.ts", "packages/**/*.ts"],
+  });
+  await put(
+    root,
+    "vitest.config.ts",
+    vitestConfig.replace('["src/**/*.ts"]', '["src/**/*.ts", "code/**/*.ts"]'),
+  );
+  expect(await check()).toEqual([]);
+  await put(root, "packages/a/package.json", {
+    name: "member",
+    private: true,
+    engines: { node: ">=22" },
+    dependencies: { fixture: "workspace:*" },
+  });
+  await put(root, "package.json", {
+    ...manifest,
+    dependencies: { member: "workspace:*" },
+  });
+  await rm(join(root, "scripts", "lib", "commands.mjs"));
+  const problems = await check();
+  expect(
+    problems.filter(
+      (p) => p.code === "gate-unconfirmed" && p.brief.includes("循环"),
+    ),
+  ).toHaveLength(1);
+  expect(
+    problems.filter(
+      (p) =>
+        p.code === "gate-missing" &&
+        p.brief.includes("scripts/lib/commands.mjs"),
+    ),
+  ).toHaveLength(1);
+});
+it("keeps shared Vitest configuration separate from two member roots and aggregates only shared discovery failures", async () => {
+  await rm(join(root, "src"), { recursive: true });
+  await rm(join(root, "test"), { recursive: true });
+  await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
+  await put(root, "tsconfig.json", {
+    extends: "./tsconfig.base.json",
+    include: ["packages/**/*.ts"],
+  });
+  for (const name of ["a", "b"]) {
+    await put(root, `packages/${name}/package.json`, {
+      name,
+      private: true,
+      engines: { node: ">=22" },
+    });
+    await put(root, `packages/${name}/src/index.ts`, "export {};");
+    await put(root, `packages/${name}/test/index.test.ts`, "export {};");
+  }
+  expect(await check()).toEqual([]);
+  await put(
+    root,
+    "vitest.config.ts",
+    vitestConfig.replace("src/**/*.ts", "missing/**/*.ts"),
+  );
+  const coverageFailures = (await check()).filter(
+    (problem) => problem.code === "coverage-mismatch",
+  );
+  expect(coverageFailures).toHaveLength(1);
+  for (const name of ["a", "b"]) {
+    expect(coverageFailures[0]?.brief).toContain(`实际 root=packages/${name}`);
+    expect(coverageFailures[0]?.brief).toContain(
+      `未匹配文件=["packages/${name}/src/index.ts"]`,
+    );
+  }
+  await put(root, "vitest.config.ts", vitestConfig);
+  await put(root, "tsconfig.json", {
+    extends: "./tsconfig.base.json",
+    include: ["src/**/*.ts", "test/**/*.ts"],
+  });
+  const typeFailures = (await check()).filter(
+    (problem) => problem.code === "typescript-mismatch",
+  );
+  expect(typeFailures).toHaveLength(1);
+  expect(typeFailures[0]?.brief).toContain("配置=tsconfig.json");
+  expect(typeFailures[0]?.brief).toContain(
+    'include={"base":".","patterns":["src/**/*.ts","test/**/*.ts"]}',
+  );
+  expect(typeFailures[0]?.brief).toContain("未匹配文件");
+  expect(typeFailures[0]?.brief).toContain("成员=packages/a");
+  expect(typeFailures[0]?.brief).toContain("成员=packages/b");
+  await put(root, "tsconfig.json", {
+    extends: "./tsconfig.base.json",
+    include: ["packages/**/*.ts"],
+  });
+  await put(
+    root,
+    "vitest.config.ts",
+    vitestConfig.replace("test/**/*.test.ts", "missing/**/*.test.ts"),
+  );
+  const failures = (await check()).filter(
+    (problem) => problem.code === "testing-mismatch",
+  );
+  expect(failures).toHaveLength(1);
+  for (const name of ["a", "b"]) {
+    expect(failures[0]?.brief).toContain(`成员=packages/${name}`);
+    expect(failures[0]?.brief).toContain(`实际 root=packages/${name}`);
+    expect(failures[0]?.brief).toContain(`packages/${name}/test/index.test.ts`);
+  }
+  expect(failures[0]?.brief).toContain('include=["missing/**/*.test.ts"]');
+  expect(failures[0]?.brief).toContain("配置=vitest.config.ts");
+  await put(
+    root,
+    "packages/b/vitest.config.ts",
+    vitestConfig.replace("test/**/*.test.ts", "other/**/*.test.ts"),
+  );
+  expect(
+    (await check()).filter((problem) => problem.code === "testing-mismatch"),
+  ).toHaveLength(2);
+});
+it("uses the explicitly selected ESLint config and member cwd patterns rather than nested per-file discovery", async () => {
+  await put(root, "src/nested/index.ts", "export {};");
+  await put(root, "src/nested/eslint.config.js", "export default [];");
+  expect(await check()).toEqual([]);
+  await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
+  await put(root, "packages/a/package.json", {
+    name: "a",
+    private: true,
+    engines: { node: ">=22" },
+  });
+  await put(root, "packages/a/src/index.ts", "export {};");
+  await put(root, "tsconfig.json", {
+    extends: "./tsconfig.base.json",
+    include: ["src/**/*.ts", "test/**/*.ts", "packages/**/*.ts"],
+  });
+  await put(
+    root,
+    "eslint.config.js",
+    lintConfig.replaceAll('["**/*.ts"]', '["src/**/*.ts", "test/**/*.ts"]'),
+  );
+  expect(await check()).toEqual([]);
+  await put(
+    root,
+    "eslint.config.js",
+    lintConfig.replaceAll('["**/*.ts"]', '["packages/**/*.ts"]'),
+  );
+  const failures = (await check()).filter(
+    (problem) => problem.code === "lint-mismatch",
+  );
+  expect(
+    failures.some(
+      (problem) =>
+        problem.brief.includes("成员=packages/a") &&
+        problem.brief.includes("执行 root=packages/a"),
+    ),
+  ).toBe(true);
+});
+it("does not reinterpret observed frozen-install/check steps as absent when Node selection blocks execution", async () => {
+  await put(
+    root,
+    ".github/workflows/ci.yaml",
+    workflow.replace("node-version-file: .node-version", "node-version: 22"),
+  );
+  const failures = (await check()).filter((p) => p.code.startsWith("ci-"));
+  expect(failures).toHaveLength(1);
+  expect(failures[0]?.brief).toContain('"node-version":22');
+  expect(failures[0]?.brief).toContain("固定质量 workflow 结构不匹配");
+  expect(failures[0]?.brief).not.toContain("未声明根 pnpm check");
+  expect(failures[0]?.brief).not.toContain("未在 checkout 后声明");
+  await put(
+    root,
+    ".github/workflows/ci.yaml",
+    workflow
+      .replace("node-version-file: .node-version", "node-version: 22")
+      .replace("      - run: pnpm install --frozen-lockfile\n", ""),
+  );
+  expect(
+    (await check()).find((p) => p.code.startsWith("ci-"))?.brief,
+  ).toContain("标准要求");
+});
+it.each([
+  "pnpm exec node scripts/check.mjs",
+  "node --import ./loader.mjs scripts/check.mjs",
+  "node scripts/check.cjs",
+  "tsx scripts/check.ts",
+  "node ../other/scripts/check.mjs",
+  "node scripts/lib/check.mjs",
+  "node scripts/check.mjs && pnpm test",
+  "node scripts/check.mjs --extra",
+])("rejects a noncanonical package script interface: %s", async (command) => {
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: { ...manifest.scripts, check: command },
+  });
+  expect((await check()).map((p) => p.code)).toEqual(["gate-mismatch"]);
+});
+it("reports missing entries and orphan top-level files but exempts shared modules", async () => {
+  await rm(join(root, "scripts", "lint.mjs"));
+  await put(root, "scripts/orphan.mjs", "export {};");
+  await put(root, "scripts/helper.js", "export {};");
+  await put(
+    root,
+    "scripts/lib/helpers.mjs",
+    'throw new Error("DO NOT EXECUTE");',
+  );
+  const problems = await check();
+  expect(problems.map((p) => p.code)).toEqual([
+    "gate-missing",
+    "gate-mismatch",
+    "gate-mismatch",
+  ]);
+  expect(problems.some((p) => p.brief.includes("scripts/lib/"))).toBe(true);
+  expect(
+    problems.some((p) => p.brief.startsWith("scripts/lib/commands.mjs")),
+  ).toBe(false);
+});
+it.each([
+  "format:check",
+  "test:coverage",
+  "lint:package",
+  "test:watch",
+  "lint:fix",
+  "custom:task",
+])("rejects every colon-bearing script name: %s", async (name) => {
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: {
+      ...manifest.scripts,
+      [name]: `node scripts/${name.replaceAll(":", "-")}.mjs`,
+    },
+  });
+  expect(await check()).toEqual([
+    expect.objectContaining({
+      code: "gate-mismatch",
+      brief: expect.stringContaining(`无效 script 名称: ${name}`) as unknown,
+    }),
+  ]);
+});
+it("validates optional and lifecycle scripts with the same structural rule", async () => {
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: {
+      ...manifest.scripts,
+      precheck: "node scripts/precheck.mjs",
+      dev: "node scripts/dev.mjs",
+      "lint.extra": "node scripts/lint.extra.mjs",
+      检查: "node scripts/检查.mjs",
+    },
+  });
+  await put(root, "scripts/precheck.mjs", "await arbitraryHook();");
+  await put(root, "scripts/dev.mjs", "await arbitraryServer();");
+  await put(root, "scripts/lint.extra.mjs", "export {};");
+  await put(root, "scripts/检查.mjs", "export {};");
+  expect(await check()).toEqual([]);
+});
+it("rejects script names that cannot map to a local top-level entry", async () => {
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: { ...manifest.scripts, "../escape": "node scripts/../escape.mjs" },
+  });
+  expect((await check()).map((p) => p.code)).toEqual(["gate-mismatch"]);
+});
+it("does not interpret config-like entry names as independent tool configurations", async () => {
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: {
+      ...manifest.scripts,
+      "eslint.config": "node scripts/eslint.config.mjs",
+      "prettier.config": "node scripts/prettier.config.mjs",
+    },
+  });
+  await put(root, "scripts/eslint.config.mjs", " ".repeat(1_048_577));
+  await put(
+    root,
+    "scripts/prettier.config.mjs",
+    "export default unknownImplementation();",
+  );
+  expect(await check()).toEqual([]);
+});
 it("recognizes JSONC comments/trailing commas without damaging strings", () => {
   expect(
     jsonc('{ "url": "https://example.test/*", /* x */ "yes": true, }'),
   ).toEqual({ url: "https://example.test/*", yes: true });
 });
-it("does not mistake threshold declarations for an enabled coverage gate", async () => {
-  await put(root, "package.json", {
-    ...manifest,
-    scripts: {
-      ...manifest.scripts,
-      test: "vitest run",
-      "test:coverage": "vitest run",
-    },
-  });
-  const problems = await check();
-  expect(problems.map((p) => p.code)).toEqual(["coverage-missing"]);
-  expect(problems[0]?.brief).toContain(".:");
+it("rejects a modified fixed coverage entry independently of its tool configuration", async () => {
+  await put(
+    root,
+    "scripts/test-coverage.mjs",
+    "export default unknownCoverageImplementation();",
+  );
+  expect((await check()).map((p) => p.code)).toEqual(["gate-mismatch"]);
+  await put(
+    root,
+    "vitest.config.ts",
+    vitestConfig.replace("branches: 90", "branches: 80"),
+  );
+  expect((await check()).map((p) => p.code)).toEqual([
+    "gate-mismatch",
+    "coverage-mismatch",
+  ]);
 });
 it("keeps independent CI and lint failures when coverage blocks dependent checks", async () => {
   await put(root, "package.json", {
     ...manifest,
     scripts: {
       ...manifest.scripts,
-      test: "vitest run",
-      "test:coverage": "vitest run",
+      test: manifest.scripts.test,
+      "test-coverage": manifest.scripts["test-coverage"],
     },
   });
   await rm(join(root, "eslint.config.js"));
+  await put(
+    root,
+    "vitest.config.ts",
+    vitestConfig.replace("branches: 90", "branches: 80"),
+  );
   await put(
     root,
     ".github\\workflows\\ci.yaml",
@@ -75,13 +439,121 @@ it("keeps independent CI and lint failures when coverage blocks dependent checks
   );
   expect((await check()).map((p) => p.code)).toEqual([
     "lint-missing",
-    "coverage-missing",
-    "ci-unconfirmed",
+    "coverage-mismatch",
+    "ci-mismatch",
   ]);
 });
 it("skips coverage diagnostics when test discovery is unconfirmed", async () => {
   await put(root, "vitest.config.ts", "export default unknownConfiguration();");
   expect((await check()).map((p) => p.code)).toEqual(["testing-unconfirmed"]);
+});
+it("allows a generated lockfile formatting exclusion but names excluded maintained configurations once", async () => {
+  await put(root, ".prettierignore", "pnpm-lock.yaml\n");
+  expect(await check()).toEqual([]);
+  await put(root, ".prettierignore", "pnpm-lock.yaml\ntsconfig.json\n");
+  const problems = await check();
+  expect(problems.map((p) => p.code)).toEqual(["formatting-mismatch"]);
+  expect(problems[0]?.brief).toContain("tsconfig.json");
+  expect(problems[0]?.brief).not.toContain("pnpm-lock.yaml");
+});
+it("rejects extra jobs and setup overrides outside the fixed quality workflow instead of guessing their meaning", async () => {
+  await put(
+    root,
+    ".github/workflows/ci.yaml",
+    workflow.replace(
+      "- uses: pnpm/action-setup@v4",
+      "- uses: pnpm/action-setup@v4\n        with:\n          run_install: false",
+    ) +
+      `
+  aggregate:
+    needs: check
+    if: always()
+    steps:
+      - run: echo done
+`,
+  );
+  expect(await check()).toEqual([
+    expect.objectContaining({
+      code: "ci-mismatch",
+      brief: expect.stringContaining("jobs.aggregate") as unknown,
+    }),
+  ]);
+});
+it("reports CI root tool selection once while retaining independent checks", async () => {
+  await put(
+    root,
+    ".github/workflows/ci.yaml",
+    workflow.replace("node-version-file: .node-version", "node-version: 24"),
+  );
+  const problems = await check();
+  expect(problems.map((p) => p.code)).toEqual(["ci-mismatch"]);
+  expect(problems[0]?.brief).toContain('"node-version-file":".node-version"');
+});
+it("does not accept pnpm auto-install as the explicit frozen installation step", async () => {
+  await put(
+    root,
+    ".github/workflows/ci.yaml",
+    workflow.replace(
+      "- uses: pnpm/action-setup@v4",
+      "- uses: pnpm/action-setup@v4\n        with:\n          run_install: true",
+    ),
+  );
+  expect((await check()).map((p) => p.code)).toEqual(["ci-mismatch"]);
+});
+it("allows explicit additional test entries without changing fixed implementations", async () => {
+  await put(
+    root,
+    "scripts/lib/release.test.js",
+    'throw new Error("DO NOT EXECUTE");',
+  );
+  await put(
+    root,
+    "scripts/test-extra.mjs",
+    'import "./lib/release.test.js"; process.exit(0);',
+  );
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: {
+      ...manifest.scripts,
+      "test-extra": "node scripts/test-extra.mjs",
+    },
+  });
+  expect(await check()).toEqual([]);
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: {
+      ...manifest.scripts,
+      "test-extra": "node scripts/test-extra.mjs",
+      check: `node scripts/release.test.js && ${manifest.scripts.check}`,
+    },
+  });
+  const problems = await check();
+  expect(problems.map((p) => p.code)).toContain("gate-mismatch");
+  expect(
+    problems.some((p) => p.brief.includes("必须为 node scripts/check.mjs")),
+  ).toBe(true);
+});
+it("accepts opaque custom build interfaces but rejects shell suffixes", async () => {
+  await put(root, "scripts/build.mjs", "export default customBuild();");
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: {
+      ...manifest.scripts,
+      build: "node scripts/build.mjs",
+    },
+  });
+  expect(await check()).toEqual([]);
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: {
+      ...manifest.scripts,
+      build: "node scripts/build.mjs",
+      check: `${manifest.scripts.check} && pnpm build && node unknown.mjs`,
+    },
+  });
+  const problems = await check();
+  expect(problems.map((p) => p.code)).toEqual(["gate-mismatch"]);
+  expect(problems[0]?.brief).toContain("必须为 node scripts/check.mjs");
 });
 it("keeps independent gate safety checks when lint blocks capability linkage", async () => {
   await rm(join(root, "eslint.config.js"));
@@ -94,22 +566,20 @@ it("keeps independent gate safety checks when lint blocks capability linkage", a
   expect(problems).toContainEqual(
     expect.objectContaining({
       code: "gate-mismatch",
-      brief: "check 调用了源码修正命令",
+      brief:
+        'package.json scripts["check"] = "pnpm format"；必须为 node scripts/check.mjs（无参数）',
     }),
   );
 });
-it("checks independent CI coverage linkage after the root gate fails", async () => {
+it("checks CI interface invocation independently of an invalid root interface", async () => {
   await put(root, "package.json", {
     ...manifest,
     scripts: {
       ...manifest.scripts,
-      check: "pnpm typecheck && pnpm lint && pnpm format:check",
+      check: "pnpm typecheck && pnpm lint && pnpm format-check",
     },
   });
-  expect((await check()).map((p) => p.code)).toEqual([
-    "gate-mismatch",
-    "ci-mismatch",
-  ]);
+  expect((await check()).map((p) => p.code)).toEqual(["gate-mismatch"]);
 });
 it("checks effective strict flags rather than strict:true alone", async () => {
   await put(root, "tsconfig.json", {
@@ -224,35 +694,26 @@ it("requires CI failure propagation, ordering and non-filtered triggers", async 
       check: "pnpm typecheck; pnpm lint; pnpm format; pnpm test",
     },
   });
-  expect((await check()).map((p) => p.code)).toContain("gate-unconfirmed");
+  expect((await check()).map((p) => p.code)).toContain("gate-mismatch");
 });
 it.each([1, 2])(
   "handles %s-member pnpm/turbo workspaces with declared shared schedulers",
   async (memberCount) => {
-    await put(
-      root,
-      "pnpm-workspace.yaml",
-      'packages: ["packages/*"]\ncatalog:\n  vitest: "^5.0.4"\n',
-    );
+    await put(root, "pnpm-workspace.yaml", {
+      packages: ["packages/*"],
+      catalog: { ...catalog, turbo: "^2.11.10" },
+    });
     await put(root, "turbo.json", {
-      tasks: { typecheck: {}, lint: {}, test: {}, "test:coverage": {} },
+      tasks: { typecheck: {}, lint: {}, test: {}, "test-coverage": {} },
     });
     const workspaceManifest = {
       ...manifest,
       devDependencies: {
         ...manifest.devDependencies,
         vitest: "catalog:",
-        turbo: "^2.11.10",
+        turbo: "catalog:",
       },
-      scripts: {
-        typecheck: "turbo run typecheck",
-        lint: "turbo run lint",
-        format: "prettier --write .",
-        "format:check": "prettier --check .",
-        test: "turbo run test",
-        "test:coverage": "turbo run test:coverage",
-        check: "pnpm format:check && turbo run typecheck lint test:coverage",
-      },
+      scripts: manifest.scripts,
     };
     await put(root, "package.json", workspaceManifest);
     for (const name of ["a", "b"].slice(0, memberCount)) {
@@ -262,14 +723,7 @@ it.each([1, 2])(
         name,
         private: true,
         engines: { node: ">=22" },
-        scripts: {
-          typecheck: "tsc --noEmit -p tsconfig.json",
-          lint: "eslint .",
-          test: "vitest run --coverage --root . --config ../../vitest.config.ts",
-          "test:coverage":
-            "vitest run --coverage --root . --config ../../vitest.config.ts",
-          "lint:all": "pnpm exec turbo run lint",
-        },
+        scripts: manifest.scripts,
       });
       await rm(join(member, "eslint.config.js"));
       await rm(join(member, "AGENTS.md"));
@@ -280,14 +734,14 @@ it.each([1, 2])(
     }
     const { readFile } = await import("node:fs/promises");
     const turboLock =
-      "      turbo:\n        specifier: '^2.11.10'\n        version: '2.11.10'\n";
+      "      turbo:\n        specifier: 'catalog:'\n        version: '2.11.10'\n";
     const workspaceLock =
       (await readFile(join(root, "pnpm-lock.yaml"), "utf8")).replace(
         "specifier: '^5.0.4'",
         "specifier: 'catalog:'",
       ) + turboLock;
     await put(root, "pnpm-lock.yaml", workspaceLock);
-    // Root fixture has its own source, so give it direct commands too.
+    // The aggregate root has no code responsibility of its own.
     await rm(join(root, "src"), { recursive: true });
     await rm(join(root, "test"), { recursive: true });
     expect(await check()).toEqual([]);
@@ -306,7 +760,7 @@ it.each([1, 2])(
     );
     expect(missing.some((p) => p.brief.startsWith(".: turbo"))).toBe(true);
     expect(missing.some((p) => p.brief.startsWith("packages/a: turbo"))).toBe(
-      true,
+      false,
     );
     await put(root, "package.json", workspaceManifest);
     expect(await check()).toContainEqual(
@@ -326,12 +780,15 @@ it.each([1, 2])(
       scripts: {
         ...memberManifest.scripts,
         test: "vitest run --root . --config ../../vitest.config.ts",
-        "test:coverage": "vitest run --root . --config ../../vitest.config.ts",
+        "test-coverage": "vitest run --root . --config ../../vitest.config.ts",
       },
     });
     const partial = await check();
-    expect(partial.map((p) => p.code)).toEqual(["coverage-missing"]);
-    expect(partial[0]?.brief).toContain("packages/a:");
+    expect(partial.map((p) => p.code)).toEqual([
+      "gate-mismatch",
+      "gate-mismatch",
+    ]);
+    expect(partial[0]?.brief).toContain("packages/a/package.json");
     await put(member, "package.json", memberManifest);
     await put(root, "packages\\uncovered\\package.json", {
       name: "uncovered",
@@ -344,11 +801,7 @@ it.each([1, 2])(
     );
     const problems = await check();
     expect(problems.map((p) => p.code)).toEqual(
-      expect.arrayContaining([
-        "typescript-missing",
-        "lint-missing",
-        "testing-missing",
-      ]),
+      expect.arrayContaining(["typescript-mismatch", "lint-mismatch"]),
     );
   },
 );
@@ -391,7 +844,7 @@ it("does not accept fabricated preset/reference markers or unknown ignore branch
   );
   expect((await check()).map((p) => p.code)).toContain("lint-unconfirmed");
 });
-it("respects files-only tsconfig scope, output exclusions and duplicate CLI options", async () => {
+it("respects files-only tsconfig scope, output exclusions and rejects inline CLI options", async () => {
   await put(root, "tsconfig.json", {
     extends: "./tsconfig.base.json",
     files: ["src/index.ts"],
@@ -409,9 +862,7 @@ it("respects files-only tsconfig scope, output exclusions and duplicate CLI opti
       typecheck: "tsc -p tsconfig.json --project ignored.json",
     },
   });
-  expect((await check()).map((p) => p.code)).toContain(
-    "typescript-unconfirmed",
-  );
+  expect((await check()).map((p) => p.code)).toContain("gate-mismatch");
 });
 it("treats test helpers as lint/typecheck inputs, not required executable tests", async () => {
   await put(root, "test\\helper.ts", "export const helper = 1;");
@@ -441,16 +892,25 @@ it("rejects false capability relaxations", async () => {
   ).rejects.toThrow("Invalid input");
 });
 it("does not anchor implicit inherited TypeScript include at the base config", async () => {
-  await put(root, "config\\tsconfig.json", {
-    extends: "../tsconfig.base.json",
+  await put(root, "config\\base.json", { compilerOptions: { strict: true } });
+  await put(root, "tsconfig.json", {
+    extends: "./config/base.json",
+    compilerOptions: {
+      noUncheckedIndexedAccess: true,
+      exactOptionalPropertyTypes: true,
+      noImplicitOverride: true,
+      noImplicitReturns: true,
+      noFallthroughCasesInSwitch: true,
+    },
   });
-  await put(root, "package.json", {
-    ...manifest,
-    scripts: { ...manifest.scripts, typecheck: "tsc -p config/tsconfig.json" },
+  expect(await check()).toEqual([]);
+  await put(root, "tsconfig.json", {
+    extends: "./config/base.json",
+    include: ["config/**/*.ts"],
   });
   expect((await check()).map((p) => p.code)).toContain("typescript-mismatch");
 });
-it("does not overlook nested dynamic formatting or per-file ESLint configuration", async () => {
+it("does not overlook nested dynamic formatting or the explicitly selected dynamic ESLint configuration", async () => {
   await put(
     root,
     "src\\prettier.config.js",
@@ -461,7 +921,7 @@ it("does not overlook nested dynamic formatting or per-file ESLint configuration
   );
   await put(
     root,
-    "src\\eslint.config.js",
+    "eslint.config.js",
     "export default process.env.CI ? [] : [];",
   );
   expect((await check()).map((p) => p.code)).toContain("lint-unconfirmed");
@@ -474,10 +934,11 @@ it("does not require emit-only build configs to cover tests when a full typechec
   await put(root, "package.json", {
     ...manifest,
     scripts: {
-      build: "tsc -p tsconfig.build.json",
+      build: "node scripts/build.mjs",
       ...manifest.scripts,
     },
   });
+  await put(root, "scripts/build.mjs", "export default unknownBuilder();");
   expect(await check()).toEqual([]);
 });
 it.each(["exit 0", "cd ignored", "export CI=true"])(
@@ -490,7 +951,7 @@ it.each(["exit 0", "cd ignored", "export CI=true"])(
         check: `${prefix} && ${manifest.scripts.check}`,
       },
     });
-    expect((await check()).map((p) => p.code)).toContain("gate-unconfirmed");
+    expect((await check()).map((p) => p.code)).toContain("gate-mismatch");
   },
 );
 it("does not accept excluded main or tag-only CI triggers", async () => {
@@ -499,13 +960,13 @@ it("does not accept excluded main or tag-only CI triggers", async () => {
     ".github\\workflows\\ci.yaml",
     workflow.replace("[main]", '[main, "!main"]'),
   );
-  expect((await check()).map((p) => p.code)).toContain("ci-unconfirmed");
+  expect((await check()).map((p) => p.code)).toContain("ci-mismatch");
   await put(
     root,
     ".github\\workflows\\ci.yaml",
     workflow.replace("branches: [main]", 'tags: ["v*"]'),
   );
-  expect((await check()).map((p) => p.code)).toContain("ci-unconfirmed");
+  expect((await check()).map((p) => p.code)).toContain("ci-mismatch");
 });
 it("rejects legacy relaxations of write formatting and no-test success", async () => {
   await put(root, "package.json", {

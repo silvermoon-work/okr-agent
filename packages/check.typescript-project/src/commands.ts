@@ -6,10 +6,14 @@ export interface Project {
   sources: string[];
   tests: string[];
 }
-export interface Command {
-  directory: string;
-  tool: string;
-  args: string[];
+export function projectStrategy(projects: Project[]) {
+  const scopes = projects.filter(
+    (project) => project.sources.length + project.tests.length > 0,
+  );
+  return {
+    kind: scopes.length > 1 ? "monorepo" : "single-package",
+    scopes,
+  } as const;
 }
 export function words(command: string): string[] {
   if (/[\r\n`$<>|;&]/.test(command))
@@ -42,166 +46,63 @@ export function words(command: string): string[] {
   if (!result.length) throw new Unconfirmed("empty command");
   return result;
 }
-export function argument(command: Command, flag: string): string | undefined {
-  const i = command.args.indexOf(flag);
-  if (i >= 0) {
-    const value = command.args[i + 1];
-    if (!value || value.startsWith("-"))
-      throw new Unconfirmed(`missing argument for ${flag}`);
-    return value;
-  }
-  return command.args
-    .find((value) => value.startsWith(`${flag}=`))
-    ?.slice(flag.length + 1);
-}
-export function flag(command: Command, name: string): boolean {
-  return command.args.includes(name) || command.args.includes(`${name}=true`);
-}
 export class Scripts {
-  private expansions = 0;
-  private terminals = 0;
-  readonly schedulers = new Map<string, Command>();
-  constructor(
-    readonly files: Files,
-    readonly projects: Project[],
-  ) {}
-  async expand(
-    project: Project,
-    script: string,
-    stack: string[] = [],
-  ): Promise<Command[]> {
-    if (++this.expansions > 4096)
-      throw new Unconfirmed("script expansion budget exceeds 4096");
-    const key = `${project.directory}:${script}`;
-    if (stack.includes(key) || stack.length > 32)
-      throw new Unconfirmed("cyclic/excessive script delegation");
-    const scripts = record(project.manifest.scripts ?? {});
-    const value = scripts[script];
-    if (typeof value !== "string")
-      throw new Unconfirmed(`script is not a static string: ${key}`);
-    // Lifecycle hooks can execute arbitrary programs before/after an apparently safe gate.
+  constructor(readonly files: Files) {}
+  entry(project: Project, script: string): string {
     if (
-      scripts[`pre${script}`] !== undefined ||
-      scripts[`post${script}`] !== undefined
+      !script ||
+      /[:\\/\s"'`$<>|;&*?[\]{}()%!^]/.test(script) ||
+      [...script].some((character) => character.charCodeAt(0) < 32)
     )
-      throw new Unconfirmed(`script lifecycle hooks: ${key}`);
-    const result: Command[] = [];
-    for (const part of value.split("&&")) {
-      const tokens = words(part);
-      let tool = tokens.shift()!;
-      if (
-        [
-          "exit",
-          "return",
-          "exec",
-          "eval",
-          "source",
-          ".",
-          "break",
-          "continue",
-          "set",
-          "trap",
-          "cd",
-          "chdir",
-          "pushd",
-          "popd",
-          "export",
-          "unset",
-          "alias",
-          "unalias",
-          "function",
-          "if",
-          "then",
-          "else",
-          "fi",
-          "for",
-          "do",
-          "done",
-          "while",
-          "until",
-          "case",
-          "esac",
-          "command",
-          "builtin",
-          "call",
-          "start",
-        ].includes(tool)
-      )
-        throw new Unconfirmed(`shell control/builtin is unsupported: ${tool}`);
-      if (tool === "pnpm") {
-        if (tokens[0] === "exec") {
-          tokens.shift();
-          tool = tokens.shift() ?? "";
-        } else {
-          if (tokens[0] === "run") tokens.shift();
-          if (tokens.length !== 1 || tokens[0]?.startsWith("-"))
-            throw new Unconfirmed(
-              "only pnpm [run] script or pnpm exec tool delegation is supported",
-            );
-          result.push(
-            ...(await this.expand(project, tokens[0]!, [...stack, key])),
-          );
-          continue;
-        }
-      }
-      if (tool === "turbo") {
-        if (
-          tokens.shift() !== "run" ||
-          !tokens.length ||
-          tokens.some((t) => t.startsWith("-"))
-        )
-          throw new Unconfirmed("only unfiltered turbo run tasks is supported");
-        this.schedulers.set(project.directory, {
-          directory: project.directory,
-          tool,
-          args: ["run", ...tokens],
+      throw new Unconfirmed(`无效 script 名称: ${script}`);
+    return this.files.path(project.directory, `scripts/${script}.mjs`);
+  }
+  validate(
+    project: Project,
+  ): { status: "missing" | "mismatch"; brief: string }[] {
+    const scripts = record(project.manifest.scripts ?? {});
+    const manifest = this.files.path(project.directory, "package.json");
+    const result: { status: "missing" | "mismatch"; brief: string }[] = [];
+    const mapped = new Set<string>();
+    for (const [name, value] of Object.entries(scripts)) {
+      let path: string;
+      try {
+        path = this.entry(project, name);
+      } catch (error) {
+        if (!(error instanceof Unconfirmed)) throw error;
+        result.push({
+          status: "mismatch",
+          brief: `${manifest} scripts[${JSON.stringify(name)}]: ${error.message}；名称禁止冒号、路径分隔或 shell 元字符`,
         });
-        const turboPath = this.files.path("", "turbo.json");
-        if (!this.files.exists(turboPath))
-          throw new Unconfirmed("turbo.json is missing");
-        const config = await this.files.json(turboPath);
-        const tasks = record(config.tasks);
-        if (
-          config.globalEnv !== undefined ||
-          config.globalPassThroughEnv !== undefined
-        )
-          throw new Unconfirmed("Turbo environment overrides are unsupported");
-        for (const task of tokens) {
-          const definition = record(tasks[task]);
-          if (
-            definition.env !== undefined ||
-            definition.passThroughEnv !== undefined ||
-            definition.persistent === true
-          )
-            throw new Unconfirmed("dynamic/persistent Turbo task");
-          for (const member of this.projects.filter(
-            (p) => p.directory !== "",
-          )) {
-            if (
-              this.files.exists(
-                this.files.path(member.directory, "turbo.json"),
-              ) ||
-              this.files.exists(
-                this.files.path(member.directory, "turbo.jsonc"),
-              )
-            )
-              throw new Unconfirmed(
-                "member-local Turbo configuration is unsupported",
-              );
-            const scripts = record(member.manifest.scripts ?? {});
-            if (scripts[task] !== undefined)
-              result.push(
-                ...(await this.expand(member, task, [...stack, key])),
-              );
-          }
-        }
-      } else {
-        if (!/^[\w.-]+$/.test(tool))
-          throw new Unconfirmed("executable paths/assignments are unsupported");
-        if (++this.terminals > 8192)
-          throw new Unconfirmed("terminal command budget exceeds 8192");
-        result.push({ directory: project.directory, tool, args: tokens });
+        continue;
       }
+      mapped.add(path);
+      const expected = `node scripts/${name}.mjs`;
+      if (value !== expected) {
+        result.push({
+          status: "mismatch",
+          brief: `${manifest} scripts[${JSON.stringify(name)}] = ${JSON.stringify(value)}；必须为 ${expected}（无参数）`,
+        });
+        continue;
+      }
+      if (!this.files.exists(path))
+        result.push({ status: "missing", brief: `${path}: script 入口缺失` });
+    }
+    const base = this.files.path(project.directory, "scripts");
+    for (const path of this.files.paths.filter((path) =>
+      path.startsWith(`${base}/`),
+    )) {
+      const relative = path.slice(base.length + 1);
+      if (relative.startsWith("lib/")) continue;
+      if (
+        relative.includes("/") ||
+        !relative.endsWith(".mjs") ||
+        !mapped.has(path)
+      )
+        result.push({
+          status: "mismatch",
+          brief: `${path}: scripts 顶层仅允许与 package scripts 一一对应的 .mjs 入口；共享模块放 scripts/lib/`,
+        });
     }
     return result;
   }

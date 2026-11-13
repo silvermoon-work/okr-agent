@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { InspectionEvidence } from "../src/convention.js";
 import { metadataFixture } from "./metadata-fixture.js";
+import { scriptResources } from "../src/script-profile.js";
 
 export async function testEvidence(): Promise<InspectionEvidence> {
   const agents = await readFile(
@@ -19,6 +20,17 @@ export async function testEvidence(): Promise<InspectionEvidence> {
       new URL("../assets/npm-ci.yaml", import.meta.url),
     ),
     metadata: metadataFixture(),
+    scripts: Object.fromEntries(
+      await Promise.all(
+        scriptResources.map(
+          async ([name, path]) =>
+            [
+              name,
+              await readFile(new URL(`../assets/${path}`, import.meta.url)),
+            ] as const,
+        ),
+      ),
+    ),
   };
 }
 
@@ -30,29 +42,37 @@ export const strict = {
   noImplicitReturns: true,
   noFallthroughCasesInSwitch: true,
 };
+export const catalog = {
+  typescript: "^6.0.3",
+  vitest: "^5.0.4",
+  eslint: "^10.14.0",
+  "typescript-eslint": "^8.72.1",
+  "@eslint/js": "^10.0.1",
+  prettier: "^3.9.10",
+  "@vitest/coverage-v8": "^5.0.4",
+};
 export const manifest = {
   name: "fixture",
   private: true,
   packageManager: "pnpm@11.22.0",
   engines: { node: ">=22" },
   devDependencies: {
-    typescript: "^6.0.3",
-    vitest: "^5.0.4",
-    eslint: "^10.14.0",
-    "typescript-eslint": "^8.72.1",
-    "@eslint/js": "^10.0.1",
-    prettier: "^3.9.10",
-    "@vitest/coverage-v8": "^5.0.4",
+    typescript: "catalog:",
+    vitest: "catalog:",
+    eslint: "catalog:",
+    "typescript-eslint": "catalog:",
+    "@eslint/js": "catalog:",
+    prettier: "catalog:",
+    "@vitest/coverage-v8": "catalog:",
   },
   scripts: {
-    typecheck: "tsc --noEmit -p tsconfig.json",
-    lint: "eslint .",
-    "format:check": "prettier --check .",
-    format: "prettier --write .",
-    test: "vitest run --coverage",
-    "test:coverage": "vitest run --coverage",
-    check:
-      "pnpm typecheck && pnpm lint && pnpm format:check && pnpm test:coverage",
+    typecheck: "node scripts/typecheck.mjs",
+    lint: "node scripts/lint.mjs",
+    "format-check": "node scripts/format-check.mjs",
+    format: "node scripts/format.mjs",
+    test: "node scripts/test.mjs",
+    "test-coverage": "node scripts/test-coverage.mjs",
+    check: "node scripts/check.mjs",
   },
 };
 export const lintConfig = `
@@ -70,23 +90,10 @@ export default defineConfig({ test: {
  include: ["test/**/*.test.ts"],
  coverage: { provider: "v8", include: ["src/**/*.ts"], thresholds: { branches: 90, functions: 90, lines: 90, statements: 90 } }
 } });`;
-export const workflow = `
-on:
-  pull_request:
-  push:
-    branches: [main]
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-      - uses: pnpm/action-setup@v4
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm check
-`;
+export const workflow = await readFile(
+  new URL("../assets/npm-ci.yaml", import.meta.url),
+  "utf8",
+);
 export async function put(
   root: string,
   path: string,
@@ -101,15 +108,28 @@ export async function put(
 }
 export async function fixture(root: string): Promise<void> {
   await put(root, "package.json", manifest);
+  const assets = await testEvidence();
+  for (const name of Object.keys(manifest.scripts))
+    await put(
+      root,
+      `scripts/${name}.mjs`,
+      Buffer.from(assets.scripts[name]!).toString("utf8"),
+    );
+  await put(
+    root,
+    "scripts/lib/commands.mjs",
+    Buffer.from(assets.scripts["commands"]!).toString("utf8"),
+  );
+  await put(root, "pnpm-workspace.yaml", { catalog });
   await put(
     root,
     "pnpm-lock.yaml",
     `lockfileVersion: '9.0'\nimporters:\n  .:\n    devDependencies:\n${Object.entries(
-      manifest.devDependencies,
+      catalog,
     )
       .map(
         ([name, range]) =>
-          `      '${name}':\n        specifier: '${range}'\n        version: '${range.slice(1)}'`,
+          `      '${name}':\n        specifier: 'catalog:'\n        version: '${range.slice(1)}'`,
       )
       .join("\n")}\n`,
   );
@@ -184,21 +204,43 @@ export async function npmFixture(root: string): Promise<void> {
     },
     devDependencies: {
       ...manifest.devDependencies,
-      publint: "^0.3.25",
-      semver: "^7.8.5",
+      publint: "catalog:",
+      semver: "catalog:",
+      yaml: "^2.8.1",
+      acorn: "^8.15.0",
     },
     scripts: {
       ...manifest.scripts,
-      build: "tsc -p tsconfig.build.json",
-      "lint:package": "publint",
-      check: `${manifest.scripts.check} && pnpm build && pnpm lint:package`,
+      build: "node scripts/build.mjs",
+      "lint-package": "node scripts/lint-package.mjs",
+      release: "node scripts/release.mjs",
+      "release-dry-run": "node scripts/release-dry-run.mjs",
     },
   });
+  await put(
+    root,
+    "scripts/build.mjs",
+    'throw new Error("DO NOT EXECUTE BUILD");',
+  );
+  await put(
+    root,
+    "scripts/lint-package.mjs",
+    Buffer.from(assets.scripts["lint-package"]!).toString("utf8"),
+  );
+  for (const name of ["release", "release-dry-run"])
+    await put(
+      root,
+      `scripts/${name}.mjs`,
+      Buffer.from(assets.scripts[name]!).toString("utf8"),
+    );
   const lock = await readFile(join(root, "pnpm-lock.yaml"), "utf8");
+  await put(root, "pnpm-workspace.yaml", {
+    catalog: { ...catalog, publint: "^0.3.25", semver: "^7.8.5" },
+  });
   await put(
     root,
     "pnpm-lock.yaml",
-    `${lock}      publint:\n        specifier: '^0.3.25'\n        version: '0.3.25'\n      semver:\n        specifier: '^7.8.5'\n        version: '7.8.5'\n`,
+    `${lock}      publint:\n        specifier: 'catalog:'\n        version: '0.3.25'\n      semver:\n        specifier: 'catalog:'\n        version: '7.8.5'\n`,
   );
   await put(root, "tsconfig.build.json", {
     extends: "./tsconfig.base.json",
@@ -233,12 +275,7 @@ export async function npmFixture(root: string): Promise<void> {
   );
   await put(
     root,
-    ".github/scripts/npm-publish.mjs",
+    "scripts/lib/npm-publish.mjs",
     Buffer.from(assets.publisher).toString("utf8"),
   );
-  await put(root, "release.config.json", {
-    schemaVersion: 1,
-    package: { id: "library", name: "@acme/library", directory: "." },
-    ci: { nodeVersions: ["22.15.0", "24.11.0"] },
-  });
 }

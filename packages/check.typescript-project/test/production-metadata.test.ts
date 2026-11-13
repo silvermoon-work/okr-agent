@@ -5,10 +5,10 @@ import { expect, it, vi } from "vitest";
 import { inspect } from "../src/inspect.js";
 import { publicMetadata } from "../src/metadata.js";
 import type { NodeFacts } from "../src/metadata.js";
-import { fixture, npmFixture, manifest, put, testEvidence } from "./fixture.js";
+import { fixture, npmFixture, put, testEvidence } from "./fixture.js";
 import { canonicalTransport, requestUrl } from "./metadata-http-fixture.js";
 
-it.each(["application", "npm", "format-alias"] as const)(
+it.each(["application", "npm", "normalized-format"] as const)(
   "can pass %s through the canonical-v1 parser with mocked fresh HTTP, not live local requests",
   async (kind) => {
     const root = resolve("dist", `.production-metadata-${randomUUID()}`);
@@ -19,15 +19,14 @@ it.each(["application", "npm", "format-alias"] as const)(
     try {
       if (kind === "npm") await npmFixture(root);
       else await fixture(root);
-      if (kind === "format-alias")
-        await put(root, "package.json", {
-          ...manifest,
-          scripts: {
-            ...manifest.scripts,
-            "format:check": "prettier -c .",
-            format: "prettier -w .",
-          },
-        });
+      if (kind === "normalized-format")
+        await put(
+          root,
+          "scripts/format-check.mjs",
+          Buffer.from((await testEvidence()).scripts["format-check"]!)
+            .toString("utf8")
+            .replace(/\n/g, "\r\n"),
+        );
       const signal = new AbortController().signal;
       const problems: string[] = [];
       await inspect(
@@ -70,7 +69,7 @@ it.each([
   "chosen-prerelease",
   "malformed-history",
 ] as const)(
-  "uses fresh lifecycle facts, not historical index cache freshness: %s",
+  "uses fresh official index and lifecycle facts: %s",
   async (kind) => {
     const root = resolve("dist", `.production-lifecycle-${randomUUID()}`);
     await mkdir(root, { recursive: true });

@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import process from "node:process";
 import { expect, it } from "vitest";
 import { runCheckBuilderCli } from "@silvermoon-work/check-task-builder/cli";
-import { fixture, npmFixture, put, manifest } from "./fixture.js";
+import { fixture, npmFixture, put, vitestConfig } from "./fixture.js";
 
 it("builds a real CAR and independently verifies Engine pass/fail plus linked Chinese documents", async () => {
   const persistent = process.env["TYPESCRIPT_CHECK_PERSIST_EVIDENCE"] === "1";
@@ -22,14 +22,12 @@ it("builds a real CAR and independently verifies Engine pass/fail plus linked Ch
     await fixture(good);
     await fixture(bad);
     await npmFixture(npm);
-    await put(bad, "package.json", {
-      ...manifest,
-      scripts: {
-        ...manifest.scripts,
-        test: "vitest run",
-        "test:coverage": "vitest run",
-      },
-    });
+    await put(
+      bad,
+      "vitest.config.ts",
+      vitestConfig.replace("branches: 90", "branches: 80"),
+    );
+    await rm(join(bad, "scripts", "check.mjs"));
     await put(
       bad,
       "AGENTS.md",
@@ -95,7 +93,10 @@ it("builds a real CAR and independently verifies Engine pass/fail plus linked Ch
       assetsExact: true,
     });
     expect(result.results[1]?.problems?.map((p) => p.code)).toContain(
-      "coverage-missing",
+      "coverage-mismatch",
+    );
+    expect(result.results[1]?.problems?.map((p) => p.code)).toContain(
+      "gate-missing",
     );
     expect(result.results[1]?.problems?.map((p) => p.code)).toContain(
       "document-mismatch",
