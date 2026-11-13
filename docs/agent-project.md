@@ -85,15 +85,17 @@
   ambient npm/pnpm/nrm installations. Real installed-tool checks are explicit
   `native-test`/`smoke` actions and the manual cross-platform native workflow.
 - Coverage thresholds are project-owned policy, not a universal Check minimum.
-  The user approved temporary global thresholds of 65% for branches, functions,
-  lines and statements in this normalization round. Keep coverage enabled,
-  include untouched source, declare all four finite thresholds within 0..100,
-  and propagate real gate failures. Raise these project thresholds as meaningful
-  behavior coverage and source-map attribution improve; do not remove source or
-  weaken tests to meet them. Historical CAR results using the old 90% rule do
-  not certify this policy. The supervising session owns the separate Check
-  revision and supplies its new CID for independent validation; do not modify
-  this worktree's author source or standard assets to simulate that integration.
+  Global thresholds are 90% for branches, functions, lines and statements in
+  every code workspace, enforced by the shared Vitest configuration. Keep
+  coverage enabled, include untouched source, declare all four finite thresholds
+  within 0..100, and propagate real gate failures. Raise these project
+  thresholds as meaningful behavior coverage and source-map attribution improve;
+  do not remove source or weaken tests to meet them. Mock unit tests cover
+  external dependencies and failure paths without requiring live services or
+  personal configuration. Historical CAR results do not certify this policy. The
+  supervising session owns the separate Check revision and supplies its new CID
+  for independent validation; do not modify this worktree's author source or
+  standard assets to simulate that integration.
 - `pnpm test-release` preserves the original JavaScript release regressions.
   `scripts/lib/legacy-release.mjs` is historical metadata/artifact validation,
   not a publishing entry or the trusted publisher. No workflow invokes it.

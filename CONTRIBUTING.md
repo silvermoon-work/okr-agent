@@ -22,6 +22,10 @@ extra arguments; use a workspace's
 `pnpm exec vitest run --root . --config ../../vitest.config.ts test/<file>.test.ts`
 for a focused test.
 
+Coverage includes untested source. Every code workspace must meet the shared 90%
+thresholds for statements, branches, functions and lines. Add focused mock unit
+tests for uncovered behavior rather than excluding source or weakening the gate.
+
 Default tests use mocked external results and controlled filesystem/process
 fixtures. They must not depend on personal configuration, live services or
 ambient npm/pnpm/nrm installations. Native tool compatibility is a separate,

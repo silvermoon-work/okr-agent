@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { Type, type Static } from "@sinclair/typebox";
+import { runTask } from "@silvermoon-work/task-sdk";
 import type { TaskContext } from "@silvermoon-work/task-sdk";
 import {
   createCheckCallback,
+  runCheck,
   type CheckContext,
   type ProblemReporter,
 } from "../src/index.js";
 import { createCheckContract, problemCodes } from "../src/contracts.js";
+
+vi.mock("@silvermoon-work/task-sdk", () => ({ runTask: vi.fn() }));
 
 const Input = Type.Object({ text: Type.String() });
 const Code = Type.Union([Type.Literal("mismatch"), Type.Literal("missing")]);
@@ -42,6 +46,37 @@ function context() {
 }
 
 describe("Check callbacks", () => {
+  it("registers a restricted Check callback with the worker runtime", async () => {
+    const host = context();
+    const callback = vi.fn().mockResolvedValue(undefined);
+    runCheck(contract, callback, { assets: true });
+    const registered = vi.mocked(runTask).mock.calls.at(-1)?.[0];
+    expect(registered).toBeDefined();
+    expect(await registered?.({ text: "hello" }, host.value)).toEqual({
+      pass: true,
+      documentation: "references/check.md",
+    });
+    expect(callback).toHaveBeenCalledWith(
+      { text: "hello" },
+      expect.objectContaining({ signal: host.value.signal }),
+      expect.any(Function),
+    );
+    expect(host.link).toHaveBeenCalledWith("assets", {
+      path: "/resources/references",
+    });
+  });
+
+  it("rejects nonboolean asset configuration before registering a worker", () => {
+    vi.mocked(runTask).mockClear();
+    expect(() => {
+      runCheck(contract, vi.fn().mockResolvedValue(undefined), {
+        // @ts-expect-error JavaScript callers may supply an invalid option.
+        assets: "true",
+      });
+    }).toThrow("assets option must be a boolean");
+    expect(runTask).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])(
     "links standard assets on normal completion (reported problem: %s)",
     async (nonpassing) => {
