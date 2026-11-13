@@ -1,0 +1,14 @@
+{
+  "name": "@silvermoon-work/convention-independent-consumer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@silvermoon-work/task-engine": "0.2.0-rc.2",
+    "@silvermoon-work/task-builder": "0.2.0-rc.2",
+    "@silvermoon-work/ipfs-store": "0.1.0-rc.1",
+    "ipfs-unixfs-exporter": "16.2.3",
+    "semver": "^7.8.5",
+    "yaml": "2.8.1"
+  }
+}
