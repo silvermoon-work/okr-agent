@@ -7,6 +7,8 @@ import type { InspectionEvidence } from "../src/convention.js";
 import type { ProblemCode } from "../src/contract.js";
 import { fixture, manifest, put, testEvidence } from "./fixture.js";
 import { packageFacts } from "./metadata-fixture.js";
+import { dataYaml, record } from "../src/files.js";
+import { stringify } from "yaml";
 
 let root: string;
 let evidence: InspectionEvidence;
@@ -28,6 +30,25 @@ async function check() {
     evidence,
   );
   return problems;
+}
+async function peerLock(peer: string, version: string) {
+  const lock = dataYaml(await readFile(join(root, "pnpm-lock.yaml"), "utf8"));
+  const importer = record(record(lock.importers)["."]);
+  const dependencies = record(importer.devDependencies);
+  const ref = `5.0.4(${peer}@${version})`;
+  record(dependencies.vitest).version = ref;
+  const packages = {
+    "vitest@5.0.4": { resolution: { integrity: "sha512-test-vitest" } },
+    [`${peer}@${version}`]: { resolution: { integrity: "sha512-test-peer" } },
+  };
+  const snapshots = {
+    [`vitest@${ref}`]: { dependencies: { [peer]: version } },
+    [`${peer}@${version}`]: {},
+  };
+  lock.packages = packages;
+  lock.snapshots = snapshots;
+  await put(root, "pnpm-lock.yaml", stringify(lock));
+  return { lock, packages, snapshots, ref };
 }
 it("compares the entire bundled text with only LF normalization and protects arbitrary free documents", async () => {
   const canonical = Buffer.from(evidence.agents).toString("utf8");
@@ -179,11 +200,86 @@ it("checks catalog declaration and peer/default Node compatibility of installed 
         }
       : observed;
   };
+  await peerLock("typescript", "6.0.3");
   const mismatch = (await check()).filter(
     (p) => p.code === "dependency-mismatch",
   );
   expect(mismatch.some((p) => p.brief.includes("engines.node"))).toBe(true);
   expect(mismatch.some((p) => p.brief.includes("peer typescript"))).toBe(true);
+});
+it.each([false, true])(
+  "uses the selected snapshot for required/optional auto-installed Vite, not another importer: optional=%s",
+  async (optional) => {
+    const provider = evidence.metadata.package;
+    evidence.metadata.package = async (name, selection) => {
+      const observed = await provider(name, selection);
+      return name === "vitest"
+        ? {
+            ...observed,
+            data: packageFacts({
+              "5.0.4": {
+                version: "5.0.4",
+                peerDependencies: { vite: "^8" },
+                peerDependenciesMeta: { vite: { optional } },
+              },
+            }),
+          }
+        : observed;
+    };
+    await peerLock("vite", "8.3.4");
+    expect(await check()).toEqual([]);
+    const { lock, snapshots } = await peerLock("vite", "7.0.0");
+    record(lock.importers)["unrelated"] = {
+      devDependencies: { vite: { specifier: "^8", version: "8.3.4" } },
+    };
+    record(lock.packages)["vite@8.3.4"] = {
+      resolution: { integrity: "sha512-unrelated" },
+    };
+    snapshots["vite@8.3.4"] = {};
+    await put(root, "pnpm-lock.yaml", stringify(lock));
+    expect(await check()).toContainEqual(
+      expect.objectContaining({
+        code: "dependency-mismatch",
+        brief: expect.stringContaining("peer vite@7.0.0 不满足 ^8") as unknown,
+      }),
+    );
+    delete snapshots["vitest@5.0.4(vite@7.0.0)"];
+    snapshots["vitest@5.0.4(vite@8.3.4)"] = {
+      dependencies: { vite: "8.3.4" },
+    };
+    await put(root, "pnpm-lock.yaml", stringify(lock));
+    expect((await check()).map((p) => p.code)).toContain(
+      "dependency-unconfirmed",
+    );
+  },
+);
+it("checks actual auto-installed Vite Node compatibility without requiring a direct declaration", async () => {
+  const provider = evidence.metadata.package;
+  evidence.metadata.package = async (name, selection) => {
+    const observed = await provider(name, selection);
+    if (name === "vitest")
+      return {
+        ...observed,
+        data: packageFacts({
+          "5.0.4": { version: "5.0.4", peerDependencies: { vite: "^8" } },
+        }),
+      };
+    if (name === "vite")
+      return {
+        ...observed,
+        data: packageFacts({
+          "8.3.4": { version: "8.3.4", engines: { node: ">=28" } },
+        }),
+      };
+    return observed;
+  };
+  await peerLock("vite", "8.3.4");
+  expect(await check()).toContainEqual(
+    expect.objectContaining({
+      code: "dependency-mismatch",
+      brief: expect.stringContaining("peer vite@8.3.4 engines.node") as unknown,
+    }),
+  );
 });
 it("treats metadata failures and expired observations as unconfirmed, never stale success", async () => {
   const provider = evidence.metadata.package;

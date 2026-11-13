@@ -24,13 +24,17 @@
   array、已知 typescript-eslint
   TypeChecked 预设及有限 map 包装、projectService；动态覆盖/自定义 parser 不支持。Prettier 静态 JSON/YAML/ESM 配置与忽略路径；插件/overrides 不支持。Vitest 静态 defineConfig、4.x/5.x 未触达 include 语义及全局 thresholds；动态 projects/provider/分 glob 门限不支持。
 - scripts 仅有限 token、&&、pnpm 脚本委托与无 filter
-  Turbo；不运行 shell。hooks、动态 shell/环境、管道、成功兜底或任意 node 脚本不能证明能力。未知 build/pack/发布门卫始终无法确认。
+  Turbo；不运行 shell。hooks、动态 shell/环境、管道、成功兜底或任意 node 脚本不能证明能力。未知 build/pack/发布门卫始终无法确认。Turbo 展开成员任务时仍保留已静态识别的调用目录；字面调度器同样须在该目录或共享根声明并由准确 importer 解析，不因展开后只剩成员工具而豁免，也不以无关 importer 的依赖代替。
 - Git 只读根内 .git/config 与可选 origin/HEAD，不执行 git 或 hook，不向根外跟踪 worktree
   gitdir。首版完整触发证明支持明确 main；其他主分支无法确认。非 GitHub 项目不强制 GitHub
   YAML，但不声称已验证其 CI。
 - [单包 npm publisher v1](npm-publisher-v1.md)
   是完整的正向支持路径：有限 tsc 输出/映射源交付、实际 Bundle 中的已审查门卫源字节、完整声明式 workflow、准确 SHA/main-push/矩阵 CI 复用、OIDC/client、latest/rc/连续历史、单次 pack/同 tarball/dispatch
   dry-run。其他自定义门卫、复杂产物与矩阵仍明确 unconfirmed，不虚构线上或发布事实。
+- peer 兼容性支持 pnpm v9：从声明工具的准确 importer 引用定位其完整 snapshot
+  key，沿 dependencies/optionalDependencies 或一致的 peer 后缀定位准确 peer
+  snapshot 和 packages 记录。不会拿其他 importer、共享声明或全局可匹配版本代替实际上下文；缺项、冲突、散列后缀及未知协议无法确认。Vite 自动安装为 Vitest
+  peer 时不强制添加未直接使用的 devDependency；检查所选版本及其 Node 兼容性。后缀最多 8192 字符、64 个直接绑定、32 层，不做任意依赖图遍历。
 
 发布配置已有两条窄静态证据路径：读取 `scripts/release-packages.js` 的
 `export const releasePackages = [{id,name,directory}]`
@@ -40,17 +44,28 @@ job 与完整失败传播。动态映射、固定/其他 SHA、标识漂移、�
 
 ## 外部事实政策
 
-业务 input 不接收来源、时钟、provider 或离线豁免。本 CAR 的生产包元数据策略在作者代码明确捕获为
-`https://mirrors.cloud.tencent.com/npm/<encoded-public-tool-name>`，使用 install-v1
-Accept，无 canonical
-npm 或其他源回退、不读取目标 registry/任意环境 URL。Node 事实仍只读
-`https://nodejs.org/dist/index.json` 与
-`https://raw.githubusercontent.com/nodejs/Release/main/schedule.json`。
+业务 input 不接收来源、时钟、provider 或离线豁免。作者代码固定闭合生产 profile
+`canonical-v1`，部署者必须先在实际执行主机授权以下来源；包含这些地址的 CAR 不意味着任意设备已获准联网：
 
-镜像 HTTP
-Date/Age 新鲜、JSON 包名与版本字段完整，仍不证明已经与上游同步。因此当前镜像观察明确标为 authoritative=false；无法证明系列最新时报告 unconfirmed，而不是把镜像缺项当最新版事实。不会偷偷改用官方 npm。其他设备需要不同授权来源时必须明确重新作者化来源策略/CAR，不能通过业务 input 或隐形环境覆盖改写本次来源政策。
+| 端点                                                                                                                | 用途与时效                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `https://registry.npmjs.org/<encoded-public-tool-name>`，Accept `application/vnd.npm.install-v1+json`               | 官方完整版本表，包含已解析版本与最新稳定兼容系列版本的完整 engines/peer/dist 字段；HTTP Date/Age 至多一小时，不能使用 slim 列表或全局 latest 代替系列计算                        |
+| `https://nodejs.org/dist/index.json`                                                                                | 只验证精确历史发行存在及其发行时 LTS 标记；记录真实 Date/Age，允许历史索引缓存超过一小时，不把它声称为新鲜数据，不用它选择最新版本或推断当前生命周期；精确版本缺失仍 unconfirmed |
+| `https://api.github.com/repos/nodejs/Release/contents/schedule.json?ref=main`，Accept `application/vnd.github+json` | 新鲜的官方当前支持周期；HTTP Date/Age 至多一小时，验证文件路径、base64、大小及 Git blob SHA，按此观察时间判断支持期限                                                            |
 
-请求禁止重定向，每次最多 10 秒、16MiB；每次执行最多 64 个公开包并只在该次执行内缓存，不保留跨执行/模块无界缓存。响应 Date/Age 与每项观察时间必须不超过一小时。没有可信完整候选、缺项、错误/超时或陈旧证据均无法确认，无旧快照成功回退。已知工具之外的开发依赖首版不外发名称，报告无法确认。只有名称发送给固定公开源，不发送源码、配置、秘密或任意目标 URL。问题包含声明、importer、系列、新版、来源与时间等可追溯证据。
+来源政策不读取目标 registry 或任意环境 URL，无重定向、代理、其他源或旧快照回退。官方 npm 完整 packument 的身份、版本键/manifest 一致性、modified 与全部 dist-tag 引用都检查；只从完整稳定候选计算所选系列，准确读取 current/newest
+manifest。缺项、冲突或没有候选都 unconfirmed，不把网络错误当作版本落后。npmx 缓存代理的内部 SWR 时效证据不足，不是生产备选源。
+
+历史 Node 索引中的合法 prerelease 记录可被验证和保留，不因无关的 alpha 记录拒绝整个索引；prerelease 不得冒充稳定 LTS 默认开发版本，格式损坏或不一致的历史记录仍无法确认。
+
+当前 Windows 开发机仍受设备镜像限制：本地安装、构建工具等包操作保持 NRM 选择的 Tencent
+registry，不传
+`--registry`、不偷偷回退官方源，也不在该机对 canonical-v1 做现场联网验证。生产解析器只做拦截 fetch 的受控测试；生产 CAR 的实际联网证明在已授权官方 registry 的
+`xiaonuo-ubuntu`
+进行。其他主机须各自授权，不能以本项目授权绕过宿主策略。作者/监督者应记录同一 CAR 的实际网络结果，不将 mock/fixture 成绩冒充线上证明。
+
+查询预算：每次请求最多 10 秒、16MiB，执行累计 128MiB/66 次请求/90 秒；每个完整 packument 最多 32768 个版本，只查询明确支持的公开工具名单，最多缓存 64 个包，仅在本次执行内复用。历史 Node 索引最多 20000 条，生命周期文件最多 256KiB/256 个系列。所有可变事实以 HTTP
+Date/Age 中更老的时间为准；响应标记 stale/expired/revalidating 或过期时不能通过，失败不回退旧成功。历史索引例外只用于上述不可变事实，其真实缓存年龄单独记录，不参与当前生命周期观测时间。已知工具之外的开发依赖不外发名称，报告无法确认。只有公开工具名发送给固定端点，不发送源码、配置、秘密或任意目标 URL。问题包含声明、importer、系列、新版、来源与时间等可追溯证据。
 
 测试的内部确定性 provider 不属于业务契约；测试 CAR 明确是确定性元数据验证制品，不是 registry 或真实发布证据。生产 CAR 不含离线豁免。
 

@@ -28,6 +28,7 @@ import {
   type PublisherProfile,
 } from "./publisher-profile.js";
 import { tscDelivery } from "./delivery.js";
+import { resolvedPeer } from "./lockfile.js";
 
 type Domain =
   | "environment"
@@ -268,7 +269,7 @@ export async function convention(
         "mismatch",
         `packageManager ${match[1]}，同系列最新 ${newest}; ${observation.source}; ${new Date(observation.observedAt).toISOString()}`,
       );
-    const engine = versions[newest]?.engines?.node;
+    const engine = versions[newest].engines?.node;
     if (engine && (!node || !validRange(engine)))
       issue(
         "dependency",
@@ -284,11 +285,12 @@ export async function convention(
   });
   let workspace: Record<string, unknown> = {};
   let importers: Record<string, unknown> = {};
+  let lock: Record<string, unknown> = {};
   await section("dependency", async () => {
     workspace = files.exists("pnpm-workspace.yaml")
       ? dataYaml(await files.text("pnpm-workspace.yaml"))
       : {};
-    const lock = files.exists("pnpm-lock.yaml")
+    lock = files.exists("pnpm-lock.yaml")
       ? dataYaml(await files.text("pnpm-lock.yaml"))
       : {};
     importers = record(lock.importers ?? {});
@@ -302,6 +304,7 @@ export async function convention(
     "@typescript-eslint/eslint-plugin",
     "prettier",
     "vitest",
+    "vite",
     "@vitest/coverage-v8",
     "@vitest/coverage-istanbul",
     "publint",
@@ -312,18 +315,22 @@ export async function convention(
     "github-ci-verify",
     "semver",
   ]);
-  const actual = new Map<
-    string,
-    Map<string, { version: string; release: Release }>
-  >();
+  interface InstalledTool {
+    version: string;
+    release: Release;
+    reference: string;
+    importer: string;
+  }
+  const actual = new Map<string, Map<string, InstalledTool>>();
   const tools = new Set([...commands.values()].flat().map((c) => c.tool));
   for (const project of projects) {
     await section("dependency", async () => {
       const own = record(project.manifest.devDependencies ?? {});
       const shared = record(root.manifest.devDependencies ?? {});
-      const selected = [...commands.values()]
-        .flat()
-        .filter((c) => c.directory === project.directory);
+      const selected = [
+        ...[...commands.values()].flat(),
+        ...scripts.schedulers.values(),
+      ].filter((c) => c.directory === project.directory);
       const required = new Set<string>();
       for (const command of selected) {
         const name = (
@@ -364,7 +371,7 @@ export async function convention(
             "missing",
             `${project.directory || "."}: ${name} 未在自身/共享根 devDependencies 声明`,
           );
-      const resolved = new Map<string, { version: string; release: Release }>();
+      const resolved = new Map<string, InstalledTool>();
       actual.set(project.directory, resolved);
       for (const [name, raw] of Object.entries(own)) {
         if (typeof raw !== "string")
@@ -414,11 +421,10 @@ export async function convention(
             "mismatch",
             `${project.directory || "."}: ${name} lockfile importer specifier != ${raw}`,
           );
-        const installed =
-          typeof entry.version === "string"
-            ? entry.version.split("(")[0]
-            : undefined;
-        if (!installed || !valid(installed)) {
+        const installedReference =
+          typeof entry.version === "string" ? entry.version : undefined;
+        const installed = installedReference?.split("(")[0];
+        if (!installedReference || !installed || !valid(installed)) {
           issue(
             "dependency",
             "unconfirmed",
@@ -454,7 +460,7 @@ export async function convention(
             `${project.directory || "."}: ${name} 声明 ${raw} -> ${range}; importer ${installed}; 系列 ${stableSeries(minimum.version)} 最新 ${newest}; ${observation.source}; ${new Date(observation.observedAt).toISOString()}`,
           );
         const release = versions[installed];
-        const latestEngine = versions[newest]?.engines?.node;
+        const latestEngine = versions[newest].engines?.node;
         if (latestEngine && (!node || !validRange(latestEngine)))
           issue(
             "dependency",
@@ -467,7 +473,12 @@ export async function convention(
             "mismatch",
             `${name} 同系列最新 ${newest} 要求 Node ${latestEngine}，与默认 ${node} 冲突；不能回退旧版后宣称最新`,
           );
-        resolved.set(name, { version: installed, release });
+        resolved.set(name, {
+          version: installed,
+          release,
+          reference: installedReference,
+          importer: project.directory || ".",
+        });
         const engine = release.engines?.node;
         if (engine && (!node || !validRange(engine)))
           issue(
@@ -485,7 +496,7 @@ export async function convention(
     });
   }
   for (const project of projects)
-    await section("dependency", () => {
+    await section("dependency", async () => {
       const resolved = new Map([
         ...(actual.get("") ?? []),
         ...(actual.get(project.directory) ?? []),
@@ -494,7 +505,13 @@ export async function convention(
         for (const [peer, range] of Object.entries(
           value.release.peerDependencies ?? {},
         )) {
-          const found = resolved.get(peer);
+          const found = resolvedPeer(
+            lock,
+            value.importer,
+            name,
+            value.reference,
+            peer,
+          );
           if (!found && value.release.peerDependenciesMeta?.[peer]?.optional)
             continue;
           if (!found || !validRange(range)) {
@@ -509,9 +526,43 @@ export async function convention(
               "mismatch",
               `${name}@${value.version}: peer ${peer}@${found.version} 不满足 ${range}`,
             );
+          else {
+            const direct = actual
+              .get(value.importer === "." ? "" : value.importer)
+              ?.get(peer);
+            let release =
+              direct?.version === found.version ? direct.release : undefined;
+            if (!release) {
+              if (!known.has(peer))
+                throw new Unconfirmed(
+                  `${name}: 已解析 peer ${peer} 尚无公开元数据支持，未发送该名称`,
+                );
+              const observed = await evidence.metadata.package(peer, {
+                current: found.version,
+                series: stableSeries(found.version),
+              });
+              release = fresh(observed).releases[found.version];
+              if (!release)
+                throw new Unconfirmed(
+                  `${name}: 已解析 peer ${peer}@${found.version} 缺少准确 manifest`,
+                );
+            }
+            const engine = release.engines?.node;
+            if (engine && (!node || !validRange(engine)))
+              issue(
+                "dependency",
+                "unconfirmed",
+                `${name}: peer ${peer}@${found.version} 的 Node 兼容范围无法确认`,
+              );
+            else if (engine && node && !satisfies(node, engine))
+              issue(
+                "dependency",
+                "mismatch",
+                `${name}: peer ${peer}@${found.version} engines.node=${engine} 与默认 Node ${node} 不兼容`,
+              );
+          }
         }
       }
-      return Promise.resolve();
     });
   await section("document", async () => {
     for (const path of [

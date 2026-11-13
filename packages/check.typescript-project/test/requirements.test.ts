@@ -10,6 +10,9 @@ it.each([
   { projectDirectory: "D:\\project", requirements: {} },
   { projectDirectory: "D:\\project", projectScopes: ["packages/a"] },
   { projectDirectory: "D:\\project", context: {} },
+  { projectDirectory: "D:\\project", metadataProfile: "canonical-v1" },
+  { projectDirectory: "D:\\project", source: "https://example.invalid" },
+  { projectDirectory: "D:\\project", skipMetadata: true },
 ])("rejects obsolete or missing input %#", (value) => {
   expect(Value.Check(Input, value)).toBe(false);
 });

@@ -1,8 +1,13 @@
+import { createHash } from "node:crypto";
 import { rcompare } from "semver";
-import type { Release } from "../src/metadata.js";
+import type { NodeFacts, Release } from "../src/metadata.js";
 import { metadataFixture, toolVersions } from "./metadata-fixture.js";
 
 export const publicationTime = "2026-01-01T00:00:00.000Z";
+export function requestUrl(input: Parameters<typeof fetch>[0]): string {
+  if (typeof input === "string") return input;
+  return input instanceof URL ? input.href : input.url;
+}
 export function metadataResponse(
   data: unknown,
   headers: Record<string, string> = {},
@@ -10,72 +15,74 @@ export function metadataResponse(
   return new Response(JSON.stringify(data), {
     headers: {
       date: new Date().toUTCString(),
-      "x-nitro-cache": "HIT",
+      "content-type": "application/json",
       ...headers,
     },
   });
 }
-/** Author-side fake transport for the real production API parser, never a business provider. */
-export function npmxTransport(
+export function githubContents(data: unknown) {
+  const content = Buffer.from(JSON.stringify(data));
+  return {
+    path: "schedule.json",
+    type: "file",
+    encoding: "base64",
+    content: content.toString("base64"),
+    size: content.length,
+    sha: createHash("sha1")
+      .update(`blob ${content.length}\0`)
+      .update(content)
+      .digest("hex"),
+  };
+}
+export function canonicalPackument(name: string, releases: Release[]) {
+  const sorted = [...releases].sort((a, b) => rcompare(a.version, b.version));
+  return {
+    name,
+    modified: publicationTime,
+    "dist-tags": { latest: sorted[0]!.version },
+    versions: Object.fromEntries(
+      sorted.map((release) => [
+        release.version,
+        {
+          name,
+          ...release,
+          dist: {
+            tarball: "https://registry.npmjs.org/fixture.tgz",
+            integrity: "sha512-fixture",
+          },
+        },
+      ]),
+    ),
+  };
+}
+/** Author-side fake transport. It never makes a canonical request from this device. */
+export function canonicalTransport(
   packages: Record<string, Release[]> = Object.fromEntries(
     Object.entries(toolVersions).map(([name, version]) => [
       name,
       [{ version }],
     ]),
   ),
+  nodeOverride: Partial<NodeFacts> = {},
 ) {
   return async (input: Parameters<typeof fetch>[0]): Promise<Response> => {
-    const url = new URL(String(input));
-    const node = await metadataFixture().node();
+    const url = new URL(requestUrl(input));
+    const node = { ...(await metadataFixture().node()).data, ...nodeOverride };
     if (url.href === "https://nodejs.org/dist/index.json")
-      return metadataResponse(node.data.releases);
+      return metadataResponse(node.releases, {
+        date: new Date(Date.now() - 8_070_000).toUTCString(),
+        age: "8070",
+      });
     if (
       url.href ===
-      "https://raw.githubusercontent.com/nodejs/Release/main/schedule.json"
+      "https://api.github.com/repos/nodejs/Release/contents/schedule.json?ref=main"
     )
-      return metadataResponse(node.data.schedule);
-    if (url.origin !== "https://npmx.dev")
+      return metadataResponse(githubContents(node.schedule));
+    if (url.origin !== "https://registry.npmjs.org")
       throw new Error(`Unexpected metadata host: ${url.origin}`);
-    const match = /^\/api\/registry\/(timeline|packument)\/(.+)$/.exec(
-      url.pathname,
-    );
-    if (!match) throw new Error(`Unexpected metadata URL: ${url.href}`);
-    const name = decodeURIComponent(match[2]!);
-    const releases = packages[name]
-      ? [...packages[name]].sort((a, b) => rcompare(a.version, b.version))
-      : undefined;
+    const name = decodeURIComponent(url.pathname.slice(1));
+    const releases = packages[name];
     if (!releases) throw new Error(`Unknown HTTP fixture package ${name}`);
-    if (match[1] === "timeline") {
-      const offset = Number(url.searchParams.get("offset"));
-      return metadataResponse({
-        total: releases.length,
-        offset,
-        versions: releases.slice(offset, offset + 100).map((release) => ({
-          version: release.version,
-          time: publicationTime,
-        })),
-      });
-    }
-    const version = url.searchParams.get("version");
-    const release = releases.find((entry) => entry.version === version);
-    if (!release) throw new Error(`Unknown HTTP fixture version ${version}`);
-    return metadataResponse({
-      name,
-      _rev: "1-verified",
-      time: { modified: publicationTime, [release.version]: publicationTime },
-      versions: Object.fromEntries(
-        releases
-          .slice(0, 5)
-          .map((entry) => [entry.version, { version: entry.version }]),
-      ),
-      requestedVersion: {
-        name,
-        ...release,
-        dist: {
-          tarball: "https://npmx.dev/fixture.tgz",
-          integrity: "sha512-fixture",
-        },
-      },
-    });
+    return metadataResponse(canonicalPackument(name, releases));
   };
 }

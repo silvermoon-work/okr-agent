@@ -1,0 +1,7 @@
+{
+  "turbo": "2.11.11",
+  "rootToolsShared": true,
+  "members": ["packages/a", "packages/b"],
+  "targetScriptsExecuted": false,
+  "actualPnpmResolution": true
+}

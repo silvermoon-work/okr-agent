@@ -153,6 +153,9 @@ try {
     { context: { projectDirectory: directories[0] } },
     { projectDirectory: directories[0], requirements: {} },
     { projectDirectory: directories[0], projectScopes: ["packages/a"] },
+    { projectDirectory: directories[0], metadataProfile: "canonical-v1" },
+    { projectDirectory: directories[0], source: "https://example.invalid" },
+    { projectDirectory: directories[0], skipMetadata: true },
   ]) {
     console.error("smoke: invalid", JSON.stringify(input));
     const request = await submit(input);

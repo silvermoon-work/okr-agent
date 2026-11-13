@@ -177,80 +177,117 @@ it("requires CI failure propagation, ordering and non-filtered triggers", async 
   });
   expect((await check()).map((p) => p.code)).toContain("gate-unconfirmed");
 });
-it("handles pnpm/turbo workspaces, catalog versions and inherited configuration, not just root", async () => {
-  await put(
-    root,
-    "pnpm-workspace.yaml",
-    'packages: ["packages/*"]\ncatalog:\n  vitest: "^5.0.4"\n',
-  );
-  await put(root, "turbo.json", {
-    tasks: { typecheck: {}, lint: {}, test: {}, "test:coverage": {} },
-  });
-  await put(root, "package.json", {
-    ...manifest,
-    devDependencies: { ...manifest.devDependencies, vitest: "catalog:" },
-    scripts: {
-      typecheck: "turbo run typecheck",
-      lint: "turbo run lint",
-      format: "prettier --write .",
-      "format:check": "prettier --check .",
-      test: "turbo run test",
-      "test:coverage": "turbo run test:coverage",
-      check: "pnpm format:check && turbo run typecheck lint test:coverage",
-    },
-  });
-  const member = join(root, "packages", "a");
-  await fixture(member);
-  await put(member, "package.json", {
-    name: "a",
-    private: true,
-    engines: { node: ">=22" },
-    scripts: {
-      typecheck: "tsc --noEmit -p tsconfig.json",
-      lint: "eslint .",
-      test: "vitest run --coverage --root . --config ../../vitest.config.ts",
-      "test:coverage":
-        "vitest run --coverage --root . --config ../../vitest.config.ts",
-    },
-  });
-  await rm(join(member, "eslint.config.js"));
-  await rm(join(member, "AGENTS.md"));
-  const { readFile } = await import("node:fs/promises");
-  await put(
-    root,
-    "pnpm-lock.yaml",
-    (await readFile(join(root, "pnpm-lock.yaml"), "utf8")).replace(
-      "specifier: '^5.0.4'",
-      "specifier: 'catalog:'",
-    ),
-  );
-  await put(member, "tsconfig.json", {
-    extends: "../../tsconfig.base.json",
-    include: ["src/**/*.ts", "test/**/*.ts"],
-  });
-  // Root fixture has its own source, so give it direct commands too.
-  await rm(join(root, "src"), { recursive: true });
-  await rm(join(root, "test"), { recursive: true });
-  expect(await check()).toEqual([]);
-  await put(root, "packages\\uncovered\\package.json", {
-    name: "uncovered",
-    scripts: {},
-  });
-  await put(
-    root,
-    "packages\\uncovered\\src\\index.ts",
-    "export const uncovered = 1;",
-  );
-  const problems = await check();
-  expect(problems.map((p) => p.code)).toEqual(
-    expect.arrayContaining([
-      "typescript-missing",
-      "lint-missing",
-      "testing-missing",
-      "gate-mismatch",
-    ]),
-  );
-});
+it.each([1, 2])(
+  "handles %s-member pnpm/turbo workspaces with declared shared schedulers",
+  async (memberCount) => {
+    await put(
+      root,
+      "pnpm-workspace.yaml",
+      'packages: ["packages/*"]\ncatalog:\n  vitest: "^5.0.4"\n',
+    );
+    await put(root, "turbo.json", {
+      tasks: { typecheck: {}, lint: {}, test: {}, "test:coverage": {} },
+    });
+    const workspaceManifest = {
+      ...manifest,
+      devDependencies: {
+        ...manifest.devDependencies,
+        vitest: "catalog:",
+        turbo: "^2.11.10",
+      },
+      scripts: {
+        typecheck: "turbo run typecheck",
+        lint: "turbo run lint",
+        format: "prettier --write .",
+        "format:check": "prettier --check .",
+        test: "turbo run test",
+        "test:coverage": "turbo run test:coverage",
+        check: "pnpm format:check && turbo run typecheck lint test:coverage",
+      },
+    };
+    await put(root, "package.json", workspaceManifest);
+    for (const name of ["a", "b"].slice(0, memberCount)) {
+      const member = join(root, "packages", name);
+      await fixture(member);
+      await put(member, "package.json", {
+        name,
+        private: true,
+        engines: { node: ">=22" },
+        scripts: {
+          typecheck: "tsc --noEmit -p tsconfig.json",
+          lint: "eslint .",
+          test: "vitest run --coverage --root . --config ../../vitest.config.ts",
+          "test:coverage":
+            "vitest run --coverage --root . --config ../../vitest.config.ts",
+          "lint:all": "pnpm exec turbo run lint",
+        },
+      });
+      await rm(join(member, "eslint.config.js"));
+      await rm(join(member, "AGENTS.md"));
+      await put(member, "tsconfig.json", {
+        extends: "../../tsconfig.base.json",
+        include: ["src/**/*.ts", "test/**/*.ts"],
+      });
+    }
+    const { readFile } = await import("node:fs/promises");
+    const turboLock =
+      "      turbo:\n        specifier: '^2.11.10'\n        version: '2.11.10'\n";
+    const workspaceLock =
+      (await readFile(join(root, "pnpm-lock.yaml"), "utf8")).replace(
+        "specifier: '^5.0.4'",
+        "specifier: 'catalog:'",
+      ) + turboLock;
+    await put(root, "pnpm-lock.yaml", workspaceLock);
+    // Root fixture has its own source, so give it direct commands too.
+    await rm(join(root, "src"), { recursive: true });
+    await rm(join(root, "test"), { recursive: true });
+    expect(await check()).toEqual([]);
+    await put(root, "package.json", {
+      ...workspaceManifest,
+      devDependencies: { ...manifest.devDependencies, vitest: "catalog:" },
+    });
+    await put(
+      root,
+      "pnpm-lock.yaml",
+      workspaceLock.replace(turboLock, "") +
+        "  unrelated:\n    devDependencies:\n      turbo:\n        specifier: '^2.11.10'\n        version: '2.11.10'\n",
+    );
+    const missing = (await check()).filter(
+      (p) => p.code === "dependency-missing",
+    );
+    expect(missing.some((p) => p.brief.startsWith(".: turbo"))).toBe(true);
+    expect(missing.some((p) => p.brief.startsWith("packages/a: turbo"))).toBe(
+      true,
+    );
+    await put(root, "package.json", workspaceManifest);
+    expect(await check()).toContainEqual(
+      expect.objectContaining({
+        code: "dependency-unconfirmed",
+        brief: expect.stringContaining("turbo: 目标 importer") as unknown,
+      }),
+    );
+    await put(root, "pnpm-lock.yaml", workspaceLock);
+    expect(await check()).toEqual([]);
+    await put(root, "packages\\uncovered\\package.json", {
+      name: "uncovered",
+      scripts: {},
+    });
+    await put(
+      root,
+      "packages\\uncovered\\src\\index.ts",
+      "export const uncovered = 1;",
+    );
+    const problems = await check();
+    expect(problems.map((p) => p.code)).toEqual(
+      expect.arrayContaining([
+        "typescript-missing",
+        "lint-missing",
+        "testing-missing",
+        "gate-mismatch",
+      ]),
+    );
+  },
+);
 it("rejects input scopes and bounds file sizes", async () => {
   const input: Input = {
     projectDirectory: root,

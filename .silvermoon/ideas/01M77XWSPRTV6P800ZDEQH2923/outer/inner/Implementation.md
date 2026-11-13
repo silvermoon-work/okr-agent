@@ -12,6 +12,10 @@ workspace 不虚构成员，未声明嵌套 manifest、链接、未知所有权�
 
 ### I-S02: 实现六类项目约定
 
+最终来源选择为受宿主授权的 canonical-v1：完整 npm install-v1
+packument、官方精确历史 Node 记录与新鲜 GitHub
+schedule；不以 npmx 的无上游观察时间 SWR 缓存作新鲜依据，也不把本设备镜像策略写进通用制品。当前 Windows 本地只跑受控 HTTP/fixture 与构建，生产 live 验证在已获授权的 Ubuntu 进行。当前生命周期与精确历史发行存在性的时间依据分别记录。
+
 在同一 Check 内按职责实现环境、开发依赖与 lockfile、项目规范、Agent 脚本、CI/适用 npm 发布及文档结构；明确根推荐工具链与成员运行兼容性、逐包开放/发布及精确提交 CI 复用。实施前明确元数据来源、新鲜度、0.x 边界和支持语法，不新增独立 npm/monorepo
 Task。
 

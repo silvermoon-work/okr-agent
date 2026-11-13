@@ -1,0 +1,130 @@
+{
+  "status": "ready-for-parent-review-and-authorized-remote-live-validation",
+  "checkpoint": "50873f1",
+  "metadataProfile": "canonical-v1",
+  "changedFiles": [
+    "packages\\check.typescript-project\\README.md",
+    "packages\\check.typescript-project\\references\\check.md",
+    "packages\\check.typescript-project\\scripts\\smoke.mjs",
+    "packages\\check.typescript-project\\src\\commands.ts",
+    "packages\\check.typescript-project\\src\\convention.ts",
+    "packages\\check.typescript-project\\src\\lockfile.ts",
+    "packages\\check.typescript-project\\src\\metadata.ts",
+    "packages\\check.typescript-project\\test\\convention.test.ts",
+    "packages\\check.typescript-project\\test\\inspect.test.ts",
+    "packages\\check.typescript-project\\test\\lockfile.test.ts",
+    "packages\\check.typescript-project\\test\\metadata-fixture.ts",
+    "packages\\check.typescript-project\\test\\metadata-http-fixture.ts",
+    "packages\\check.typescript-project\\test\\metadata.test.ts",
+    "packages\\check.typescript-project\\test\\production-metadata.test.ts",
+    "packages\\check.typescript-project\\test\\requirements.test.ts"
+  ],
+  "implementation": [
+    "Closed author-owned canonical-v1 constant; same sole business input projectDirectory. No source/clock/provider/env URL overrides or implicit source fallback.",
+    "Complete canonical install-v1 packument, not slim version inference: validates identity, version keys, modified time, dist-tag references, exact installed/latest manifest engines/peers/dist and SemVer series.",
+    "Only nineteen named supported public tools, now including Vite, may be queried. Unknown/private names and URLs are rejected before fetch.",
+    "Mutable facts require valid HTTP Date/Age <=1h with stale/error states rejected. Conflicting body modified time is unconfirmed. Errors never fall back to cached success, mirror or npmx.",
+    "Node exact-release existence and LTS-at-release come only from the official historical index; actual old index cache age is explicitly recorded. Current lifecycle observation time comes only from the fresh official GitHub contents schedule. Missing exact historical release is unconfirmed.",
+    "Legitimate official Node prerelease history entries such as v27.0.0-alpha.0.1.0 are validated and retained without rejecting unrelated supported stable LTS records. Selecting a prerelease default remains mismatch; malformed historical records remain unconfirmed.",
+    "Required and optional peers resolve from the selected tool's exact owning importer reference and v9 snapshot, follow dependencies/optionalDependencies or consistent peer suffix, and require the exact peer snapshot and packages integrity record. Other importers and globally matching snapshots never substitute. Vite does not need an unused direct devDependency; its selected version's range and Node engine compatibility are checked.",
+    "Scripts retains one statically parsed Turbo scheduler invocation per responsible project directory while expanding member tasks. Convention includes these scheduler commands when determining required directly used dev tooling; normal declaration, exact importer, freshness and Node checks apply. No shell keyword scan or separate policy mechanism.",
+    "Official GitHub schedule contents validate path/type/base64/size/Git blob SHA plus lifecycle schema. Current supported LTS versus EOL uses that fresh schedule.",
+    "Bounds: 10s/request, 90s/execution, 16MiB/response, 128MiB/execution, 66 requests, 64 package cache entries, 32768 versions/packument, 20000 historical Node records, 256KiB schedule, 256 lifecycle series.",
+    "Fixed original eleven lint failures using actual narrowing, without suppression.",
+    "Preserved Files guards/read budgets, fixed AGENTS assets, publisher positive support, static-only target inspection, SDK ownership and strict input."
+  ],
+  "validation": {
+    "typescriptProjectTests": 122,
+    "typescriptProjectTestFiles": 11,
+    "canonicalHttpMetadataTests": 27,
+    "canonicalHttpInspectionTests": 9,
+    "realPnpmLockTests": 3,
+    "releaseTests": 11,
+    "lint": "passed",
+    "typecheck": "passed",
+    "pnpmCheck": "attempted twice after final scheduler fix; blocked only by Prettier in parent-owned protected .silvermoon/ideas/01M77XWSPRTV6P800ZDEQH2923/outer/inner/Verification.md. That file was not touched.",
+    "remainingFullCodeGates": "passed pnpm lint:release, pnpm test:release, and pnpm exec turbo run lint typecheck test build: 24/24 Turbo tasks; 20 unrelated tasks cached",
+    "ownedPackageFormatting": "passed pnpm exec prettier --check packages/check.typescript-project",
+    "schedulerRegression": "Existing workspace regression extended to one- and two-member aggregate/shared-tool cases, with literal root turbo and member pnpm exec turbo. Both tests failed before code fix at the missing root declaration assertion, then passed after fix. Tests also reject dependency only in unrelated importer, reject absent responsible importer despite declaration, and restore the positive shared root path.",
+    "gitDiffCheck": "passed",
+    "localCanonicalNetworkRequestsAfterPolicyChange": 0,
+    "localProductionLiveRunsAfterPolicyChange": 0,
+    "mockedProductionCases": [
+      "application, npm publisher and format aliases pass using complete controlled HTTP transport",
+      "full response above 4MiB accepted; response above 16MiB rejected",
+      "major >=1, 0.minor patch-only, exact 0.0.patch and scoped package paths",
+      "installed/current manifest and selected-series newest retained; unrelated global latest and prereleases excluded",
+      "wrong identity, missing/empty/partial version list, missing installed version, tag conflict and bad manifest fields rejected",
+      "stale/invalid HTTP cache metadata, wrong media type, malformed/modified-after-response metadata, network failures, cancellation and unexpected faults",
+      "historical Node index age 8070 seconds allowed only for immutable exact release facts",
+      "fresh lifecycle schedule supports LTS, rejects EOL and never excuses missing historical exact release",
+      "stale/malformed GitHub schedule, incorrect Git SHA and invalid lifecycle dates rejected",
+      "metadataProfile, source and skipMetadata inputs rejected"
+    ]
+  },
+  "productionCar": {
+    "path": "packages\\check.typescript-project\\dist\\typescript-project.car",
+    "cid": "bafybeibt3cicv25ra5jv5dyj2qitoumoobaiblbjx3ytn6gr7iutjfipuy",
+    "bytes": 504485,
+    "sha256": "edcc787456072d71bba461a7895ebd87dcb1e2b2c865efa33a8cea67e8eb3fb5",
+    "liveValidation": "pending-parent-on-authorized-xiaonuo-ubuntu-only",
+    "localLiveExecutionAuthorized": false
+  },
+  "fixtureCar": {
+    "path": "packages\\check.typescript-project\\dist\\resume-fixture\\bundle.car",
+    "cid": "bafybeige47khseodhovuc5hoff64uyjm6kqma4isnuvwaodh3ctbro35qi",
+    "bytes": 505345,
+    "sha256": "cf16519ca74bc129977e0dd12e886ad2acf078278b817d892da5763c826520d0",
+    "report": "packages\\check.typescript-project\\dist\\resume-fixture\\engine-fixture-report.json",
+    "projectPasses": [true, false, true],
+    "documentationReadable": true,
+    "allFourAssetsExact": true,
+    "invalidInputsRejected": 7,
+    "readFault": "failed-without-output",
+    "cancellation": "canceled-without-output",
+    "reclaimed": true,
+    "externalProductionProof": false
+  },
+  "sourcePolicy": {
+    "registry": "https://registry.npmjs.org/<encoded-supported-public-tool-name>",
+    "registryAccept": "application/vnd.npm.install-v1+json",
+    "historicalNodeIndex": "https://nodejs.org/dist/index.json",
+    "currentNodeLifecycle": "https://api.github.com/repos/nodejs/Release/contents/schedule.json?ref=main",
+    "currentNodeLifecycleAccept": "application/vnd.github+json",
+    "authorization": "Actual execution host must explicitly permit these fixed endpoints. Parent verified xiaonuo-ubuntu as authorized and owns live validation there. Inclusion in CAR does not authorize requests on Windows.",
+    "localPackageOperations": "Preserve NRM effective Tencent registry; no registry override or official fallback.",
+    "npmx": "Removed unsupported nested-SWR provider; no claimed authority or dead fallback."
+  },
+  "actualRemoteLockReadOnlyProof": {
+    "report": "packages\\check.typescript-project\\dist\\resume-fixture\\peer-probe\\actual-remote-lock-report.json",
+    "source": "C:\\Users\\Wei\\.copilot\\session-state\\ff7ae135-2632-4fdc-a631-90930643334b\\files\\actual-convention-lock.yaml",
+    "sha256": "e65aa82561f3188223f6052701122c96fd8d1b7a084e2de152e11f0a89d75b0c",
+    "result": "Four exact actual pnpm-generated edges verified with the author parser: Vitest 5.1.0 -> Vite 8.3.8, coverage-v8 5.1.0 -> exact full-context Vitest 5.1.0, typescript-eslint 8.72.2 -> TypeScript 6.0.3, @eslint/js 10.0.1 -> ESLint 10.14.0. No direct Vite declaration. Actual lock was neither changed nor reconstructed.",
+    "networkRequests": 0,
+    "targetCodeExecuted": false,
+    "ownedCompilerStagingRemoved": true
+  },
+  "safeLocalReproductionFromRepositoryRoot": [
+    "pnpm --filter @silvermoon-work/check.typescript-project test",
+    "pnpm --filter @silvermoon-work/check.typescript-project lint",
+    "pnpm --filter @silvermoon-work/check.typescript-project typecheck",
+    "pnpm check",
+    "pnpm --filter @silvermoon-work/check.typescript-project build",
+    "pnpm --filter @silvermoon-work/check.typescript-project exec node ..\\check-task-builder\\dist\\bin.js build check.fixture.build.yaml --out-dir dist\\resume-fixture\\bundle",
+    "node packages\\check.typescript-project\\scripts\\smoke.mjs packages\\check.typescript-project\\dist\\resume-fixture\\bundle.car packages\\check.typescript-project\\dist\\verification\\good packages\\check.typescript-project\\dist\\verification\\bad packages\\check.typescript-project\\dist\\verification\\npm"
+  ],
+  "parentRemoteValidation": {
+    "instructions": "Transfer the exact production CAR, deterministic fixture CAR, scripts/smoke.mjs and existing dist/verification/{good,bad,npm} fixtures to the authorized host. Verify SHA256 and run the same Engine consumer with production CAR only on that host. Fixture tool versions are historical deterministic examples: live production may honestly report a fresh dependency mismatch rather than pass. Compare output assets/documents, strict input/fault/cancel/reclaimed semantics. Do not execute target scripts/hooks/build/install.",
+    "productionLocalInvocation": "intentionally-not-provided; forbidden-on-this-Windows-device",
+    "oldReportsAreNotThisCar": [
+      "packages\\check.typescript-project\\dist\\verification\\engine-production-report-resumed.json",
+      "packages\\check.typescript-project\\dist\\verification\\npmx-public-cache-observation-resumed.jsonl"
+    ]
+  },
+  "preserved": [
+    ".silvermoon\\ideas\\01M77XWSPRTV6P800ZDEQH2923\\ledger.md",
+    ".silvermoon\\ideas\\01M77XWSPRTV6P800ZDEQH2923\\outer\\inner\\Verification.md"
+  ],
+  "prohibitedOperationsPerformed": false,
+  "notes": "No staging, commits, pushes, lifecycle events, approvals, npm publishing, pin/upload, nested agents, target code/hooks/build/install execution, shared environment changes or dependency installs. No lifecycle documentation edits. Existing pre-resume staging directories were not removed."
+}

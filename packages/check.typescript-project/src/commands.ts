@@ -60,6 +60,7 @@ export function flag(command: Command, name: string): boolean {
 export class Scripts {
   private expansions = 0;
   private terminals = 0;
+  readonly schedulers = new Map<string, Command>();
   constructor(
     readonly files: Files,
     readonly projects: Project[],
@@ -150,6 +151,11 @@ export class Scripts {
           tokens.some((t) => t.startsWith("-"))
         )
           throw new Unconfirmed("only unfiltered turbo run tasks is supported");
+        this.schedulers.set(project.directory, {
+          directory: project.directory,
+          tool,
+          args: ["run", ...tokens],
+        });
         const turboPath = this.files.path("", "turbo.json");
         if (!this.files.exists(turboPath))
           throw new Unconfirmed("turbo.json is missing");

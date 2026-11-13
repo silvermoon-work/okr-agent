@@ -8,6 +8,7 @@ export const toolVersions: Record<string, string> = {
   pnpm: "11.22.0",
   typescript: "6.0.3",
   vitest: "5.0.4",
+  vite: "8.3.4",
   eslint: "10.14.0",
   "typescript-eslint": "8.72.1",
   "@eslint/js": "10.0.1",
@@ -15,6 +16,7 @@ export const toolVersions: Record<string, string> = {
   "@vitest/coverage-v8": "5.0.4",
   publint: "0.3.25",
   semver: "7.8.5",
+  turbo: "2.11.10",
 };
 export function metadataFixture(): Metadata {
   return {

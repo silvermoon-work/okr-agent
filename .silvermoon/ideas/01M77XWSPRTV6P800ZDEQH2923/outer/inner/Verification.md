@@ -1,18 +1,57 @@
 # 统一 TypeScript Project Check 实施证据
 
-## 暂停检查点（2026-11-13）
+## 当前父级复核（2026-11-13）
 
-关机前已格式化本轮源码并尝试 pnpm check：格式、release lint 与 11 项 release
-tests 通过；完整命令在 TypeScript Check
-lint 失败（convention.ts 两处多余 optional
-chain，metadata 相关测试若干 RequestInfo 字符串转换类型规则）。后续任务因 Turbo 失败中断，最新测试/真实 CAR 尚不能据此宣称通过。本次保留全部源文件与回归用例供续修，不为了检查点改规则或跳过门禁。
+### 最终可提交实施候选
 
-用户要求结束今天工作、全部同步 origin/main 后关机。本次提交仅保存未完成候选，不提交或批准实现/部署门限，不标记 completed。
+父级最终独立复验准确生产 CAR
+`bafybeibt3cicv25ra5jv5dyj2qitoumoobaiblbjx3ytn6gr7iutjfipuy`（504485
+bytes，SHA256
+`edcc787456072d71bba461a7895ebd87dcb1e2b2c865efa33a8cea67e8eb3fb5`）。自有独占 Ubuntu 目录只安装公开 Engine/Builder/IPFS
+Store/exporter，不安装作者 SDK 或 Check，不连接本仓库源码或 node_modules：
 
-父代理第二轮复核发现生产元数据路径被固定为 authoritative=false，会令所有生产新鲜度判断无法通过，已要求改为完整版本时间线及选定版本 manifest 的有界 npmx 查询。subagent 在该轮因工具发布错误失败，留下尚未完整复核的 metadata.ts、测试和调用点变更。下文 Tencent 来源与最后 CAR/CID 是上一轮的历史验证，不代表这些最新源码已构建或通过。
+- 实际当前版本的应用、npm 单包和两成员 workspace 均 pass:true，全部读取真实 canonical 发行与 Node 生命周期事实，非测试 provider。
+- 旧锁定依赖及固定 AGENTS 变更正确不通过。历史手写 lockfile 缺少 peer 快照时明确 unconfirmed，不拿别处版本代替。
+- 实际 pnpm
+  lockfile 的 packages/snapshots 及目标 importer 解析正确；Vitest 的 Vite
+  peer 不需虚构直接声明。
+- 四类旧输入拒绝、I/O 故障无输出、取消无输出、Run 物理回收、标准 assets 与参考文档字节、配置前后不变及借用 store 生命周期均独立通过。
+- 直接使用 Turbo 的调用从解析器保留调度上下文，缺声明及无关 importer 不能通过；单/双成员共享根工具的正向与反例回归均通过。
 
-继续时须先验证最新元数据实现的来源、分页完整性、版本/peer 信息和缓存新鲜度，再完整运行测试、构建真实生产 CAR 及独立消费。未通过时继续返工，不能用确定性 fixture
-CAR 证明生产元数据可用。固定文档及 SDK assets 输出的已完成代码一并保留。
+原始最终远端报告见
+[Parent-remote-review.json](./Parent-remote-review.json)，真实独立 lockfile 与 workspace 准备依据见
+[Parent-fixture-preparation.json](./Parent-fixture-preparation.json) 和
+[Parent-workspace-preparation.json](./Parent-workspace-preparation.json)。恢复代理精确实现/测试结果与支持限制见
+[Implementation-result.json](./Implementation-result.json)。父级最终 pnpm check
+24/24 通过，本包 122
+tests；没有本地生产 canonical 请求、没有目标代码执行，也没有 npm 发布或远程 pin。
+
+该候选可提交准确 implementationRevision 并按用户委托审批；部署阶段仍须同步外层契约、按准确制品重验独立消费并保存外层证据，不以本段自行推断 completed。
+
+恢复时保留了工作区已有的 ledger/本文编辑；其中旧来源和旧 CAR 结果只能作为历史记录，不据此批准当前门限。前代理工具发布故障后的半成品由恢复代理接续，父级独立复验，不依赖复选框决定生命周期。
+
+父级否决 npmx 的无上游观察时间 SWR 缓存作为权威新鲜度来源，选择明确的 canonical-v1 生产来源：完整 npm
+install-v1 packument、官方 Node 精确历史发行记录，以及具有新鲜 HTTP 证据和 Git
+blob SHA 的官方 GitHub 生命周期 schedule。历史 Node
+index 仅证明精确发行存在/LTS-at-release，不用于推断当前生命周期或最新版本，不能冒充已刷新；当前支持状态由独立新鲜 schedule 判断。
+
+此生产 profile 必须由实际执行宿主授权。当前 Windows 本地仅执行受控传输/fixture 测试与构建，不执行生产 live
+canonical 查询；实际联网验证由既有获授权的 xiaonuo-ubuntu 完成，其包源本来为 canonical。没有改变当前设备 NRM/Tencent 配置，没有源故障回退，也没有把本机镜像政策传播进通用 CAR。
+
+父级发现并打回两处真实数据缺陷，现均有修复和回归：官方 Node
+index 的合法预发布历史不能使其他稳定 LTS 记录全部失效；Vitest 的 Vite
+peer 必须从目标 importer 的准确快照、peer 后缀和实际 packages 完整性记录解析，不能仅查直接 devDependencies 或任意全局版本。
+
+对准确生产 CAR
+`bafybeif5ecmg3a2inywtlu5b32w4qxs3g5btpdhce5ikpa4yu46zk3l66e`，父级在仓库外仅安装公开 Engine/Builder/IPFS
+Store/exporter，未安装作者 SDK 或 Check，通过真实联网事实取得应用项目和 npm 项目的 pass:true；历史版本项目及固定 AGENTS 变更正确不通过。输入拒绝、I/O 故障、取消、物理回收、输出参考文档及四项标准 assets 字节验证均通过，配置前后不变。原始证据见
+[Parent-remote-review.json](./Parent-remote-review.json)。
+
+正向项目不是仅手写 importer 的假 lockfile：父级在独占远端目录使用原生 pnpm 对自有测试数据解析完整 packages/snapshots，禁用生命周期脚本，记录于
+[Parent-fixture-preparation.json](./Parent-fixture-preparation.json)。初次准备误触及祖先消费工作区，仅属父级夹具问题；建立独立 pnpm-workspace 边界后重新生成并验证，未将初次错误结果当通过。
+
+本地 pnpm check 由父级再次独立执行，24/24 Turbo
+tasks 通过。该较早 CAR 已被顶部最终候选替代；Turbo 声明反例已修复并以最终 CID 重跑生产消费，不将较早记录混用成最终身份。
 
 ## 契约与资源
 
