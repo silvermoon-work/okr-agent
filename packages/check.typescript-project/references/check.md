@@ -22,6 +22,12 @@
    check，全部必需 job/矩阵/聚合成功才合格。先完整比较结构，仅标准 compatibility.strategy.matrix.node-version 允许 2..8 个唯一精确稳定版本参数；结构不符给出实际路径/值及期望，短路派生矩阵/发布绑定问题，不猜任意 workflow。适用包统一最低值未通过先报环境问题并短路依赖矩阵差异；独立默认 CI/发布保护仍检。通过后 required 为统一消费者最低值及一个更高、当前受支持且满足所有适用范围的官方 LTS；更低或范围外额外条目标 unsupported，不单独因此报 ci-mismatch。完整矩阵仍运行开发 check，工具不兼容保留 unconfirmed 支持边界，不擅自引入新标准 probe。npm 发布采用固定资产与受保护 workflow，独立确凿缺陷继续报告。
 6. 文档与结构：声明 workspace 定位全部成员，聚合根无虚构源码/build 要求。README/CONTRIBUTING/docs/agent-project.md 只检查存在/可读/非空，固定根 AGENTS.md 与[唯一标准 asset](../assets/AGENTS.md)完整比较，仅统一 CRLF/CR 到 LF。嵌套 AGENTS 不能静默忽略。gitignore 检查依赖、输出、覆盖率/缓存与秘密，且不排除必要文件。
 
+固定质量和发布 workflow 当前使用
+`actions/checkout@v7`、`actions/setup-node@v7`、
+`pnpm/action-setup@v6`，其 Action runtime 为 Node 24，不改变项目 `.node-version`
+或消费者 engines.node。Action 版本由标准资产维护，仍按完整 workflow 结构比较；旧 v4 配置报告不匹配，不能通过改动权限、触发器或省略验证来迁移。更新版本时同步固定发布核心的 CI 结构校验、重建 CAR，再用新版 Check 验证和迁移项目。setup-node 未声明 registry-url，不生成 npm
+token 配置；根 packageManager 使用 pnpm，自动 npm 缓存不适用，显式 pnpm 缓存及 frozen 安装保持原有语义。
+
 ## 支持语法与保守边界
 
 - TypeScript

@@ -153,12 +153,12 @@ export function workflowMatrix(source) {
 }
 export function qualityWorkflow(nodes) {
   const setup = [
-    { uses: "actions/checkout@v4" },
+    { uses: "actions/checkout@v7" },
     {
-      uses: "actions/setup-node@v4",
+      uses: "actions/setup-node@v7",
       with: { "node-version-file": ".node-version" },
     },
-    { uses: "pnpm/action-setup@v4" },
+    { uses: "pnpm/action-setup@v6" },
     { run: "pnpm install --frozen-lockfile" },
     { run: "pnpm check" },
   ];
@@ -179,7 +179,7 @@ export function qualityWorkflow(nodes) {
         steps: setup.map((step, index) =>
           index === 1
             ? {
-                uses: "actions/setup-node@v4",
+                uses: "actions/setup-node@v7",
                 with: { "node-version": "${{ matrix.node-version }}" },
               }
             : step,

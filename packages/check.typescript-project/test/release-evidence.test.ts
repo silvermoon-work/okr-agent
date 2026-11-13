@@ -82,7 +82,7 @@ it("binds exact-HEAD main-push verifier arguments to the real versioned CI aggre
         jobs: {
           check: {
             steps: [
-              { uses: "actions/checkout@v4" },
+              { uses: "actions/checkout@v7" },
               { run: "pnpm install --frozen-lockfile" },
               { run: "pnpm check" },
             ],

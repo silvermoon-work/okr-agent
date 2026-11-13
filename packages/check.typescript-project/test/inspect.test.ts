@@ -482,8 +482,8 @@ it("rejects extra jobs and setup overrides outside the fixed quality workflow in
     root,
     ".github/workflows/ci.yaml",
     workflow.replace(
-      "- uses: pnpm/action-setup@v4",
-      "- uses: pnpm/action-setup@v4\n        with:\n          run_install: false",
+      "- uses: pnpm/action-setup@v6",
+      "- uses: pnpm/action-setup@v6\n        with:\n          run_install: false",
     ) +
       `
   aggregate:
@@ -515,8 +515,8 @@ it("does not accept pnpm auto-install as the explicit frozen installation step",
     root,
     ".github/workflows/ci.yaml",
     workflow.replace(
-      "- uses: pnpm/action-setup@v4",
-      "- uses: pnpm/action-setup@v4\n        with:\n          run_install: true",
+      "- uses: pnpm/action-setup@v6",
+      "- uses: pnpm/action-setup@v6\n        with:\n          run_install: true",
     ),
   );
   expect((await check()).map((p) => p.code)).toEqual(["ci-mismatch"]);

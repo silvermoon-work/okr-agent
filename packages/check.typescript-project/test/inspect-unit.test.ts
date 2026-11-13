@@ -405,28 +405,28 @@ it.each(
       { run: "pnpm check" },
     ],
     [
-      { uses: "actions/checkout@v4", with: { "fetch-depth": 0 } },
+      { uses: "actions/checkout@v7", with: { "fetch-depth": 0 } },
       { run: "pnpm check" },
       { run: "pnpm install --frozen-lockfile" },
     ],
     [
-      { uses: "actions/checkout@v4" },
+      { uses: "actions/checkout@v7" },
       { run: "pnpm install --frozen-lockfile" },
       {
-        uses: "actions/setup-node@v4",
+        uses: "actions/setup-node@v7",
         with: { "node-version-file": ".node-version" },
       },
-      { uses: "pnpm/action-setup@v4" },
+      { uses: "pnpm/action-setup@v6" },
       { run: "pnpm check" },
     ],
     [
-      { uses: "actions/checkout@v4" },
+      { uses: "actions/checkout@v7" },
       { run: "echo $UNKNOWN" },
       { run: "pnpm install --frozen-lockfile" },
       { run: "pnpm check", if: "true" },
     ],
     [
-      { uses: "actions/checkout@v4" },
+      { uses: "actions/checkout@v7" },
       { run: "pnpm install --frozen-lockfile" },
     ],
   ].map((steps) => ({ steps })),
@@ -446,15 +446,15 @@ it("accepts an unconditional ordered CI job with root-selected tools", async () 
       check: {
         steps: [
           {
-            uses: "actions/checkout@v4",
+            uses: "actions/checkout@v7",
             with: { "persist-credentials": false },
           },
           {
-            uses: "actions/setup-node@v4",
+            uses: "actions/setup-node@v7",
             with: { "node-version-file": ".node-version" },
           },
           {
-            uses: "pnpm/action-setup@v4",
+            uses: "pnpm/action-setup@v6",
             with: { run_install: false, package_json_file: "package.json" },
           },
           { run: "pnpm install --frozen-lockfile" },

@@ -66,9 +66,16 @@ it("derives a unique single target without a release description and binds works
     { directory: ".", manifest: { name: "root", private: true } },
     { directory: "packages/library", manifest },
   ];
-  const nodes = publisher.workflowMatrix(
-    await readFile(new URL("../assets/npm-ci.yaml", import.meta.url), "utf8"),
+  const workflow = await readFile(
+    new URL("../assets/npm-ci.yaml", import.meta.url),
+    "utf8",
   );
+  const nodes = publisher.workflowMatrix(workflow);
+  expect(() =>
+    publisher.workflowMatrix(
+      workflow.replaceAll("actions/checkout@v7", "actions/checkout@v4"),
+    ),
+  ).toThrow("structure mismatch");
   expect(
     publisher.resolveConfiguration(
       projects,

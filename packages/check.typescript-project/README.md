@@ -48,6 +48,11 @@ output 的 `references/` 和 `assets/` 读取，不依赖作者源码目录。
 质量 workflow 先与 [npm-ci.yaml](assets/npm-ci.yaml)
 比较固定结构，再校验唯一有限参数 jobs.compatibility.strategy.matrix.node-version。现有矩阵位于其他 job 时报告实际路径/值与标准结构差异，不误报矩阵未定义，不追加派生矩阵或发布绑定问题。固定权限、触发和失败传播不可扩展绕过。
 
+当前标准采用 `actions/checkout@v7`、`actions/setup-node@v7` 和
+`pnpm/action-setup@v6`，三者自身使用 Node 24 Action
+runtime；项目开发 Node 和消费者兼容矩阵仍独立选择。版本属于随 CAR 交付的标准资产，不由 GitHub
+workflow 语法强制。升级标准后需要重建 CAR，并迁移项目 workflow 与固定发布核心；旧 CAR 不会自动更新。
+
 非法输入、意外 I/O 故障和取消属于执行故障，不会转换为正常的通过或不通过结果。
 
 ## 联网与支持边界

@@ -54,10 +54,10 @@ test("the publisher installs pnpm before setup-node initializes its pnpm cache",
     readFileSync(".github/workflows/npm-publish.yaml", "utf8"),
   );
   const steps = workflow.jobs.publish.steps;
-  const pnpm = steps.findIndex((step) => step.uses === "pnpm/action-setup@v4");
+  const pnpm = steps.findIndex((step) => step.uses === "pnpm/action-setup@v6");
   const cache = steps.findIndex(
     (step) =>
-      step.uses === "actions/setup-node@v4" && step.with?.cache === "pnpm",
+      step.uses === "actions/setup-node@v7" && step.with?.cache === "pnpm",
   );
   assert.ok(pnpm >= 0 && cache > pnpm);
 });

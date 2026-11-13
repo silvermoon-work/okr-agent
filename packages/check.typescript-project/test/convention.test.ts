@@ -749,10 +749,10 @@ it("does not accept an unrelated safe CI job as proof of the actual check job en
   decoy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - run: pnpm check
 `,
   );

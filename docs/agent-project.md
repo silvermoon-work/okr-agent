@@ -102,6 +102,10 @@
 - The only publishing entries are `pnpm release` and `pnpm release-dry-run`,
   used by `.github/workflows/npm-publish.yaml`. Their shared fixed core reads
   the existing package mapping; it never batch-publishes.
+- Workflow standards use `actions/checkout@v7`, `actions/setup-node@v7` and
+  `pnpm/action-setup@v6`, whose own Action runtime is Node 24. Keep the Check
+  assets, actual workflows and publisher's exact CI verifier aligned. This does
+  not change the project's development Node or consumer compatibility matrix.
 - For a focused TypeScript test, run
   `pnpm --filter <package> exec vitest run --root . --config ../../vitest.config.ts test/<file>.test.ts`.
   Fixed standard entries intentionally reject extra arguments.

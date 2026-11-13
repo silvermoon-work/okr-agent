@@ -177,9 +177,9 @@ function ciSource(): Record<string, unknown> {
       quality: {
         strategy: { matrix: { "node-version": ["22.15.0", "24.11.0"] } },
         steps: [
-          { uses: "actions/checkout@v4" },
-          { uses: "actions/setup-node@v4" },
-          { uses: "pnpm/action-setup@v4" },
+          { uses: "actions/checkout@v7" },
+          { uses: "actions/setup-node@v7" },
+          { uses: "pnpm/action-setup@v6" },
           { run: "pnpm install --frozen-lockfile" },
           { run: "pnpm check" },
         ],
@@ -274,7 +274,7 @@ it.each([
   { strategy: { matrix: { "node-version": ["${{ dynamic }}"] } } },
   {
     steps: [
-      { uses: "actions/checkout@v4" },
+      { uses: "actions/checkout@v7" },
       { uses: "unknown/action@v1" },
       { run: "pnpm install --frozen-lockfile" },
       { run: "pnpm check", env: {} },

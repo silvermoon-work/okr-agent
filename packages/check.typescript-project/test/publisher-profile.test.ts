@@ -36,6 +36,20 @@ async function check() {
 it("proves a complete single-package tsc ESM/maps/source + exact standard OIDC publisher profile without executing target code", async () => {
   expect(await check()).toEqual([]);
 });
+it.each([
+  [".github/workflows/ci.yaml", "ci-mismatch"],
+  [".github/workflows/npm-publish.yaml", "release-mismatch"],
+] as const)("rejects retired Action versions in %s", async (path, code) => {
+  const workflow = await readFile(join(root, path), "utf8");
+  await put(
+    root,
+    path,
+    workflow.replaceAll("actions/checkout@v7", "actions/checkout@v4"),
+  );
+  const problem = (await check()).find((entry) => entry.code === code);
+  expect(problem?.brief).toContain("actions/checkout@v4");
+  expect(problem?.brief).toContain("actions/checkout@v7");
+});
 it("keeps an unknown publisher configuration unconfirmed with topology-specific repair evidence", async () => {
   const config = {
     schemaVersion: 1,
