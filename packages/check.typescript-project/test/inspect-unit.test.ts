@@ -18,17 +18,14 @@ import {
   strict,
   testEvidence,
   vitestConfig,
+  workflow as standardWorkflow,
 } from "./fixture.js";
+import { dataYaml } from "../src/files.js";
 
 vi.mock("../src/convention.js", () => ({ convention: vi.fn() }));
 vi.mock(import("../src/script-profile.js"), async (importOriginal) => ({
   ...(await importOriginal()),
   scriptProfile: vi.fn(),
-}));
-vi.mock("../src/quality-workflow.js", () => ({
-  qualityWorkflow: vi
-    .fn()
-    .mockResolvedValue({ nodeVersions: ["22.15.0", "24.11.0"] }),
 }));
 let data: Record<string, string>;
 let scan: MockInstance<Files["scan"]>;
@@ -358,21 +355,19 @@ it("reports missing GitHub workflows", async () => {
   delete data[".github/workflows/ci.yaml"];
   expect(await check()).toContainEqual({
     code: "ci-missing",
-    brief: "缺少 GitHub Actions 工作流",
+    brief: ".github/workflows/ci.yaml: required quality workflow missing",
   });
 });
 it.each([
-  [{ on: { pull_request: null, push: { extra: true } } }, "unsupported push"],
   [{ on: { pull_request: null, push: { tags: ["*"] } } }, "tags-only"],
   [
     { on: { pull_request: null, push: { paths: ["src/**"] } } },
-    "filtered push",
+    "full coverage",
   ],
   [
     { on: { pull_request: { branches: ["main"] }, push: null } },
-    "filtered pull_request",
+    "all PR branches",
   ],
-  [{ on: { pull_request: null, push: null }, defaults: {} }, "defaults/env"],
   [
     {
       on: { pull_request: null, push: null },
@@ -389,10 +384,12 @@ it.each([
   "rejects unsupported workflow trigger or execution semantics",
   async (workflow, reason) => {
     github(workflow);
-    expect(await check()).toContainEqual({
-      code: "ci-unconfirmed",
-      brief: expect.stringContaining(reason) as unknown,
-    });
+    expect(
+      (await check()).some(
+        (problem) =>
+          problem.code.startsWith("ci-") && problem.brief.includes(reason),
+      ),
+    ).toBe(true);
   },
 );
 it.each(
@@ -439,29 +436,13 @@ it.each(
     (await check()).some((problem) => problem.code.startsWith("ci-")),
   ).toBe(true);
 });
-it("accepts an unconditional ordered CI job with root-selected tools", async () => {
+it("accepts the compliant example and benign workflow extensions", async () => {
   github({
-    on: { pull_request: null, push: { branches: ["main"] } },
-    jobs: {
-      check: {
-        steps: [
-          {
-            uses: "actions/checkout@v7",
-            with: { "persist-credentials": false },
-          },
-          {
-            uses: "actions/setup-node@v7",
-            with: { "node-version-file": ".node-version" },
-          },
-          {
-            uses: "pnpm/action-setup@v6",
-            with: { run_install: false, package_json_file: "package.json" },
-          },
-          { run: "pnpm install --frozen-lockfile" },
-          { run: "pnpm run check", shell: "bash" },
-        ],
-      },
-    },
+    ...dataYaml(standardWorkflow),
+    name: "custom quality",
+    env: { GREETING: "hello" },
+    defaults: {},
+    metadata: { free: true },
   });
   expect(await check()).toEqual([]);
 });

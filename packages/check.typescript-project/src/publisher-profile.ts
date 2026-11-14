@@ -7,6 +7,7 @@ import { repository } from "./repository.js";
 import { fixedFile } from "./script-profile.js";
 import { releaseMappings } from "./release-evidence.js";
 import { qualityWorkflow, type QualityProfile } from "./quality-workflow.js";
+import { workflowPredicates } from "../assets/workflow-predicates.mjs";
 
 type Report = (
   domain: "release" | "ci" | "dependency",
@@ -16,9 +17,6 @@ type Report = (
 export interface PublisherProfile {
   nodeVersions: string[];
   directory?: string;
-}
-function text(bytes: Uint8Array) {
-  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }
 function sameData(left: unknown, right: unknown): boolean {
   const normalize = (value: unknown): unknown => {
@@ -38,45 +36,11 @@ function fields(
   names: string[],
   source = "release.config.json",
 ) {
-  if (Object.keys(value).sort().join() !== [...names].sort().join())
+  if (names.some((name) => !Object.hasOwn(value, name)))
     throw new Unconfirmed(
-      `${source}: 观察字段 ${JSON.stringify(Object.keys(value))}；npm publisher v1 要求闭合字段 ${JSON.stringify(names)}`,
+      `${source}: 观察字段 ${JSON.stringify(Object.keys(value))}；npm publisher v1 要求字段 ${JSON.stringify(names)}`,
     );
 }
-function difference(
-  observed: unknown,
-  expected: unknown,
-  path = "",
-): string | undefined {
-  const display = (value: unknown) =>
-    (value === undefined ? "未声明" : JSON.stringify(value)).slice(0, 1000);
-  if (
-    observed &&
-    expected &&
-    typeof observed === "object" &&
-    typeof expected === "object" &&
-    !Array.isArray(observed) &&
-    !Array.isArray(expected)
-  ) {
-    const left = record(observed);
-    const right = record(expected);
-    for (const key of [
-      ...new Set([...Object.keys(left), ...Object.keys(right)]),
-    ].sort()) {
-      const found = difference(
-        left[key],
-        right[key],
-        path ? `${path}.${key}` : key,
-      );
-      if (found) return found;
-    }
-    return undefined;
-  }
-  return sameData(observed, expected)
-    ? undefined
-    : `${path}: 观察 ${display(observed)}；标准要求 ${display(expected)}`;
-}
-
 export async function publisherProfile(
   files: Files,
   projects: Project[],
@@ -245,22 +209,15 @@ export async function publisherProfile(
       return undefined;
     }
     let okay = true;
-    for (const [path, canonical] of [
-      [".github/workflows/npm-publish.yaml", assets.publishWorkflow],
-    ] as const) {
+    for (const path of [".github/workflows/npm-publish.yaml"]) {
       if (!files.exists(path)) {
         report("release", "missing", `${path}: 标准 publisher workflow 缺失`);
         okay = false;
         continue;
       }
-      const expected = dataYaml(text(canonical));
       const observed = dataYaml(await files.text(path));
-      if (!sameData(observed, expected)) {
-        report(
-          "release",
-          "mismatch",
-          `${path}: 固定 publisher workflow 不匹配；${difference(observed, expected)}；必须使用标准触发器、权限、CI 聚合与 pnpm release/release-dry-run 调用`,
-        );
+      for (const failure of workflowPredicates(observed, "publisher")) {
+        report("release", failure.status, `${path}: ${failure.brief}`);
         okay = false;
       }
     }
@@ -290,6 +247,18 @@ export async function publisherProfile(
           files,
           `scripts/${name}.mjs`,
           assets.scripts[name]!,
+          (status, brief) => {
+            report("release", status, brief);
+          },
+        ))
+      )
+        okay = false;
+      if (
+        affected.length &&
+        !(await fixedFile(
+          files,
+          "scripts/lib/workflow-predicates.mjs",
+          assets.scripts["workflow-predicates"]!,
           (status, brief) => {
             report("release", status, brief);
           },

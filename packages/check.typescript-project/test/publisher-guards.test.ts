@@ -354,6 +354,18 @@ it("does not substitute PR, other SHA, failed/skipped matrix or empty aggregate 
     publisher.successfulJobs(jobs, nodes);
   }).not.toThrow();
   expect(() => {
+    publisher.successfulJobs(
+      [
+        ...jobs,
+        { name: "Notification", status: "completed", conclusion: "skipped" },
+      ],
+      nodes,
+    );
+  }).not.toThrow();
+  expect(() => {
+    publisher.successfulJobs([...jobs, jobs[0]], nodes);
+  }).toThrow("incomplete");
+  expect(() => {
     publisher.successfulJobs(jobs.slice(1), nodes);
   }).toThrow("incomplete");
   for (const change of [

@@ -355,8 +355,8 @@ describe("native npm provenance and process delegation", () => {
   });
 
   it("rejects unknown pnpm configuration sources and validates YAML registry aliases", async () => {
-    const host = windowsHost();
-    const pnpm = tool("pnpm.cmd");
+    const host = nativeHost({ PATH: bin });
+    const pnpm = tool("pnpm");
     await host.assertRegistryContext("npm", pnpm, cwd, signal());
     expect(mocks.execute).not.toHaveBeenCalled();
     mocks.execute.mockResolvedValue({ code: 1, stdout: "" });

@@ -19,7 +19,7 @@
    script。
 5. 工作流：根内 Git origin/主分支事实、GitHub
    main-push 与保留的 PR 入口采用固定质量 workflow，执行 pnpm
-   check，全部必需 job/矩阵/聚合成功才合格。先完整比较结构，仅标准 compatibility.strategy.matrix.node-version 允许 2..8 个唯一精确稳定版本参数；结构不符给出实际路径/值及期望，短路派生矩阵/发布绑定问题，不猜任意 workflow。适用包统一最低值未通过先报环境问题并短路依赖矩阵差异；独立默认 CI/发布保护仍检。通过后 required 为统一消费者最低值及一个更高、当前受支持且满足所有适用范围的官方 LTS；更低或范围外额外条目标 unsupported，不单独因此报 ci-mismatch。完整矩阵仍运行开发 check，工具不兼容保留 unconfirmed 支持边界，不擅自引入新标准 probe。npm 发布采用固定资产与受保护 workflow，独立确凿缺陷继续报告。
+   check，全部必需 job/矩阵/聚合成功才合格。[共享显式谓词](npm-publisher-v1.md#ci-与事实边界)定义触发覆盖、稳定发布身份、工具/冻结安装/失败传播、缓存、可选定的有效 timeout 与安全并发；模板不是全量相等白名单。无关字段、job 与无害步骤可以扩展；无法证明的动态语义只对适用谓词报告准确 unconfirmed。谓词不符短路派生矩阵/发布绑定问题。统一最低值未通过先报环境问题并短路依赖矩阵差异；独立默认 CI/发布保护仍检。required 为统一消费者最低值及一个更高、当前受支持且满足适用范围的官方 LTS；范围外额外条目标 unsupported，不单独因此报 ci-mismatch。完整矩阵仍运行开发 check，工具不兼容保留 unconfirmed，不擅自引入 probe。声明 native-test 与 smoke 的成员还要求独立自动 main/PR 及手动 Ubuntu/Windows 工作流。
 6. 文档与结构：声明 workspace 定位全部成员，聚合根无虚构源码/build 要求。README/CONTRIBUTING/docs/agent-project.md 只检查存在/可读/非空，固定根 AGENTS.md 与[唯一标准 asset](../assets/AGENTS.md)完整比较，仅统一 CRLF/CR 到 LF。嵌套 AGENTS 不能静默忽略。gitignore 检查依赖、输出、覆盖率/缓存与秘密，且不排除必要文件。
 
 固定质量和发布 workflow 当前使用

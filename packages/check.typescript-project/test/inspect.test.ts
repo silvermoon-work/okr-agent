@@ -303,7 +303,7 @@ it("does not reinterpret observed frozen-install/check steps as absent when Node
   const failures = (await check()).filter((p) => p.code.startsWith("ci-"));
   expect(failures).toHaveLength(1);
   expect(failures[0]?.brief).toContain('"node-version":22');
-  expect(failures[0]?.brief).toContain("固定质量 workflow 结构不匹配");
+  expect(failures[0]?.brief).toContain("Node selection without override");
   expect(failures[0]?.brief).not.toContain("未声明根 pnpm check");
   expect(failures[0]?.brief).not.toContain("未在 checkout 后声明");
   await put(
@@ -315,7 +315,7 @@ it("does not reinterpret observed frozen-install/check steps as absent when Node
   );
   expect(
     (await check()).find((p) => p.code.startsWith("ci-"))?.brief,
-  ).toContain("标准要求");
+  ).toContain("Node selection without override");
 });
 it.each([
   "pnpm exec node scripts/check.mjs",
@@ -477,13 +477,13 @@ it("allows a generated lockfile formatting exclusion but names excluded maintain
   expect(problems[0]?.brief).toContain("tsconfig.json");
   expect(problems[0]?.brief).not.toContain("pnpm-lock.yaml");
 });
-it("rejects extra jobs and setup overrides outside the fixed quality workflow instead of guessing their meaning", async () => {
+it("allows unrelated extra jobs and explicit benign setup options", async () => {
   await put(
     root,
     ".github/workflows/ci.yaml",
     workflow.replace(
-      "- uses: pnpm/action-setup@v6",
-      "- uses: pnpm/action-setup@v6\n        with:\n          run_install: false",
+      "cache: true",
+      "cache: true\n          run_install: false",
     ) +
       `
   aggregate:
@@ -493,12 +493,7 @@ it("rejects extra jobs and setup overrides outside the fixed quality workflow in
       - run: echo done
 `,
   );
-  expect(await check()).toEqual([
-    expect.objectContaining({
-      code: "ci-mismatch",
-      brief: expect.stringContaining("jobs.aggregate") as unknown,
-    }),
-  ]);
+  expect(await check()).toEqual([]);
 });
 it("reports CI root tool selection once while retaining independent checks", async () => {
   await put(
@@ -508,16 +503,13 @@ it("reports CI root tool selection once while retaining independent checks", asy
   );
   const problems = await check();
   expect(problems.map((p) => p.code)).toEqual(["ci-mismatch"]);
-  expect(problems[0]?.brief).toContain('"node-version-file":".node-version"');
+  expect(problems[0]?.brief).toContain("Node selection without override");
 });
 it("does not accept pnpm auto-install as the explicit frozen installation step", async () => {
   await put(
     root,
     ".github/workflows/ci.yaml",
-    workflow.replace(
-      "- uses: pnpm/action-setup@v6",
-      "- uses: pnpm/action-setup@v6\n        with:\n          run_install: true",
-    ),
+    workflow.replace("cache: true", "cache: true\n          run_install: true"),
   );
   expect((await check()).map((p) => p.code)).toEqual(["ci-mismatch"]);
 });
@@ -981,7 +973,7 @@ it("does not accept excluded main or tag-only CI triggers", async () => {
     ".github\\workflows\\ci.yaml",
     workflow.replace("[main]", '[main, "!main"]'),
   );
-  expect((await check()).map((p) => p.code)).toContain("ci-mismatch");
+  expect((await check()).map((p) => p.code)).toContain("ci-unconfirmed");
   await put(
     root,
     ".github\\workflows\\ci.yaml",

@@ -109,6 +109,11 @@ export async function put(
 export async function fixture(root: string): Promise<void> {
   await put(root, "package.json", manifest);
   const assets = await testEvidence();
+  await put(
+    root,
+    "scripts/lib/workflow-predicates.mjs",
+    Buffer.from(assets.scripts["workflow-predicates"]!).toString("utf8"),
+  );
   for (const name of Object.keys(manifest.scripts))
     await put(
       root,

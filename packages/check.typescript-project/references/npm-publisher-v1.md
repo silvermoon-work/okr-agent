@@ -25,6 +25,8 @@ build，可涵盖依赖，只对选中目录 pack/校验/publish 一次。其他
 从此次 output 的 assets/ 读取以下实际资源，保护已有自定义实现，不自动覆盖：
 
 - [npm-publish.mjs](../assets/npm-publish.mjs) → `scripts/lib/npm-publish.mjs`
+- [workflow-predicates.mjs](../assets/workflow-predicates.mjs) →
+  `scripts/lib/workflow-predicates.mjs`
 - [release.mjs](../assets/release.mjs) → `scripts/release.mjs`
 - [release-dry-run.mjs](../assets/release-dry-run.mjs) →
   `scripts/release-dry-run.mjs`
@@ -33,9 +35,9 @@ build，可涵盖依赖，只对选中目录 pack/校验/publish 一次。其他
 - [npm-ci.yaml](../assets/npm-ci.yaml) → `.github/workflows/ci.yaml`
 
 门卫完整源字节必须与实际 Bundle
-resource 相同，仅允许换行归一化；两个入口与 lib 都校验，不能自由替换保障行为的模块。Check 不导入/执行目标副本。workflow 比较完整 YAML 数据语义，只在受保护 tag
+resource 相同，仅允许换行归一化；两个入口与两个 lib 都校验，不能自由替换保障行为的模块。Check 不导入/执行目标副本。workflow 按共享显式谓词验证而非模板全量相等，只在受保护 tag
 push 调用 pnpm release，手动 dispatch 调用 pnpm
-release-dry-run，不接受内部 Node 调用、裸 publish 或额外发布命令。只有 CI 的 compatibility 矩阵字面值可在验证其 2..8 个唯一精确稳定版本及统一消费者最低值前置后改变，其他语义须与该版本资源相同。矩阵直接读取实际
+release-dry-run，不接受内部 Node 调用、裸 publish 或额外发布命令。模板是合规示例，不是字段白名单：名称、描述、无关 env、额外通知 job、无害步骤等可以扩展；只对适用谓词无法证明的动态配置报告精确的 unconfirmed。矩阵验证其 2..8 个唯一精确稳定版本及统一消费者最低值。矩阵直接读取实际
 `.github/workflows/ci.yaml`，不维护复制列表。所有 package
 script 名称禁止冒号，命令严格为 node scripts/<同名>.mjs 且无参数。
 
@@ -80,10 +82,40 @@ API 端点属于该明确远程发布职责；Check 在本机仅比较资源字�
 
 ## CI 与事实边界
 
+扩展步骤不会被一律当成无害：必需 install/check/native 结果或聚合 guard 之前，
+只静态证明无展开/重定向的字面量 echo 日志；未知脚本、复合命令或 opaque action
+对后续配置、工作区、环境的效果只按这个输入完整性谓词报告 unconfirmed，不执行或猜测代码。
+必需结果之后的质量通知步骤不影响已完成的结果；发布 job 持有 OIDC，
+其任意额外步骤均需证明无发布/工作区副作用。无关 job 和 metadata 不受此谓词影响。
+
+聚合步骤名 `Confirm required checks succeeded`
+也是发布器绑定的稳定身份，须唯一且成功；
+其无条件 bash guard 从实际 needs 读取结果并失败退出。额外日志步骤不改变此绑定。
+Native job 名称不参与发布成绩绑定，可以改名或拆为两个常量平台 job；
+完整平台覆盖及每个必需 job 的执行谓词仍须成立。
+
 main 更新执行固定质量 CI 的 pnpm
-check，保留 PR 质量入口，全部必需 job/矩阵/聚合成功才合格。质量与发布结构固定，仅 quality
-compatibility.strategy.matrix.node-version 可作有限版本参数扩展。先比较完整 workflow 结构，列明观察路径/值与期望；实际矩阵使用其他 job
-ID 时是标准结构不符，不是项目没有矩阵。前置结构不符不追加派生矩阵/发布绑定问题，独立确凿缺陷继续报告。兼容性是质量 CI 的组成部分，不再另立发布前整套检查。
+check，保留 PR 质量入口，全部必需 job/矩阵/聚合成功才合格。固定身份为 `check` /
+`Quality default`、`compatibility` /
+`Node.js ${{ matrix.node-version }}`、`release-verification` /
+`Release verification (v1)`：发布器通过这些名字核对远端完整 job/matrix 与聚合，故这些身份不能自由改名；workflow 名称以及无关 job 名称可以变化。额外矩阵轴会影响发布器的远端名称枚举，当前只对这个身份谓词报告 unconfirmed；无关 job 的矩阵不受限制。前置谓词不符不追加派生矩阵/发布绑定问题，独立确凿缺陷继续报告。
+
+质量与每个兼容矩阵 job 必须在 checkout@v7 后用 setup-node@v7 选择根
+`.node-version`（矩阵选择其版本），action-setup@v6 读取根 packageManager；无条件 frozen
+install →
+check，不允许 if/cache-hit 跳过或 continue-on-error 掩盖。每个 job 必须显式声明 1..360 整数分钟 timeout（15/5 只是示例）。每个质量/矩阵 job 使用一个 pnpm
+store cache，优先 v6 `cache: true`，也接受 setup-node
+`cache: pnpm`，不重复缓存系统。有关 env/defaults/步骤覆盖只能在会改变这些命令语义时阻断；无关配置不被一概禁止。
+
+并发必须隔离 workflow/event/PR，main 每次使用唯一 run_id；同一 PR 过期执行取消。例如 group
+`${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}`、cancel
+`${{ github.event_name == 'pull_request' }}`。支持共享谓词中可证明的表达式变体，不比较整个 YAML。只用 branch 分组即使 cancel=false 仍会替换 pending
+main run，不能用于发布的精确 SHA 验证。
+
+成员 scripts 同时声明 native-test 与 smoke 时表示 native 职责（不推断任意脚本代码）。需独立 Ubuntu/Windows 自动 main/PR 及 manual
+workflow、cache/timeout/并发、无条件 frozen install → 该成员及依赖 build →
+native-test →
+smoke。当前用无 paths 过滤证明相关源码、内部依赖、根锁文件、工具配置和 workflow 自身全部覆盖；无法证明过滤完整性的情况仅报告该覆盖谓词 unconfirmed。
 
 默认质量 job 读取根 .node-version/packageManager。先检查所有适用代码包（包括 private）的 engines.node 最低 SemVer 一致；缺失/非法或不同最低值先报环境问题，短路依赖的矩阵差异，但默认 CI 和发布保护仍独立检查。required 兼容矩阵含统一消费者最低值及一个更高、当前受支持且满足所有适用范围的官方 LTS。更低或范围外的额外条目标为 unsupported，不单独因此报 ci-mismatch 或声称所有包承诺该版本。现有 profile 的矩阵仍对全部条目执行完整开发 check：消费者最低 Node 不必支持所有现代开发工具；若工具不能运行在这些条目上，准确报告该 profile 尚不能独立证明运行兼容的 unconfirmed，不要求缩窄包 engines。完全分离消费者运行探测与开发检查仍是本 profile 的明确待扩展边界，需要先确认项目约定/脚本，不擅自加入新标准动作。聚合同时依赖默认与完整矩阵，固定的失败传播代码不能变成空壳成功。
 

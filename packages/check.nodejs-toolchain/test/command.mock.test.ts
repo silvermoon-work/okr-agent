@@ -152,6 +152,7 @@ describe("controlled command lifecycle", () => {
     "ERR_PNPM_ENV_REPLACE",
     "Failed to resolve env",
     'Ignored project-level request destination "registry" because environment variables are not expanded',
+    '[ERROR] The "registry" registry URL in "pnpm-workspace.yaml" contains an environment variable\npnpm does not expand environment variables in registry URLs that come from a file committed to the repository.',
   ])("marks unsupported interpolation in stderr: %s", async (stderr) => {
     const running = execute(executable, [], cwd, signal(), {});
     child.stderr.emit("data", Buffer.from(stderr));

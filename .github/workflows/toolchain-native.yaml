@@ -1,8 +1,16 @@
 name: Native toolchain compatibility
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group:
+    ${{ github.workflow }}-${{ github.event_name }}-${{
+    github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   native:
     runs-on: ${{ matrix.os }}
@@ -14,10 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
+        with:
+          cache: true
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
-          cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @silvermoon-work/check.nodejs-toolchain... build
       - run: pnpm --filter @silvermoon-work/check.nodejs-toolchain native-test
