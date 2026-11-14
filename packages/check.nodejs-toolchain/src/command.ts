@@ -147,7 +147,7 @@ export async function execute(
         resolve({
           code: startCode ?? code,
           stdout,
-          ...(/Failed to (?:replace|resolve) env|ERR_PNPM_ENV_REPLACE|Environment variable.*(?:not defined|not set)|Ignored project-level request destination "registry"[\s\S]*environment variables are not expanded/i.test(
+          ...(/Failed to (?:replace|resolve) env|ERR_PNPM_ENV_REPLACE|Environment variable.*(?:not defined|not set)|Ignored project-level request destination "registry"[\s\S]*environment variables are not expanded|The "registry" registry URL in "pnpm-workspace\.yaml" contains an environment variable/i.test(
             stderr,
           )
             ? { unsupportedInterpolation: true }
