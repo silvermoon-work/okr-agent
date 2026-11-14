@@ -144,6 +144,23 @@ pnpm --filter @silvermoon-work/core test
 
 ## Commands
 
+### CI 谓词与扩展
+
+质量 workflow 使用显式保护谓词，不把标准 YAML 当全量相等白名单。
+无关通知 job、workflow 名称、metadata、无害步骤可扩展；稳定质量/矩阵/聚合身份、
+完整 main push 与 PR 覆盖、根工具选择、冻结安装 → check 与失败传播不可绕过。
+每个标准 job 显式指定 1..360 整数分钟 timeout；质量及兼容矩阵使用一个 pnpm store
+cache，
+本项目选择 action-setup@v6 的 cache:true，命中缓存仍执行冻结安装和 check。
+并发按 workflow/event/PR 分组并取消同 PR 过期运行，main 以 run_id 隔离，
+避免 cancel:false 仍替换同组 pending 主干验证。
+详情见
+[Check 与发布器共享谓词](packages/check.typescript-project/references/npm-publisher-v1.md#ci-与事实边界)。
+
+`toolchain-native.yaml` 现在独立自动覆盖 main push、所有 PR 并支持手动执行，
+在 Ubuntu/Windows 冻结安装后 build → native-test → smoke；无路径过滤以覆盖源码、
+内部依赖、根锁文件、工具配置与 workflow 自身。
+
 | Command              | Purpose                                                 |
 | -------------------- | ------------------------------------------------------- |
 | `pnpm build`         | Build every workspace in dependency order               |

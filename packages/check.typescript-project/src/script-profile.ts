@@ -17,6 +17,7 @@ export const scriptResources = [
   ["commands", "commands.mjs"],
   ["release", "release.mjs"],
   ["release-dry-run", "release-dry-run.mjs"],
+  ["workflow-predicates", "workflow-predicates.mjs"],
 ] as const;
 type Status = "missing" | "mismatch" | "unconfirmed";
 type Report = (status: Status, brief: string) => void;
@@ -174,6 +175,13 @@ export async function scriptProfile(
           (status, brief) => {
             report(status, `${brief}；影响范围: ${affected.join(", ")}`);
           },
+        );
+      if (affected.length && library === "npm-publish")
+        await fixedFile(
+          files,
+          files.path(project.directory, "scripts/lib/workflow-predicates.mjs"),
+          assets["workflow-predicates"]!,
+          report,
         );
     }
   }

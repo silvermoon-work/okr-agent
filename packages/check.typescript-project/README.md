@@ -45,8 +45,16 @@ Engine 执行。检查只读取目标项目，不运行其代码、配置模块�
 前置问题会抑制依赖它的连带报告，其他成员和独立检查继续执行。检查结果中的文档及标准资产通过 Run
 output 的 `references/` 和 `assets/` 读取，不依赖作者源码目录。
 
-质量 workflow 先与 [npm-ci.yaml](assets/npm-ci.yaml)
-比较固定结构，再校验唯一有限参数 jobs.compatibility.strategy.matrix.node-version。现有矩阵位于其他 job 时报告实际路径/值与标准结构差异，不误报矩阵未定义，不追加派生矩阵或发布绑定问题。固定权限、触发和失败传播不可扩展绕过。
+质量 workflow 按 [共享显式谓词](references/npm-publisher-v1.md#ci-与事实边界)
+校验，不与 [npm-ci.yaml](assets/npm-ci.yaml) 全量相等比较；模板只是合规示例。
+workflow 名称、无关 job/metadata/env、无害步骤可扩展，约束之外不一概拒绝未知字段。
+稳定质量/矩阵/聚合及聚合步骤身份用于远端发布成绩绑定；完整 main/PR 触发、固定工具选择、
+无条件冻结安装 → check、失败传播、pnpm
+store 缓存、可选定的 1..360 整数分钟 timeout、
+取消同 PR 过期执行且 main
+run_id 隔离的并发必须满足谓词。只对无法证明的适用动态语义
+报告路径、观察值和缺少的证明；前置不符不追加派生矩阵/发布绑定问题。
+同时声明 native-test 与 smoke 的成员要求独立自动 main/PR 及手动 Ubuntu/Windows 验证。
 
 当前标准采用 `actions/checkout@v7`、`actions/setup-node@v7` 和
 `pnpm/action-setup@v6`，三者自身使用 Node 24 Action

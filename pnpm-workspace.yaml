@@ -25,7 +25,7 @@ catalog:
   "@eslint/js": ^10.0.1
   "@types/node": ^26.6.6
   "@vitest/coverage-v8": ^5.1.0
-  eslint: ^10.14.0
+  eslint: ^10.15.0
   globals: ^17.14.0
   prettier: ^3.10.1
   publint: ^0.3.25
@@ -45,19 +45,11 @@ minimumReleaseAgeExclude:
   - "@turbo/windows-arm64@2.11.8"
   - turbo@2.11.8
   - github-ci-verify@0.1.0
-  - "@silvermoon-work/task-builder-cli@0.1.0"
-  - "@silvermoon-work/task-builder@0.1.0"
-  - "@silvermoon-work/task-engine@0.1.0"
-  - "@silvermoon-work/task-protocol@0.1.0"
-  - "@silvermoon-work/task-sdk@0.1.0"
-  - "@silvermoon-work/task-builder-cli@0.2.0-rc.0"
-  - "@silvermoon-work/task-builder@0.2.0-rc.0"
-  - "@silvermoon-work/task-engine@0.2.0-rc.0"
-  - "@silvermoon-work/task-protocol@0.2.0-rc.0"
-  - "@silvermoon-work/task-sdk@0.2.0-rc.0"
-  - "@silvermoon-work/task-builder-cli@0.2.0-rc.2"
-  - "@silvermoon-work/task-builder@0.2.0-rc.2"
-  - "@silvermoon-work/task-engine@0.2.0-rc.2"
-  - "@silvermoon-work/task-protocol@0.2.0-rc.1"
-  - "@silvermoon-work/task-sdk@0.2.0-rc.1"
+  - "@silvermoon-work/task-builder-cli@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.2"
+  - "@silvermoon-work/task-builder@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.2"
+  - "@silvermoon-work/task-engine@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.2"
+  - "@silvermoon-work/task-protocol@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.1"
+  - "@silvermoon-work/task-sdk@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.1"
   - "@silvermoon-work/ipfs-store@0.1.0-rc.1"
+  - "@eslint/config-array@0.23.6"
+  - eslint@10.15.0

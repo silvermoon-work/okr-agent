@@ -36,8 +36,8 @@ pnpm --filter @silvermoon-work/check.nodejs-toolchain native-test
 pnpm --filter @silvermoon-work/check.nodejs-toolchain smoke
 ```
 
-仓库的 `Native toolchain compatibility`
-workflow 可手动在 Ubuntu 和 Windows 上执行这两组验证，工具来自固定 packageManager、lockfile 和 devDependencies。它独立于默认质量门禁，不代表每台开发机都需安装这些工具。Windows
+仓库的 `Native toolchain compatibility` workflow 自动覆盖 main
+push 与所有 PR，也可手动在 Ubuntu 和 Windows 上执行这两组验证，工具来自固定 packageManager、lockfile 和 devDependencies。无 paths 过滤确保源码、内部依赖、根锁文件、工具配置和 workflow 自身变更都触发；缓存命中仍冻结安装并执行 build/native-test/smoke，每个 job 有显式 timeout 与隔离 PR/main 的安全并发。它独立于默认质量门禁，不代表每台开发机都需安装这些工具。Windows
 npm-prefix 回归复制真实 npm 本体，通过私有 junction 只读复用原安装依赖，清理仅删除私有副本和链接。真实 npm 用例使用 30 秒测试预算；每条工具命令仍保留 10 秒执行限制。
 
 ### 官方 portable nvm-windows 隔离实证

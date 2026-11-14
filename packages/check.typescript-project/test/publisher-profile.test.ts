@@ -50,19 +50,14 @@ it.each([
   expect(problem?.brief).toContain("actions/checkout@v4");
   expect(problem?.brief).toContain("actions/checkout@v7");
 });
-it("keeps an unknown publisher configuration unconfirmed with topology-specific repair evidence", async () => {
+it("allows unrelated publisher configuration metadata", async () => {
   const config = {
     schemaVersion: 1,
     package: { id: "library", name: "@acme/library", directory: "." },
     ci: { nodeVersions: ["22.15.0", "24.11.0"] },
   };
   await put(root, "release.config.json", { ...config, adapter: "workspace" });
-  const problem = (await check()).find(
-    (item) => item.code === "release-unconfirmed",
-  );
-  expect(problem?.brief).toContain('"adapter"');
-  expect(problem?.brief).toContain("#single-package");
-  expect(problem?.brief).toContain("闭合字段");
+  expect(await check()).toEqual([]);
 });
 it.each([1, 2])(
   "supports %s real code members with a private aggregate root and one explicitly selected publisher target",
@@ -295,7 +290,7 @@ it.each([
     "complete CI aggregate",
     ".github/workflows/ci.yaml",
     (text: string) => text.replace("exit 1", "exit 0"),
-    "ci-mismatch",
+    "ci-unconfirmed",
   ],
   [
     "unknown YAML semantics",
@@ -323,17 +318,11 @@ it("reports the observed nonstandard job structure before any derived matrix or 
   await put(root, ".github/workflows/ci.yaml", workflow);
   await rm(join(root, ".github", "workflows", "npm-publish.yaml"));
   const problems = await check();
-  expect(problems).toEqual([
-    {
-      code: "ci-mismatch",
-      brief: expect.stringContaining(
-        'jobs.check.strategy: 观察 {"matrix":{"node-version":["22.15.0","24.11.1"]}}；标准要求 未声明',
-      ) as unknown,
-    },
-  ]);
-  expect(problems[0]?.brief).toContain("固定质量 workflow 结构不匹配");
-  expect(problems[0]?.brief).toContain(
-    "check/compatibility/release-verification",
+  expect(
+    problems.some((problem) => problem.brief.includes("jobs.check.strategy")),
+  ).toBe(true);
+  expect(problems.every((problem) => problem.code.startsWith("ci-"))).toBe(
+    true,
   );
   await put(root, "package.json", {
     ...record(
@@ -345,7 +334,7 @@ it("reports the observed nonstandard job structure before any derived matrix or 
     expect.objectContaining({ code: "delivery-mismatch" }),
   );
 });
-it("accepts only the bounded matrix parameter on the correct fixed quality workflow", async () => {
+it("accepts the bounded Node matrix and scopes unsupported identity axes", async () => {
   const workflow = dataYaml(
     await readFile(join(root, ".github", "workflows", "ci.yaml"), "utf8"),
   );
@@ -380,7 +369,7 @@ it("accepts only the bounded matrix parameter on the correct fixed quality workf
     (await check()).filter((problem) => problem.code.startsWith("ci-")),
   ).toEqual([
     expect.objectContaining({
-      code: "ci-mismatch",
+      code: "ci-unconfirmed",
       brief: expect.stringContaining(
         "jobs.compatibility.strategy.matrix.extra",
       ) as unknown,

@@ -49,15 +49,22 @@ test("the real root gate keeps release regressions and script lint in its execut
     );
   }
 });
-test("the publisher installs pnpm before setup-node initializes its pnpm cache", () => {
+test("the publisher uses exactly one v6 pnpm-store cache without skipping frozen install", () => {
   const workflow = parse(
     readFileSync(".github/workflows/npm-publish.yaml", "utf8"),
   );
   const steps = workflow.jobs.publish.steps;
   const pnpm = steps.findIndex((step) => step.uses === "pnpm/action-setup@v6");
-  const cache = steps.findIndex(
+  const cache = steps.filter(
     (step) =>
       step.uses === "actions/setup-node@v7" && step.with?.cache === "pnpm",
   );
-  assert.ok(pnpm >= 0 && cache > pnpm);
+  assert.ok(pnpm >= 0);
+  assert.equal(steps[pnpm].with.cache, true);
+  assert.equal(cache.length, 0);
+  const install = steps.findIndex(
+    (step) => step.run === "pnpm install --frozen-lockfile",
+  );
+  assert.ok(install > pnpm);
+  assert.equal(steps[install].if, undefined);
 });

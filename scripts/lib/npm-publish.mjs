@@ -7,6 +7,7 @@ import { Buffer } from "node:buffer";
 import semver from "semver";
 import { parse } from "acorn";
 import { parseDocument } from "yaml";
+import { isNodeVersions, workflowPredicates } from "./workflow-predicates.mjs";
 
 // This program runs only in the explicitly selected GitHub publishing workflow.
 // The Check reads its bytes; it never imports or executes a target's copy.
@@ -26,8 +27,8 @@ function object(value) {
 }
 function keys(value, expected) {
   assert(
-    Object.keys(object(value)).sort().join() === [...expected].sort().join(),
-    "Unexpected profile fields",
+    expected.every((key) => Object.hasOwn(object(value), key)),
+    "Missing required profile fields",
   );
 }
 export function configuration(value) {
@@ -61,16 +62,7 @@ export function configuration(value) {
     "Invalid selected package directory",
   );
   keys(value.ci, ["nodeVersions"]);
-  assert(
-    Array.isArray(value.ci.nodeVersions) &&
-      value.ci.nodeVersions.length >= 2 &&
-      value.ci.nodeVersions.length <= 8 &&
-      new Set(value.ci.nodeVersions).size === value.ci.nodeVersions.length &&
-      value.ci.nodeVersions.every(
-        (v) => semver.valid(v) === v && !semver.prerelease(v),
-      ),
-    "Invalid compatibility matrix",
-  );
+  assert(isNodeVersions(value.ci.nodeVersions), "Invalid compatibility matrix");
   return value;
 }
 export function releaseMappings(source) {
@@ -127,20 +119,10 @@ export function workflowMatrix(source) {
   const workflow = document.toJS({ maxAliasCount: 32 });
   const nodes =
     workflow?.jobs?.compatibility?.strategy?.matrix?.["node-version"];
-  const expected = qualityWorkflow(nodes === undefined ? [] : nodes);
-  const normalize = (value) => {
-    if (Array.isArray(value)) return value.map(normalize);
-    if (value && typeof value === "object")
-      return Object.fromEntries(
-        Object.entries(value)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([key, child]) => [key, normalize(child)]),
-      );
-    return value;
-  };
+  const failures = workflowPredicates(workflow);
   assert(
-    JSON.stringify(normalize(workflow)) === JSON.stringify(normalize(expected)),
-    "Fixed quality workflow structure mismatch; expected check/compatibility/release-verification with standard triggers, permissions and failure propagation",
+    failures.length === 0,
+    `Quality workflow predicate structure mismatch: ${failures.map((failure) => failure.brief).join("; ")}`,
   );
   // configuration performs the bounded exact-stable-version validation.
   configuration({
@@ -148,7 +130,6 @@ export function workflowMatrix(source) {
     package: { id: "validation", name: "validation", directory: "." },
     ci: { nodeVersions: nodes },
   });
-  keys(workflow.jobs.compatibility.strategy.matrix, ["node-version"]);
   return nodes;
 }
 export function qualityWorkflow(nodes) {
@@ -158,7 +139,7 @@ export function qualityWorkflow(nodes) {
       uses: "actions/setup-node@v7",
       with: { "node-version-file": ".node-version" },
     },
-    { uses: "pnpm/action-setup@v6" },
+    { uses: "pnpm/action-setup@v6", with: { cache: true } },
     { run: "pnpm install --frozen-lockfile" },
     { run: "pnpm check" },
   ];
@@ -166,15 +147,22 @@ export function qualityWorkflow(nodes) {
     name: "CI",
     on: { push: { branches: ["main"] }, pull_request: null },
     permissions: { contents: "read" },
+    concurrency: {
+      group:
+        "${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}",
+      "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
+    },
     jobs: {
       check: {
         name: "Quality default",
         "runs-on": "ubuntu-latest",
+        "timeout-minutes": 15,
         steps: setup,
       },
       compatibility: {
         name: "Node.js ${{ matrix.node-version }}",
         "runs-on": "ubuntu-latest",
+        "timeout-minutes": 15,
         strategy: { "fail-fast": false, matrix: { "node-version": nodes } },
         steps: setup.map((step, index) =>
           index === 1
@@ -190,6 +178,7 @@ export function qualityWorkflow(nodes) {
         needs: ["check", "compatibility"],
         if: "always()",
         "runs-on": "ubuntu-latest",
+        "timeout-minutes": 5,
         steps: [
           {
             name: "Confirm required checks succeeded",
@@ -404,10 +393,14 @@ export function successfulJobs(jobs, nodes) {
     "Release verification (v1)",
   ];
   assert(
-    jobs.length === expected.length &&
-      new Set(jobs.map((j) => j.name)).size === jobs.length &&
-      expected.every((name) => jobs.some((j) => j.name === name)) &&
-      jobs.every((j) => j.status === "completed" && j.conclusion === "success"),
+    expected.every((name) => {
+      const required = jobs.filter((j) => j.name === name);
+      return (
+        required.length === 1 &&
+        required[0].status === "completed" &&
+        required[0].conclusion === "success"
+      );
+    }),
     "Required CI jobs/matrix incomplete or unsuccessful",
   );
   const aggregate = jobs.find((j) => j.name === "Release verification (v1)");
