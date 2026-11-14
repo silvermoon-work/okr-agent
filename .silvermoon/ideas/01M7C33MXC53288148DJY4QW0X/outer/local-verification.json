@@ -1,0 +1,401 @@
+{
+  "observedAt": "2026-11-14T04:55:05.595Z",
+  "acceptedSource": "9c098ff3c76251ed314b581747a0103e4d75ec6b",
+  "acceptedImplementation": "6b1a3b63a29c0181a379a0615e384a1bd593476c",
+  "verifiedContract": "db70181f8f6e68da24caf0fa0ad90b31eb2d3b7b",
+  "synchronizedContractCommit": "2c509486077f46c18b87dc57057d27564430fbc0",
+  "node": "v26.13.0",
+  "pinnedNode": "26.13.1",
+  "metadata": "accepted deterministic fixture provider; no live registry facts",
+  "productionAndVerificationIdentity": {
+    "production": {
+      "path": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\typescript-project.car",
+      "cid": "bafybeidwniqa77leuzpddh56ln4zyyxbz5z3vn66emoqtpn6bk5z33ya4i",
+      "sha256": "7d80c258d37f4f90e244b7645639de52a76d5438269ecac9d6765687072402fc",
+      "size": 608593,
+      "assets": {
+        "AGENTS.md": "a63459bdc6da75b62711ca6e3e4684464b91791f3c288ec137ca1bdb4f1f42f9",
+        "commands.mjs": "2feb9377a10aed7edcd518ce6d1d228b4136fd65e69e4c1318cb7aa4c9ef7a0c",
+        "deliverables.mjs": "b755e308d2002d91e243d6e6e0c7c65ce61f3c4f87c325a177a77a23215a97ee",
+        "npm-publish.mjs": "2b7581f3a19871286e0213dfbce7b5f7784404719c962dcb1e64badcc2bfc179",
+        "workflow-predicates.mjs": "8135c02e5620eb3ede297e2d435e3ee30f4d985083fc5aab245e64d34b4e0141"
+      }
+    },
+    "deterministicVerification": {
+      "path": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\bundle.car",
+      "cid": "bafybeigqvnr5gmccfzaqmk2obkhwc7o5oodxelptedbk554akz5hxoruyy",
+      "sha256": "633c1810cc40608154e91faa93b5dfee5347a4202bef56da6aa19ac0e1080d65",
+      "size": 609568,
+      "assets": {
+        "AGENTS.md": "a63459bdc6da75b62711ca6e3e4684464b91791f3c288ec137ca1bdb4f1f42f9",
+        "commands.mjs": "2feb9377a10aed7edcd518ce6d1d228b4136fd65e69e4c1318cb7aa4c9ef7a0c",
+        "deliverables.mjs": "b755e308d2002d91e243d6e6e0c7c65ce61f3c4f87c325a177a77a23215a97ee",
+        "npm-publish.mjs": "2b7581f3a19871286e0213dfbce7b5f7784404719c962dcb1e64badcc2bfc179",
+        "workflow-predicates.mjs": "8135c02e5620eb3ede297e2d435e3ee30f4d985083fc5aab245e64d34b4e0141"
+      }
+    },
+    "sharedAssetsExact": true
+  },
+  "baseline": {
+    "bundleCid": "bafybeigqvnr5gmccfzaqmk2obkhwc7o5oodxelptedbk554akz5hxoruyy",
+    "size": 609568,
+    "results": [
+      {
+        "projectDirectory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\good",
+        "pass": true,
+        "documentation": "references/check.md",
+        "documentationReadable": true,
+        "assetsExact": true,
+        "outputCid": "bafybeieso5k2ug7mz3zdzplot5euajr5gwrzjnj4hithpybhlfgsrwb26u"
+      },
+      {
+        "projectDirectory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\bad",
+        "pass": false,
+        "documentation": "references/check.md",
+        "problems": [
+          {
+            "code": "gate-missing",
+            "brief": "scripts/check.mjs: script 入口缺失",
+            "documentation": "references/problems/gate-missing.md"
+          },
+          {
+            "code": "coverage-mismatch",
+            "brief": "vitest.config.ts: thresholds.branches 观察值=101；必须显式声明有限的 0..100 百分比，数值由项目决定；影响范围: 成员=.；配置=vitest.config.ts；实际 root=.；include=[\"src/**/*.ts\"]；exclude=undefined；源码=[\"src/index.ts\"]；未匹配文件=[]",
+            "documentation": "references/problems/coverage-mismatch.md"
+          },
+          {
+            "code": "document-mismatch",
+            "brief": "AGENTS.md 与完整标准 assets/AGENTS.md 不匹配；先保留自定义内容到 docs/agent-project.md，不可直接丢弃",
+            "documentation": "references/problems/document-mismatch.md"
+          }
+        ],
+        "documentationReadable": true,
+        "assetsExact": true,
+        "outputCid": "bafybeieso5k2ug7mz3zdzplot5euajr5gwrzjnj4hithpybhlfgsrwb26u"
+      },
+      {
+        "projectDirectory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\npm",
+        "pass": true,
+        "documentation": "references/check.md",
+        "documentationReadable": true,
+        "assetsExact": true,
+        "outputCid": "bafybeieso5k2ug7mz3zdzplot5euajr5gwrzjnj4hithpybhlfgsrwb26u"
+      }
+    ],
+    "invalid": [
+      "rejected",
+      "rejected",
+      "rejected",
+      "rejected",
+      "rejected",
+      "rejected",
+      "rejected"
+    ],
+    "fault": "failed",
+    "cancel": true,
+    "reclaimed": true
+  },
+  "engine": {
+    "bundleCid": "bafybeigqvnr5gmccfzaqmk2obkhwc7o5oodxelptedbk554akz5hxoruyy",
+    "size": 609568,
+    "results": [
+      {
+        "projectDirectory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\ordinary",
+        "pass": true,
+        "documentation": "references/check.md",
+        "documentationReadable": true,
+        "assetsExact": true,
+        "outputCid": "bafybeieso5k2ug7mz3zdzplot5euajr5gwrzjnj4hithpybhlfgsrwb26u"
+      },
+      {
+        "projectDirectory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\npm-library",
+        "pass": true,
+        "documentation": "references/check.md",
+        "documentationReadable": true,
+        "assetsExact": true,
+        "outputCid": "bafybeieso5k2ug7mz3zdzplot5euajr5gwrzjnj4hithpybhlfgsrwb26u"
+      },
+      {
+        "projectDirectory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\npm-cli",
+        "pass": true,
+        "documentation": "references/check.md",
+        "documentationReadable": true,
+        "assetsExact": true,
+        "outputCid": "bafybeieso5k2ug7mz3zdzplot5euajr5gwrzjnj4hithpybhlfgsrwb26u"
+      },
+      {
+        "projectDirectory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\cloudflare",
+        "pass": true,
+        "documentation": "references/check.md",
+        "documentationReadable": true,
+        "assetsExact": true,
+        "outputCid": "bafybeieso5k2ug7mz3zdzplot5euajr5gwrzjnj4hithpybhlfgsrwb26u"
+      },
+      {
+        "projectDirectory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\custom",
+        "pass": true,
+        "documentation": "references/check.md",
+        "documentationReadable": true,
+        "assetsExact": true,
+        "outputCid": "bafybeieso5k2ug7mz3zdzplot5euajr5gwrzjnj4hithpybhlfgsrwb26u"
+      },
+      {
+        "projectDirectory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\duplicate",
+        "pass": false,
+        "documentation": "references/check.md",
+        "problems": [
+          {
+            "code": "delivery-mismatch",
+            "brief": "silvermoon.yaml: duplicate path .",
+            "documentation": "references/problems/delivery-mismatch.md"
+          },
+          {
+            "code": "release-mismatch",
+            "brief": "silvermoon.yaml: duplicate path .",
+            "documentation": "references/problems/release-mismatch.md"
+          }
+        ],
+        "documentationReadable": true,
+        "assetsExact": true,
+        "outputCid": "bafybeieso5k2ug7mz3zdzplot5euajr5gwrzjnj4hithpybhlfgsrwb26u"
+      },
+      {
+        "projectDirectory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\escape",
+        "pass": false,
+        "documentation": "references/check.md",
+        "problems": [
+          {
+            "code": "delivery-mismatch",
+            "brief": "silvermoon.yaml: path must be an explicit root-relative directory",
+            "documentation": "references/problems/delivery-mismatch.md"
+          },
+          {
+            "code": "release-mismatch",
+            "brief": "silvermoon.yaml: path must be an explicit root-relative directory",
+            "documentation": "references/problems/release-mismatch.md"
+          }
+        ],
+        "documentationReadable": true,
+        "assetsExact": true,
+        "outputCid": "bafybeieso5k2ug7mz3zdzplot5euajr5gwrzjnj4hithpybhlfgsrwb26u"
+      },
+      {
+        "projectDirectory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\private-npm",
+        "pass": false,
+        "documentation": "references/check.md",
+        "problems": [
+          {
+            "code": "release-mismatch",
+            "brief": "silvermoon.yaml: .: private npm target is forbidden；修复参考 references/npm-publisher-v1.md#single-package；标准 assets/release.mjs、assets/release-dry-run.mjs、assets/npm-publish.mjs",
+            "documentation": "references/problems/release-mismatch.md"
+          },
+          {
+            "code": "delivery-mismatch",
+            "brief": ".: 声明 npm 但包为 private，禁止发布",
+            "documentation": "references/problems/delivery-mismatch.md"
+          }
+        ],
+        "documentationReadable": true,
+        "assetsExact": true,
+        "outputCid": "bafybeieso5k2ug7mz3zdzplot5euajr5gwrzjnj4hithpybhlfgsrwb26u"
+      },
+      {
+        "projectDirectory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\unregistered-publish",
+        "pass": false,
+        "documentation": "references/check.md",
+        "problems": [
+          {
+            "code": "delivery-missing",
+            "brief": ".github/workflows/release.yaml:release: 发布目录 . 未登记 npm 交付声明",
+            "documentation": "references/problems/delivery-missing.md"
+          },
+          {
+            "code": "release-missing",
+            "brief": ".github/workflows/release.yaml:release: 发布目录 . 未登记 npm 交付声明",
+            "documentation": "references/problems/release-missing.md"
+          },
+          {
+            "code": "release-mismatch",
+            "brief": ".github/workflows/release.yaml jobs[\"release\"] 发布步骤观察值=[{\"run\":\"npm publish\"}]；CI 只能通过 pnpm release/release-dry-run 调用固定发布入口，禁止裸 publish 或直接运行内部 Node 发布文件",
+            "documentation": "references/problems/release-mismatch.md"
+          }
+        ],
+        "documentationReadable": true,
+        "assetsExact": true,
+        "outputCid": "bafybeieso5k2ug7mz3zdzplot5euajr5gwrzjnj4hithpybhlfgsrwb26u"
+      }
+    ],
+    "invalid": [
+      "rejected",
+      "rejected",
+      "rejected",
+      "rejected",
+      "rejected",
+      "rejected",
+      "rejected"
+    ],
+    "fault": "failed",
+    "cancel": true,
+    "reclaimed": true
+  },
+  "cases": [
+    {
+      "name": "ordinary",
+      "template": "good",
+      "pass": true,
+      "directory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\ordinary",
+      "before": "d23d9b5c303908ad01ace7680da59e5c74afc9ef3366060ac2baffef314ae1fe",
+      "after": "d23d9b5c303908ad01ace7680da59e5c74afc9ef3366060ac2baffef314ae1fe"
+    },
+    {
+      "name": "npm-library",
+      "template": "npm",
+      "pass": true,
+      "directory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\npm-library",
+      "before": "a2cf49dd039bbe434d13aa52b405bf692524e42b048deffb8ab9577e2b016bb0",
+      "after": "a2cf49dd039bbe434d13aa52b405bf692524e42b048deffb8ab9577e2b016bb0"
+    },
+    {
+      "name": "npm-cli",
+      "template": "npm",
+      "pass": true,
+      "cli": true,
+      "directory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\npm-cli",
+      "before": "4c2e482dc32d6380be07fe7515982f74abd9030a91ab88d32d6af6955d5132f9",
+      "after": "4c2e482dc32d6380be07fe7515982f74abd9030a91ab88d32d6af6955d5132f9"
+    },
+    {
+      "name": "cloudflare",
+      "template": "good",
+      "pass": true,
+      "entries": [
+        {
+          "path": ".",
+          "type": "cloudflare"
+        }
+      ],
+      "directory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\cloudflare",
+      "before": "294a2a6e34d415adb554e78f2f533a9e7012c8dfb309692778c24e37f62bf1d9",
+      "after": "294a2a6e34d415adb554e78f2f533a9e7012c8dfb309692778c24e37f62bf1d9"
+    },
+    {
+      "name": "custom",
+      "template": "good",
+      "pass": true,
+      "entries": [
+        {
+          "path": ".",
+          "type": "my-target",
+          "opaque": {
+            "command": "DO NOT EXECUTE"
+          }
+        }
+      ],
+      "directory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\custom",
+      "before": "05dda280444d464a806935307c6702d4b000c4e4a8c1885a8eee84916135a513",
+      "after": "05dda280444d464a806935307c6702d4b000c4e4a8c1885a8eee84916135a513"
+    },
+    {
+      "name": "duplicate",
+      "template": "good",
+      "pass": false,
+      "code": "delivery-mismatch",
+      "entries": [
+        {
+          "path": ".",
+          "type": "cloudflare"
+        },
+        {
+          "path": ".",
+          "type": "custom"
+        }
+      ],
+      "directory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\duplicate",
+      "before": "f04497f4e662a28bf0bbe6df6ba49924ce65b800692ae6816aba09a436f281e9",
+      "after": "f04497f4e662a28bf0bbe6df6ba49924ce65b800692ae6816aba09a436f281e9"
+    },
+    {
+      "name": "escape",
+      "template": "good",
+      "pass": false,
+      "code": "delivery-mismatch",
+      "entries": [
+        {
+          "path": "../outside",
+          "type": "custom"
+        }
+      ],
+      "directory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\escape",
+      "before": "d2ff801be909046fa00647d28d86b4fcd7c17e8252952e63aff4200ad495c9b7",
+      "after": "d2ff801be909046fa00647d28d86b4fcd7c17e8252952e63aff4200ad495c9b7"
+    },
+    {
+      "name": "private-npm",
+      "template": "npm",
+      "pass": false,
+      "code": "delivery-mismatch",
+      "private": true,
+      "directory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\private-npm",
+      "before": "aba6db398d4a0a683942929209a5a312772fd224461e737a7e48baded6498e29",
+      "after": "aba6db398d4a0a683942929209a5a312772fd224461e737a7e48baded6498e29"
+    },
+    {
+      "name": "unregistered-publish",
+      "template": "good",
+      "pass": false,
+      "code": "delivery-missing",
+      "publish": true,
+      "directory": "D:\\Code\\okr-agent.worktrees\\extend-check-typescript-for-cloudflare\\packages\\check.typescript-project\\dist\\verification\\delivery-cases\\unregistered-publish",
+      "before": "c827727141b6656dda071d92031df289f922861c4afe11a9ad127995765a960a",
+      "after": "c827727141b6656dda071d92031df289f922861c4afe11a9ad127995765a960a"
+    }
+  ],
+  "rootSelection": {
+    "entries": [
+      {
+        "path": "packages/check-task-sdk",
+        "type": "npm",
+        "packageId": "check-task-sdk"
+      },
+      {
+        "path": "packages/check-task-builder",
+        "type": "npm",
+        "packageId": "check-task-builder"
+      },
+      {
+        "path": "packages/check.nodejs-toolchain",
+        "type": "task-bundle"
+      },
+      {
+        "path": "packages/check.typescript-project",
+        "type": "task-bundle"
+      }
+    ],
+    "mappings": [
+      {
+        "id": "check-task-sdk",
+        "name": "@silvermoon-work/check-task-sdk",
+        "directory": "packages/check-task-sdk"
+      },
+      {
+        "id": "check-task-builder",
+        "name": "@silvermoon-work/check-task-builder",
+        "directory": "packages/check-task-builder"
+      }
+    ],
+    "publintDirectories": [
+      "packages/check-task-sdk",
+      "packages/check-task-builder"
+    ],
+    "dryRunIdentityPlan": {
+      "id": "check-task-sdk",
+      "name": "@silvermoon-work/check-task-sdk",
+      "directory": "packages/check-task-sdk"
+    },
+    "corePrivate": true,
+    "coreSelectable": false
+  },
+  "targetScriptsExecuted": false,
+  "remotePublicationOrResourceChanges": false,
+  "passed": true
+}
