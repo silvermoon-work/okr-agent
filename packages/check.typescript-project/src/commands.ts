@@ -2,6 +2,7 @@ import { type Files, Unconfirmed, record } from "./files.js";
 
 export interface Project {
   directory: string;
+  delivery?: string;
   manifest: Record<string, unknown>;
   sources: string[];
   tests: string[];

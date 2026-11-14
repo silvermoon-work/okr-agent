@@ -8,6 +8,7 @@ import semver from "semver";
 import { parse } from "acorn";
 import { parseDocument } from "yaml";
 import { isNodeVersions, workflowPredicates } from "./workflow-predicates.mjs";
+import { loadDeliverables, npmMappings } from "./deliverables.mjs";
 
 // This program runs only in the explicitly selected GitHub publishing workflow.
 // The Check reads its bytes; it never imports or executes a target's copy.
@@ -201,11 +202,8 @@ export function resolveConfiguration(
   ref,
   input,
 ) {
-  const targets = projects.filter(
-    (project) =>
-      project.manifest.private !== true &&
-      (project.manifest.publishConfig !== undefined ||
-        project.manifest.scripts?.["lint-package"] !== undefined),
+  const targets = projects.filter((project) =>
+    mappings.some((mapping) => mapping.directory === project.directory),
   );
   assert(targets.length > 0, "No non-private npm publishing target");
   assert(
@@ -232,17 +230,8 @@ export function resolveConfiguration(
       "Mapping does not identify a real declared project",
     );
   }
-  assert(
-    mappings.length || targets.length === 1,
-    "Multiple npm targets require an existing explicit ID/tag mapping",
-  );
-  const candidates = mappings.length
-    ? mappings
-    : targets.map((project) => ({
-        id: project.manifest.name.split("/").at(-1),
-        name: project.manifest.name,
-        directory: project.directory,
-      }));
+  assert(mappings.length > 0, "Missing explicit npm deliverables mapping");
+  const candidates = mappings;
   const selected = candidates.filter((mapping) =>
     event === "push"
       ? projects.some(
@@ -659,28 +648,7 @@ export async function publish(mode) {
   const nodes = workflowMatrix(
     readFileSync(".github/workflows/ci.yaml", "utf8"),
   );
-  const mappingPaths = [
-    "scripts/lib/release-packages.mjs",
-    "scripts/release-packages.js",
-  ].filter((path) => existsSync(path));
-  assert(
-    mappingPaths.length <= 1,
-    "Multiple release mapping sources are ambiguous",
-  );
-  let mappings = mappingPaths.length
-    ? releaseMappings(readFileSync(mappingPaths[0], "utf8"))
-    : [];
-  if (existsSync("release.config.json")) {
-    const legacy = configuration(
-      JSON.parse(readFileSync("release.config.json", "utf8")),
-    );
-    assert(
-      JSON.stringify(legacy.ci.nodeVersions) === JSON.stringify(nodes),
-      "Legacy matrix differs from the real workflow",
-    );
-    assert(!mappings.length, "Duplicate release mapping sources");
-    mappings = [legacy.package];
-  }
+  const mappings = npmMappings(loadDeliverables(process.cwd()), projects);
   const config = resolveConfiguration(
     projects,
     mappings,

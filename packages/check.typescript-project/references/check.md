@@ -11,7 +11,7 @@
    lockfile
    importer 的 specifier/version。major>=1 追同 major，0.minor 追同 minor 的 patch，0.0.patch 精确锁定；声明及已解析版本都检查。校验工具 Node 与已解析 peer 兼容；其他 snapshot 不能替代本 importer。
 3. 规范与交付：独立检查 strict、五项 safety、源码与测试类型感知 lint、格式配置和忽略范围、测试发现、未触达文件 coverage.include；四项全局覆盖率门限须明确声明为有限的 0..100 百分比，数值由项目决定，不设统一最低值；显式 watch/passWithNoTests 不得放宽。实际 npm
-   ESM 职责附加检查身份/许可/链接、exports、files、已声明的构建/映射配置及 build/lint-package 接口。private:true 完全跳过 npm 发布/交付专项检查，不因入口或显式映射报告发布职责无法确认；通用质量及适用构建配置仍检查，不强迫解除 private。
+   ESM 职责由根 silvermoon.yaml 的 npm 项明确选择，附加检查身份/许可/链接、exports、files、已声明的构建/映射配置及 build/lint-package 接口。声明 npm 而 private:true 明确拒绝，未登记的 private 示例不被旧映射机械启用；通用质量及适用构建配置仍检查，不强迫解除 private。[交付描述](deliverables.md)说明开放类型、安全路径和单一来源迁移。
 4. Agent 接口：根 typecheck、lint、format-check、format、test、test-coverage、check 仍必需；成员按职责提供动作，不要求机械复制根接口。所有 package
    scripts（含可选动作与生命周期动作）名称均禁止冒号，只允许无参数的
    `node scripts/<同名>.mjs`。scripts 顶层文件与 package
@@ -39,7 +39,7 @@ token 配置；根 packageManager 使用 pnpm，自动 npm 缓存不适用，显
   true/false，不强制启用、不作为启用覆盖率或映射正确的证据；未知字段和非 boolean 仍无法确认。动态 projects/provider/分 glob 门限不支持。
 - 格式检查覆盖源码、测试和维护者配置；生成的 pnpm-lock.yaml 不强制交给 Prettier 格式化，但仍要求纳入版本控制且不被 gitignore 排除。忽略必要格式目标时报告准确路径，不重复追加同根因的总括失败。
 - typecheck、lint、format、format-check、test、test-coverage、lint-package、check 的入口及 scripts/lib/commands.mjs 必须与对应 output
-  assets 准确一致，仅允许 LF 归一化。release/release-dry-run 及其固定 lib 同样检查。build 与扩展入口内部自由，不解释或执行，不因未知构建器报错。固定 lib 不能自由替换，不能靠相同 wrapper 名称获得通过。
+  assets 准确一致，仅允许 LF 归一化；新的 scripts/lib/deliverables.mjs 也属于固定必要 lib。release/release-dry-run 及其固定 lib 同样检查。build 与扩展入口内部自由，不解释或执行，不因未知构建器报错。固定 lib 不能自由替换，不能靠相同 wrapper 名称获得通过。
 - 固定工具参数保证 typecheck --noEmit，lint 不传 --fix，format
   --write 与 format-check --check 分离，Vitest
   run/--watch=false/--passWithNoTests=false，test-coverage 显式 --coverage.enabled=true，lint-package 调用 publint。check 先格式检查、按依赖顺序 build，再类型/lint/coverage/显式附加测试/包校验/显式扩展检查，子进程首次失败即失败。仍不代表一次实际执行已经成功，自定义 build/扩展不属于内部安全证明。
@@ -57,7 +57,7 @@ token 配置；根 packageManager 使用 pnpm，自动 npm 缓存不适用，显
   snapshot 和 packages 记录。不会拿其他 importer、共享声明或全局可匹配版本代替实际上下文；缺项、冲突、散列后缀及未知协议无法确认。Vite 自动安装为 Vitest
   peer 时不强制添加未直接使用的 devDependency；检查所选版本及其 Node 兼容性。后缀最多 8192 字符、64 个直接绑定、32 层，不做任意依赖图遍历。
 
-发布优先读取真实 manifest、workspace、workflow，不要求 release.config.json 或复制矩阵。单目标可唯一推导则无需额外描述；多目标复用已有 scripts/lib/release-packages.mjs 静态 ID/name/directory 映射（旧位置可读但脚本结构独立检查），由既有 CI
+发布只从根 silvermoon.yaml 的显式 npm 项选择，再核对真实 manifest、workspace、workflow，不推导交付意图或复制矩阵。单目标也要求声明，旧 release.config.json/release-packages 数据必须迁移并移除。由既有 CI
 package
 input/PACKAGE_INPUT 或准确 tag 每次唯一选择，不批量发布。未知或冲突的映射 fail-closed，不以任意 JavaScript 或自定义 verifier 代替证明。固定 release/release-dry-run 顶层入口共用 scripts/lib/npm-publish.mjs；CI 仅通过 pnpm
 release/pnpm
@@ -83,7 +83,7 @@ check-* 命名识别相应补充动作（排除固定标准动作），普通扩
 
 唯一标准资产的嵌套副本只有在正文完整一致、位于所属项目 assets/AGENTS.md，且 check.build.yaml 明确将 assets/** 交付到 resources/assets/ 时才识别为 Bundle 数据。不对其他嵌套入口或已修改副本作此豁免，它们仍无法确认。
 
-映射身份使用全部声明成员核对，不因成员仍 private 就误报不存在或 name 不匹配；映射包含 private 包本身不表示允许发布。对 private 包只在有明确允许发布的证据时报告发布保护问题；目前可识别 workflow 在同一静态工作目录显式
+交付路径使用全部声明成员核对，private 包不会被误报不存在；若明确声明为 npm 则拒绝 private 发布，历史示例映射不据此启用。另可识别 workflow 在同一静态工作目录显式
 `npm/pnpm pkg delete private` 或 `pkg set private=false`
 后直接真实 publish 的绕过，不将任意自定义脚本视为已证明安全。固定发布 channel 从实际 manifest 决定，不接受自定义门卫取代；dry-run 同样遵守 latest/rc 规则。private 包不强加 npm 发布专项入口；自愿声明标准发布命令仍遵守通用固定入口/必要 lib 完整性，不因此推定 npm 交付职责。聚合根为明确的非私有成员提供发布入口时按该成员职责核对完整发布核心，不重复报告其 lib。
 

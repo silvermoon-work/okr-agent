@@ -18,6 +18,7 @@ export const scriptResources = [
   ["release", "release.mjs"],
   ["release-dry-run", "release-dry-run.mjs"],
   ["workflow-predicates", "workflow-predicates.mjs"],
+  ["deliverables", "deliverables.mjs"],
 ] as const;
 type Status = "missing" | "mismatch" | "unconfirmed";
 type Report = (status: Status, brief: string) => void;
@@ -64,18 +65,7 @@ export async function scriptProfile(
   publisher: Uint8Array,
   report: Report,
 ): Promise<void> {
-  const rootPublisher = projects.some((project) => {
-    const scripts = project.manifest.scripts;
-    return (
-      project.manifest.private !== true &&
-      (project.manifest.publishConfig !== undefined ||
-        (scripts &&
-          typeof scripts === "object" &&
-          !Array.isArray(scripts) &&
-          Object.hasOwn(scripts, "lint-package")) ||
-        files.exists("release.config.json"))
-    );
-  });
+  const rootPublisher = projects.some((project) => project.delivery === "npm");
   const names = new Map<string, Project>();
   const dependencies = new Map<Project, Project[]>();
   for (const project of projects)
@@ -181,6 +171,13 @@ export async function scriptProfile(
           files,
           files.path(project.directory, "scripts/lib/workflow-predicates.mjs"),
           assets["workflow-predicates"]!,
+          report,
+        );
+      if (affected.length)
+        await fixedFile(
+          files,
+          files.path(project.directory, "scripts/lib/deliverables.mjs"),
+          assets["deliverables"]!,
           report,
         );
     }

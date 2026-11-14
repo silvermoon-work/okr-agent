@@ -52,11 +52,20 @@ const manifest = {
   version: "1.2.0-rc.0",
   publishConfig: { access: "public", registry: "https://registry.npmjs.org/" },
 };
-it("derives a unique single target without a release description and binds workspace selection to existing mapping and actual CI", async () => {
-  expect(
+it("requires explicit mappings even for a single target and binds workspace selection to actual CI", async () => {
+  expect(() =>
     publisher.resolveConfiguration(
       [{ directory: ".", manifest }],
       [],
+      config.ci.nodeVersions,
+      "push",
+      "library-v1.2.0-rc.0",
+    ),
+  ).toThrow("No non-private npm publishing target");
+  expect(
+    publisher.resolveConfiguration(
+      [{ directory: ".", manifest }],
+      [config.package],
       config.ci.nodeVersions,
       "push",
       "library-v1.2.0-rc.0",
@@ -79,7 +88,7 @@ it("derives a unique single target without a release description and binds works
   expect(
     publisher.resolveConfiguration(
       projects,
-      [],
+      [{ ...config.package, directory: "packages/library" }],
       nodes,
       "push",
       "library-v1.2.0-rc.0",
@@ -104,7 +113,7 @@ it("derives a unique single target without a release description and binds works
       undefined,
       "library",
     ),
-  ).toThrow("Multiple");
+  ).toThrow("No non-private npm publishing target");
   expect(
     publisher.resolveConfiguration(
       projects,

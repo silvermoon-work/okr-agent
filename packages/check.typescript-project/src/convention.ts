@@ -15,14 +15,11 @@ import { verified, type Metadata, type Release } from "./metadata.js";
 import { tsconfig } from "./static.js";
 import { repository } from "./repository.js";
 import { privatePublishEvidence } from "./release-evidence.js";
-import {
-  publisherProfile,
-  compatibilityMatrix,
-  type PublisherProfile,
-} from "./publisher-profile.js";
+import { publisherProfile, compatibilityMatrix } from "./publisher-profile.js";
 import { resolvedPeer } from "./lockfile.js";
 import { configuredDelivery } from "./delivery.js";
 import type { QualityProfile } from "./quality-workflow.js";
+import { projectDeliverables } from "./deliverables.js";
 
 type Domain =
   | "environment"
@@ -95,16 +92,7 @@ function url(value: unknown): boolean {
   }
 }
 function artifact(project: Project): boolean {
-  const scripts = project.manifest.scripts;
-  return (
-    project.manifest.publishConfig !== undefined ||
-    !!(
-      scripts &&
-      typeof scripts === "object" &&
-      !Array.isArray(scripts) &&
-      Object.hasOwn(scripts, "lint-package")
-    )
-  );
+  return project.delivery === "npm";
 }
 export async function convention(
   files: Files,
@@ -121,6 +109,9 @@ export async function convention(
     reported.add(key);
     report(`${domain}-${status}` as ProblemCode, message);
   };
+  await projectDeliverables(files, projects, (status, brief) => {
+    issue("delivery", status, brief);
+  });
   const section = async (
     domain: Domain,
     action: () => Promise<void> | void,
@@ -749,7 +740,9 @@ export async function convention(
     for (const path of files.paths.filter(
       (p) =>
         /\.(?:[cm]?ts|tsx)$/.test(p) ||
-        /(?:^|\/)(?:package\.json|pnpm-lock\.yaml|.*config\.[^/]+)$/.test(p) ||
+        /(?:^|\/)(?:silvermoon\.yaml|package\.json|pnpm-lock\.yaml|.*config\.[^/]+)$/.test(
+          p,
+        ) ||
         p.startsWith(".github/workflows/"),
     ))
       if (ignored(path))
@@ -776,26 +769,15 @@ export async function convention(
       }
     }
   });
-  let profile: PublisherProfile | undefined;
   await section("release", async () => {
-    profile = await publisherProfile(files, projects, evidence, issue, quality);
+    await publisherProfile(files, projects, evidence, issue, quality);
   });
-  const deliveries = projects.filter(
-    (project) =>
-      project.manifest.private !== true &&
-      (artifact(project) || project.directory === profile?.directory),
-  );
+  const deliveries = projects.filter(artifact);
   for (const project of projects) {
     if (deliveries.includes(project))
       await section("delivery", async () => {
         await delivery(files, project, nonempty, issue);
       });
-    else if (project.manifest.private !== true)
-      issue(
-        "delivery",
-        "unconfirmed",
-        `${project.directory || "."}: private/入口本身不能证明 npm 交付职责；缺少明确发布目标或包校验/已知发布声明，无法判定应用、内部库或 npm 库`,
-      );
     if (project.sources.length)
       await section("delivery", async () => {
         const build = record(project.manifest.scripts ?? {}).build;
@@ -838,10 +820,9 @@ export async function convention(
         }
       });
   }
-  if (deliveries.length)
-    await section("release", async () => {
-      await release(files, issue);
-    });
+  await section("release", async () => {
+    await release(files, issue);
+  });
   await section("release", async () => {
     await privatePublishEvidence(files, projects, (status, brief) => {
       issue("release", status, brief);
@@ -875,6 +856,12 @@ async function delivery(
 ): Promise<void> {
   const m = project.manifest;
   const prefix = project.directory || ".";
+  if (m.private === true)
+    issue(
+      "delivery",
+      "mismatch",
+      `${prefix}: 声明 npm 但包为 private，禁止发布`,
+    );
   if (
     typeof m.name !== "string" ||
     !/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(m.name) ||

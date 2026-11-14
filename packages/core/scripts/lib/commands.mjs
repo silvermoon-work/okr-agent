@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
 import process from "node:process";
+import { loadDeliverables, npmMappings } from "./deliverables.mjs";
 
 const standard = [
   "typecheck",
@@ -163,12 +164,11 @@ export function plan(projects, action, scope = ".") {
         continue;
       }
       if (name === "lint-package") {
-        if (
-          project.manifest.private === true ||
-          (project.manifest.publishConfig === undefined &&
-            project.manifest.scripts?.["lint-package"] === undefined)
-        )
-          continue;
+        if (project.delivery !== "npm") continue;
+        assert(
+          project.manifest.private !== true,
+          "Private npm target is forbidden",
+        );
         tasks.push({
           directory: project.directory,
           args: ["exec", ...tools[name]],
@@ -323,7 +323,8 @@ export function discover(root, list = execFileSync) {
     }
     return found;
   };
-  return configuration(
+  const entries = loadDeliverables(root);
+  const projects = configuration(
     directories.map((directory) => {
       const manifest = JSON.parse(
         readFileSync(resolve(root, directory, "package.json"), "utf8"),
@@ -353,6 +354,7 @@ export function discover(root, list = execFileSync) {
       const files = [];
       return {
         directory,
+        delivery: entries.find((entry) => entry.path === directory)?.type,
         manifest,
         configs,
         code: code(directory, files),
@@ -360,6 +362,14 @@ export function discover(root, list = execFileSync) {
       };
     }),
   );
+  for (const entry of entries)
+    if (entry.type === "npm" || entry.type === "cloudflare")
+      assert(
+        projects.some((project) => project.directory === entry.path),
+        "Deliverable is not a declared package",
+      );
+  npmMappings(entries, projects);
+  return projects;
 }
 export function run(action) {
   assert(process.argv.length === 2, "Fixed entries do not accept arguments");

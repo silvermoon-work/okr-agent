@@ -26,6 +26,7 @@ import { repository } from "./repository.js";
 import { scriptProfile } from "./script-profile.js";
 import { qualityWorkflow, type QualityProfile } from "./quality-workflow.js";
 import { nativeWorkflow } from "./native-workflow.js";
+import { projectDeliverables } from "./deliverables.js";
 
 type Domain =
   | "dependency"
@@ -226,6 +227,7 @@ export async function inspect(
         issue("gate", problem.status, problem.brief);
     });
   }
+  await projectDeliverables(files, projects, () => {});
   await section("gate", async () => {
     await scriptProfile(
       files,
@@ -697,7 +699,7 @@ export async function inspect(
         ...projects.flatMap((p) => [...p.sources, ...p.tests]),
         ...configurationPaths.filter(
           (path) =>
-            /(?:^|\/)(?:package\.json|pnpm-workspace\.yaml|turbo\.json|release\.config\.json|tsconfig[^/]*\.json|(?:eslint|vitest|vite|prettier)\.config\.[cm]?[jt]s|\.prettierrc(?:\.[^/]+)?)$/.test(
+            /(?:^|\/)(?:silvermoon\.yaml|package\.json|pnpm-workspace\.yaml|turbo\.json|release\.config\.json|tsconfig[^/]*\.json|(?:eslint|vitest|vite|prettier)\.config\.[cm]?[jt]s|\.prettierrc(?:\.[^/]+)?)$/.test(
               path,
             ) || /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path),
         ),

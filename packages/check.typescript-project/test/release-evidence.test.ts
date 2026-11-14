@@ -25,7 +25,7 @@ it("reads data-only explicit release mappings and rejects dynamic executable loo
     ),
   ).toThrow("accessor");
 });
-it("detects nonunique/misdirected package mappings without importing the target", async () => {
+it("reports legacy mapping migration without importing or using it to select targets", async () => {
   const root = resolve("dist", `.release-map-${randomUUID()}`);
   await mkdir(root, { recursive: true });
   try {
@@ -55,8 +55,9 @@ it("detects nonunique/misdirected package mappings without importing the target"
         issues.push(brief);
       },
     );
-    expect(issues.some((p) => p.includes("不唯一"))).toBe(true);
-    expect(issues.some((p) => p.includes("不一致"))).toBe(true);
+    expect(issues).toEqual([
+      "scripts/lib/release-packages.mjs: 旧交付来源须迁移到 silvermoon.yaml；不回退或并行选择",
+    ]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

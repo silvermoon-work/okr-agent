@@ -48,7 +48,7 @@ it.each([
 ])("rejects ambiguous or executable release mappings: %s", (source) => {
   expect(() => releaseMappings(source)).toThrow(Unconfirmed);
 });
-it("validates unique mapping identities, real members and explicit open-package opt-in", async () => {
+it("uses the canonical declaration and rejects legacy sources without inferring public targets", async () => {
   const report = vi.fn();
   const source = `export const releasePackages = [
     {"id": "Bad!", name: "wrong", directory: "packages/a"},
@@ -71,26 +71,20 @@ it("validates unique mapping identities, real members and explicit open-package 
     ],
     report,
   );
-  expect(report.mock.calls.map((call) => call[1] as unknown)).toEqual(
-    expect.arrayContaining([
-      "发布映射 id 不唯一",
-      "发布映射 name 不唯一",
-      "发布映射 directory 不唯一",
-      "非法包映射标识 Bad!",
-      "发布映射 Bad! 的目录/name 与真实声明成员不一致",
-      "packages/b: 开放的 npm 包没有唯一显式发布映射",
-    ]),
+  expect(report).toHaveBeenCalledWith(
+    "mismatch",
+    expect.stringContaining("旧交付来源须迁移"),
   );
-  await expect(
-    mappingEvidence(
-      memory({
-        "scripts/lib/release-packages.mjs": source,
-        "scripts/release-packages.js": source,
-      }),
-      [project],
-      report,
-    ),
-  ).rejects.toThrow("多个");
+  report.mockClear();
+  await mappingEvidence(
+    memory({
+      "scripts/lib/release-packages.mjs": source,
+      "scripts/release-packages.js": source,
+    }),
+    [project],
+    report,
+  );
+  expect(report).toHaveBeenCalledTimes(2);
   report.mockClear();
   await mappingEvidence(
     memory(),
@@ -100,10 +94,24 @@ it("validates unique mapping identities, real members and explicit open-package 
     ],
     report,
   );
+  expect(report).not.toHaveBeenCalled();
+  const declared = memory({
+    "silvermoon.yaml": JSON.stringify({
+      deliverables: [{ path: ".", type: "npm", packageId: "root" }],
+    }),
+  });
+  await mappingEvidence(declared, [project], report);
   expect(report).toHaveBeenCalledWith(
-    "unconfirmed",
-    expect.stringContaining("多个开放包"),
+    "mismatch",
+    expect.stringContaining("private"),
   );
+  report.mockClear();
+  await mappingEvidence(
+    declared,
+    [{ ...project, manifest: { name: "root" } }],
+    report,
+  );
+  expect(report).not.toHaveBeenCalled();
 });
 it("does not confuse conditions, unknown commands, dry runs or restored protection with a private publish bypass", async () => {
   const jobs = {

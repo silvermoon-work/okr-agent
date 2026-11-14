@@ -28,6 +28,7 @@ const config = [
   },
   {
     directory: "packages/app",
+    delivery: "npm",
     manifest: {
       name: "app",
       scripts: { build: "node scripts/build.mjs" },
@@ -42,6 +43,7 @@ const config = [
   },
   {
     directory: "packages/core",
+    delivery: "npm",
     manifest: {
       name: "core",
       scripts: { build: "node scripts/build.mjs" },
@@ -136,6 +138,18 @@ it("orders dependency builds before dependants and package checks, and connects 
   const cyclic = structuredClone(config);
   Object.assign(cyclic[2]!.manifest, { dependencies: { app: "workspace:*" } });
   expect(() => commands.plan(cyclic, "check")).toThrow("Cyclic");
+});
+it("selects publint only from explicit npm intent, not public/private or manifest features", () => {
+  const mixed = structuredClone(config);
+  mixed[1]!.delivery = "cloudflare";
+  mixed[2]!.delivery = "custom";
+  expect(commands.plan(mixed, "lint-package")).toEqual([]);
+  mixed[2]!.delivery = "npm";
+  expect(
+    commands.plan(mixed, "lint-package").map((task) => task.directory),
+  ).toEqual(["packages/core"]);
+  Object.assign(mixed[2]!.manifest, { private: true });
+  expect(() => commands.plan(mixed, "lint-package")).toThrow("Private npm");
 });
 it("does not rebuild members through a non-code aggregate root, while preserving code roots and single packages", () => {
   const projects = structuredClone(config);

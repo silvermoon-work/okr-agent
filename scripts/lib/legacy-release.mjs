@@ -3,7 +3,7 @@ import { appendFileSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import semver from "semver";
-import { releasePackages } from "./release-packages.mjs";
+import { loadDeliverables, npmMappings } from "./deliverables.mjs";
 
 const registry = "https://registry.npmjs.org";
 const dependencyFields = [
@@ -182,8 +182,17 @@ function currentRelease() {
   if (event !== "push" && event !== "workflow_dispatch") {
     throw new Error(`Unsupported release event: ${event}.`);
   }
+  const entries = loadDeliverables(process.cwd());
   const selected = selectRelease(
-    releasePackages,
+    npmMappings(
+      entries,
+      entries
+        .filter((entry) => entry.type === "npm")
+        .map((entry) => ({
+          directory: entry.path,
+          manifest: readJson(resolve(entry.path, "package.json")),
+        })),
+    ),
     event === "push"
       ? { tag: process.env.RELEASE_TAG }
       : { packageId: process.env.PACKAGE_INPUT },

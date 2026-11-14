@@ -185,12 +185,24 @@ release workflow below; examples remain private until deliberately configured.
 Publishing is opt-in. The root and example workspaces remain private. There is
 no automatic batch release or automatic version bumping.
 
+Root [`silvermoon.yaml`](silvermoon.yaml) is the only delivery-intent source;
+all external applications and libraries are listed, not just apps. Only `npm`
+entries are publisher/publint candidates. The current npm entries are
+`check-task-sdk` and `check-task-builder`; preset core stays private and is not
+registered. `task-bundle` classifies the existing private Check authors' local
+Bundle/CAR deliverables without defining IPFS/Pinboard distribution. Open types,
+paths and migration rules are documented in
+[explicit deliverables](packages/check.typescript-project/references/deliverables.md).
+Cloudflare intent does not certify platform configuration or deployment.
+
 ### Configure a derived repository
 
-1. Replace the example library's name and metadata. In
-   `scripts/lib/release-packages.mjs`, map its unique package ID to the exact
-   npm name and `packages/<directory>`. For example, `core` can map to
-   `@your-scope/core`. Update workspace consumers when renaming the library.
+1. Replace the deliberately selected library's name and metadata. Register its
+   exact `packages/<directory>` in root `silvermoon.yaml` with `type: npm` and
+   its existing unique tag ID as `packageId`; name/version are read from its
+   manifest. Do not copy historical example mappings or keep an independent
+   `release-packages`/`release.config.json` target list. Update workspace
+   consumers when renaming the library.
 2. Only for a library ready to publish, remove `private: true`, add
    `"files": ["dist", "src", "README.md", "LICENSE"]`, and set
    `"publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" }`.
@@ -211,8 +223,8 @@ commit's main push CI, including **Release verification (v1)**, to succeed. Then
 explicitly create and push its package-specific tag:
 
 ```sh
-git tag core-v1.2.3 <verified-main-commit>
-git push origin core-v1.2.3
+git tag library-v1.2.3 <verified-main-commit>
+git push origin library-v1.2.3
 ```
 
 The tag publishes only the mapped package. Both the tagged manifest and the
@@ -224,7 +236,7 @@ supported (without build metadata). Stable versions use npm's `latest` tag;
 prereleases use `rc`. For each target `x.y.z` version, start `n` at `0` and
 increment it by one for each subsequent prerelease: `1.2.3-rc.0`, `1.2.3-rc.1`,
 and so on. Use matching package-specific Git tags, for example
-`core-v1.2.3-rc.0`.
+`library-v1.2.3-rc.0` for an explicitly registered `packageId: library`.
 
 The fixed `scripts/lib/npm-publish.mjs` requires the latest `ci.yaml` main push
 run for the exact full checked-out SHA, every required default/matrix job, and
@@ -246,7 +258,7 @@ same artifact through npm OIDC.
 After the configured commit's main push CI succeeds:
 
 ```sh
-gh workflow run npm-publish.yaml --ref main -f package=core
+gh workflow run npm-publish.yaml --ref main -f package=library
 ```
 
 Manual runs only perform an npm dry run, never an actual publish or dist-tag

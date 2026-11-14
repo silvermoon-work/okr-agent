@@ -2,6 +2,8 @@ import { parse } from "acorn";
 import type { Project } from "./commands.js";
 import { type Files, dataYaml, record, Unconfirmed } from "./files.js";
 import { repository } from "./repository.js";
+import { projectDeliverables } from "./deliverables.js";
+import { DeliverablesError, npmMappings } from "../assets/deliverables.mjs";
 
 type Report = (
   status: "missing" | "mismatch" | "unconfirmed",
@@ -97,7 +99,7 @@ export async function privatePublishEvidence(
   }
 }
 
-/** Recognize the repository's existing exported data interface without importing it. */
+/** Historical data parser for migration diagnostics, never a target selector. */
 export function releaseMappings(source: string): Mapping[] {
   let tree: Record<string, unknown>;
   try {
@@ -162,48 +164,19 @@ export async function mappingEvidence(
   projects: Project[],
   report: Report,
 ) {
-  const paths = [
-    "scripts/lib/release-packages.mjs",
-    "scripts/release-packages.js",
-  ].filter((path) => files.exists(path));
-  if (paths.length > 1)
-    throw new Unconfirmed("存在多个发布映射文件，不能确定唯一静态映射");
-  if (!paths.length) {
-    if (projects.filter((p) => p.manifest.private !== true).length > 1)
-      report(
-        "unconfirmed",
-        "多个开放包没有已识别的 scripts/lib/release-packages.mjs 映射数据",
-      );
-    return;
-  }
-  const mappings = releaseMappings(await files.text(paths[0]!));
-  for (const key of ["id", "name", "directory"] as const)
-    if (new Set(mappings.map((m) => m[key])).size !== mappings.length)
-      report("mismatch", `发布映射 ${key} 不唯一`);
-  for (const mapping of mappings) {
-    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(mapping.id))
-      report("mismatch", `非法包映射标识 ${mapping.id}`);
-    const directory = files.path("", mapping.directory);
-    const project = projects.find((p) => p.directory === directory);
-    if (!project || project.manifest.name !== mapping.name)
-      report(
-        "mismatch",
-        `发布映射 ${mapping.id} 的目录/name 与真实声明成员不一致`,
-      );
-  }
-  for (const project of projects.filter(
-    (p) => p.directory && p.manifest.private !== true,
-  ))
-    if (
-      !mappings.some(
-        (m) =>
-          m.directory === project.directory && m.name === project.manifest.name,
+  const entries = await projectDeliverables(files, projects, report);
+  try {
+    const mappings = npmMappings(entries, projects);
+    for (const key of ["id", "name", "directory"] as const)
+      if (
+        new Set(mappings.map((mapping) => mapping[key])).size !==
+        mappings.length
       )
-    )
-      report(
-        "mismatch",
-        `${project.directory}: 开放的 npm 包没有唯一显式发布映射`,
-      );
+        report("mismatch", `发布映射 ${key} 不唯一`);
+  } catch (error) {
+    if (!(error instanceof DeliverablesError)) throw error;
+    report(error.status, error.message);
+  }
 }
 
 export async function ciReuseEvidence(

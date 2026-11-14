@@ -40,3 +40,9 @@ and standard command cores unchanged.
 
 Add or update tests for every behavior change. Keep public exports in
 `src/index.ts`, and treat changes to those exports as API changes.
+
+Register actual external deliverables in root `silvermoon.yaml`; npm items use
+their existing `packageId` for tag identity. Do not infer delivery from private
+flags, Wrangler files or old preset mappings. Keep the core example private and
+unregistered for npm. When evolving fixed command assets, synchronize their
+installed `scripts/lib/` copies and include `deliverables.mjs` byte validation.

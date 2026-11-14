@@ -114,6 +114,11 @@ export async function fixture(root: string): Promise<void> {
     "scripts/lib/workflow-predicates.mjs",
     Buffer.from(assets.scripts["workflow-predicates"]!).toString("utf8"),
   );
+  await put(
+    root,
+    "scripts/lib/deliverables.mjs",
+    Buffer.from(assets.scripts["deliverables"]!).toString("utf8"),
+  );
   for (const name of Object.keys(manifest.scripts))
     await put(
       root,
@@ -184,6 +189,9 @@ export async function fixture(root: string): Promise<void> {
 
 export async function npmFixture(root: string): Promise<void> {
   await fixture(root);
+  await put(root, "silvermoon.yaml", {
+    deliverables: [{ path: ".", type: "npm", packageId: "library" }],
+  });
   const assets = await testEvidence();
   await put(root, "package.json", {
     ...manifest,

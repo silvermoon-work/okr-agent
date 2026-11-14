@@ -42,9 +42,10 @@
   [README](../README.md#publish-one-package) for setup and commands.
 - Release one explicitly mapped package with `<package-id>-v<version>` tags.
   Never batch-publish workspaces or automatically release dependencies.
-- Update the package mapping in `scripts/lib/release-packages.mjs` when renaming
-  or adding a publishable library. Keep the root, apps, and preset examples
-  private.
+- Register each actual npm delivery in root `silvermoon.yaml` with its exact
+  `path`, `type: npm` and existing `packageId`; read name/version from the
+  manifest. Keep the root, apps, and preset core example private and
+  unregistered for npm. Historical example mappings do not authorize delivery.
 - Require the tag's package identity and exact version to match both the tagged
   commit's manifest and the packed manifest, including prerelease suffixes.
 - Publish stable versions to `latest` and prerelease versions to `rc`.
@@ -101,7 +102,7 @@
   not a publishing entry or the trusted publisher. No workflow invokes it.
 - The only publishing entries are `pnpm release` and `pnpm release-dry-run`,
   used by `.github/workflows/npm-publish.yaml`. Their shared fixed core reads
-  the existing package mapping; it never batch-publishes.
+  the root deliverables list; it never batch-publishes.
 - Workflow standards use `actions/checkout@v7`, `actions/setup-node@v7` and
   `pnpm/action-setup@v6`, whose own Action runtime is Node 24. Keep the Check
   assets, actual workflows and publisher's exact CI verifier aligned. This does
@@ -125,3 +126,8 @@
   regressions; it is not permission for additional rule changes. Escalate
   unsupported behavior or actual coverage gaps to the supervising session rather
   than weakening checks.
+- The accepted `project-deliverables` Idea explicitly authorizes the scoped
+  Check/standard/publisher evolution for root `silvermoon.yaml` and the matching
+  consumer migration. This supersedes the earlier normalization-only source
+  freeze for that change, not the quality or publishing protections. Cloudflare
+  platform checks and deployment remain a separate phase.

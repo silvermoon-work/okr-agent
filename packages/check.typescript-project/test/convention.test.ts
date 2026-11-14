@@ -127,7 +127,7 @@ it("ignores freely added development and runtime dependencies without querying t
   expect(queried).not.toContain("@private/runtime");
   expect(queried).not.toContain("semver");
 });
-it("reports an incomplete existing ID mapping without treating a private non-code member as a release target", async () => {
+it("requires an explicit legacy mapping migration without promoting a private non-code member", async () => {
   await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
   await put(root, "package.json", {
     ...manifest,
@@ -150,8 +150,8 @@ it("reports an incomplete existing ID mapping without treating a private non-cod
   expect(problems.some((p) => p.brief.includes("目录/name"))).toBe(false);
   expect(problems).toContainEqual(
     expect.objectContaining({
-      code: "release-unconfirmed",
-      brief: expect.stringContaining("#single-package") as unknown,
+      code: "release-mismatch",
+      brief: expect.stringContaining("旧交付来源须迁移") as unknown,
     }),
   );
   expect(problems.some((p) => p.brief.includes("尚未支持的门卫包括"))).toBe(
@@ -346,7 +346,7 @@ it("reports each missing or invalid engine without derived minimum or matrix fai
     "packages/malformed/package.json: engines=[]",
   );
   expect(problems.some((p) => p.code.startsWith("ci-"))).toBe(false);
-  expect(problems.some((p) => p.code.startsWith("release-"))).toBe(true);
+  expect(problems.some((p) => p.code.startsWith("release-"))).toBe(false);
 });
 it("uses official lifecycle and exact release LTS status, not an even major or minimum", async () => {
   const provider = evidence.metadata.node;

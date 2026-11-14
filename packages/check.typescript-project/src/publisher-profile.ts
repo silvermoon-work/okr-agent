@@ -5,7 +5,8 @@ import { type Files, dataYaml, record, Unconfirmed } from "./files.js";
 import { verified, type Metadata } from "./metadata.js";
 import { repository } from "./repository.js";
 import { fixedFile } from "./script-profile.js";
-import { releaseMappings } from "./release-evidence.js";
+import { projectDeliverables } from "./deliverables.js";
+import { DeliverablesError, npmMappings } from "../assets/deliverables.mjs";
 import { qualityWorkflow, type QualityProfile } from "./quality-workflow.js";
 import { workflowPredicates } from "../assets/workflow-predicates.mjs";
 
@@ -18,29 +19,6 @@ export interface PublisherProfile {
   nodeVersions: string[];
   directory?: string;
 }
-function sameData(left: unknown, right: unknown): boolean {
-  const normalize = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(normalize);
-    if (value && typeof value === "object")
-      return Object.fromEntries(
-        Object.entries(record(value))
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([key, child]) => [key, normalize(child)]),
-      );
-    return value;
-  };
-  return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
-}
-function fields(
-  value: Record<string, unknown>,
-  names: string[],
-  source = "release.config.json",
-) {
-  if (names.some((name) => !Object.hasOwn(value, name)))
-    throw new Unconfirmed(
-      `${source}: 观察字段 ${JSON.stringify(Object.keys(value))}；npm publisher v1 要求字段 ${JSON.stringify(names)}`,
-    );
-}
 export async function publisherProfile(
   files: Files,
   projects: Project[],
@@ -48,18 +26,22 @@ export async function publisherProfile(
   report: Report,
   quality?: QualityProfile | null,
 ): Promise<PublisherProfile | undefined> {
-  const targets = projects.filter(
-    (project) =>
-      project.manifest.private !== true &&
-      (project.manifest.publishConfig !== undefined ||
-        record(project.manifest.scripts ?? {})["lint-package"] !== undefined),
+  const problems: {
+    status: "missing" | "mismatch" | "unconfirmed";
+    brief: string;
+  }[] = [];
+  const entries = await projectDeliverables(
+    files,
+    projects,
+    (status, brief) => {
+      problems.push({ status, brief });
+    },
   );
-  if (!targets.length && !files.exists("release.config.json")) return undefined;
-  if (
-    !targets.length &&
-    projects.every((project) => project.manifest.private === true)
-  )
-    return undefined;
+  for (const problem of problems)
+    report("release", problem.status, problem.brief);
+  if (problems.length) return undefined;
+  const targets = projects.filter((project) => project.delivery === "npm");
+  if (!targets.length) return undefined;
   const topology =
     projectStrategy(projects).kind === "monorepo"
       ? "workspace"
@@ -75,136 +57,29 @@ export async function publisherProfile(
       throw new Unconfirmed(
         "npm publisher v1 只证明明确 GitHub/main 上的发布接口",
       );
-    const workflowPath = ".github/workflows/ci.yaml";
     const verifiedQuality =
       quality === undefined
         ? await qualityWorkflow(files, assets.ciWorkflow, report)
         : quality;
     if (!verifiedQuality) return undefined;
     const { nodeVersions } = verifiedQuality;
-    const mappingPaths = [
-      "scripts/lib/release-packages.mjs",
-      "scripts/release-packages.js",
-    ].filter((path) => files.exists(path));
-    if (mappingPaths.length > 1)
-      throw new Unconfirmed("存在多个发布映射文件，不能确定唯一静态映射");
-    const mappings = mappingPaths.length
-      ? releaseMappings(await files.text(mappingPaths[0]!))
-      : [];
-    if (mappings.length && files.exists("release.config.json"))
-      throw new Unconfirmed(
-        "存在重复发布映射来源；复用已有映射，不维护第二份 release.config.json",
-      );
-    if (
-      targets.length > 1 &&
-      !mappings.length &&
-      !files.exists("release.config.json")
-    )
-      throw new Unconfirmed(
-        `多个 npm 目标需已有明确 ID/tag 映射及每次唯一选择；观察成员=${targets.map((p) => p.directory || ".").join(", ")}`,
-      );
+    const mappings = npmMappings(entries, projects);
     for (const key of ["id", "name", "directory"] as const)
       if (
         new Set(mappings.map((mapping) => mapping[key])).size !==
         mappings.length
       )
         throw new Unconfirmed(`发布映射 ${key} 不唯一`);
-    for (const mapping of mappings)
-      if (
-        !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(mapping.id) ||
-        !projects.some(
-          (project) =>
-            (project.directory || ".") === mapping.directory &&
-            project.manifest.name === mapping.name,
-        )
-      )
-        throw new Unconfirmed(
-          `发布映射 ${JSON.stringify(mapping)} 与真实成员身份不一致`,
-        );
+    const source = "silvermoon.yaml";
+    const project = targets[0]!;
     if (
-      mappings.length &&
-      targets.some(
-        (project) =>
-          !mappings.some(
-            (mapping) =>
-              mapping.directory === (project.directory || ".") &&
-              mapping.name === project.manifest.name,
-          ),
-      )
-    )
-      throw new Unconfirmed("开放 npm 目标缺少唯一已有 ID/tag 映射");
-    const inferred = targets[0]!;
-    const source = files.exists("release.config.json")
-      ? "release.config.json"
-      : (mappingPaths[0] ?? files.path(inferred.directory, "package.json"));
-    const config = files.exists("release.config.json")
-      ? await files.json("release.config.json")
-      : {
-          schemaVersion: 1,
-          package: mappings.find(
-            (mapping) => mapping.directory === (inferred.directory || "."),
-          ) ?? {
-            id:
-              typeof inferred.manifest.name === "string"
-                ? inferred.manifest.name.split("/").at(-1)
-                : undefined,
-            name: inferred.manifest.name,
-            directory: inferred.directory || ".",
-          },
-          ci: { nodeVersions },
-        };
-    fields(config, ["schemaVersion", "package", "ci"], source);
-    const target = record(config.package);
-    const ci = record(config.ci);
-    fields(target, ["id", "name", "directory"], source);
-    fields(ci, ["nodeVersions"], workflowPath);
-    if (!sameData(ci.nodeVersions, nodeVersions))
-      throw new Unconfirmed(
-        "release.config.json 的旧矩阵与真实 workflow 不一致；以实际 workflow 为准，删除重复矩阵",
-      );
-    if (config.schemaVersion !== 1 || typeof target.directory !== "string")
-      throw new Unconfirmed(
-        `${source}: directory 无法确认；要求唯一真实根/成员 npm ESM 包`,
-      );
-    const project = projects.find(
-      (candidate) => (candidate.directory || ".") === target.directory,
-    );
-    if (
-      projects.filter((candidate) => candidate.manifest.name === target.name)
-        .length > 1
-    )
-      throw new Unconfirmed(
-        `${source}: package.name = ${JSON.stringify(target.name)}；观察多个同名项目，要求唯一成员身份；修复参考 ${reference}`,
-      );
-    if (
-      !project ||
-      project.manifest.private === true ||
-      !targets.includes(project)
+      topology === "workspace" &&
+      targets.some((target) => !target.directory)
     ) {
       report(
         "release",
         "mismatch",
-        `${source}: package.directory = ${JSON.stringify(target.directory)}；要求映射唯一真实非 private npm 交付包，观察职责 ${JSON.stringify(projects.map((candidate) => ({ directory: candidate.directory || ".", private: candidate.manifest.private, npm: targets.includes(candidate) })))}`,
-      );
-      return undefined;
-    }
-    if (topology === "workspace" && !project.directory) {
-      report(
-        "release",
-        "mismatch",
-        `${source}: package.directory = "."；实际有多个代码项目，要求显式选择一个 workspace npm 成员，不用聚合根身份发布`,
-      );
-      return undefined;
-    }
-    if (
-      typeof target.id !== "string" ||
-      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(target.id) ||
-      target.name !== project.manifest.name
-    ) {
-      report(
-        "release",
-        "mismatch",
-        `${source}: package = ${JSON.stringify(target)}；要求 id 为规范包标识，name = ${JSON.stringify(project.manifest.name)}，directory = ${JSON.stringify(project.directory || ".")}；无法推导 ID/tag 时复用最小显式映射`,
+        `${source}: path = "."；实际有多个代码项目，要求显式选择一个 workspace npm 成员，不用聚合根身份发布`,
       );
       return undefined;
     }
@@ -265,6 +140,18 @@ export async function publisherProfile(
         ))
       )
         okay = false;
+      if (
+        affected.length &&
+        !(await fixedFile(
+          files,
+          "scripts/lib/deliverables.mjs",
+          assets.scripts["deliverables"]!,
+          (status, brief) => {
+            report("release", status, brief);
+          },
+        ))
+      )
+        okay = false;
       else affected.push(`package.json scripts.${name}`);
     }
     if (
@@ -285,7 +172,7 @@ export async function publisherProfile(
       okay = false;
     for (const path of new Set([
       ".npmrc",
-      files.path(project.directory, ".npmrc"),
+      ...targets.map((target) => files.path(target.directory, ".npmrc")),
     ]))
       if (files.exists(path)) {
         report(
@@ -326,14 +213,16 @@ export async function publisherProfile(
     }
     return okay
       ? {
-          nodeVersions: ci.nodeVersions as string[],
+          nodeVersions,
           // A shared workspace profile does not select the first mapped package.
-          ...(targets.length === 1 || files.exists("release.config.json")
-            ? { directory: project.directory }
-            : {}),
+          ...(targets.length === 1 ? { directory: project.directory } : {}),
         }
       : undefined;
   } catch (error) {
+    if (error instanceof DeliverablesError) {
+      report("release", error.status, error.message);
+      return undefined;
+    }
     if (!(error instanceof Unconfirmed)) throw error;
     report("release", "unconfirmed", error.message);
     return undefined;

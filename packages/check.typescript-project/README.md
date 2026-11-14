@@ -3,6 +3,10 @@
 检查 TypeScript 项目是否符合固定的长期维护约定，覆盖开发环境、工具依赖、代码检查配置、Agent 操作接口、工作流以及文档结构。支持单包和 pnpm
 workspace，并对承担 npm ESM 发布职责的项目检查额外的交付配置。
 
+交付职责只读取根 `silvermoon.yaml` 的显式清单；npm 应用/库登记
+`path`、`type: npm` 和既有
+`packageId`，其他类型不承担 npm 专项。开放类型、缺失语义、安全路径及旧映射迁移见[交付描述](references/deliverables.md)。Cloudflare 在本阶段仅识别意图，不验证平台配置或运行。
+
 本包保持 private，通过构建后的 `typescript-project.car` 交给 Task
 Engine 执行。检查只读取目标项目，不运行其代码、配置模块、测试、安装或发布命令，也不会自动修改文件。
 
@@ -69,7 +73,7 @@ Check 查询官方 npm 发行元数据、Node.js 历史发行索引及官方生�
 
 无需 scripts.config.json 或重复声明全部拓扑。固定实现从 pnpm
 workspace 成员、manifest 内部依赖与脚本职责及既有工具配置推导动作，按依赖顺序构建后聚合类型、lint、覆盖率和适用包校验，串行传播失败；共享根配置无需每个成员重复入口。配置来源不等于执行根：共享 Vitest 配置仍分别在各代码成员执行，并显式传入 --root
-. 和 --config。类型配置按配置文件位置解析 include，ESLint 显式 --config 的匹配范围按成员 cwd 解析。无法确定配置职责时阻断，不猜通过。标准字节及必要 lib 不可自由修改，详见[检查参考](references/check.md)。发布支持根/唯一代码包及显式选中一个 workspace 成员，共用一套严格保护核心，不要求额外 release.config.json；优先复用已有 scripts/lib/release-packages.mjs 身份/tag 映射，CI 矩阵直接读取真实 workflow。
+. 和 --config。类型配置按配置文件位置解析 include，ESLint 显式 --config 的匹配范围按成员 cwd 解析。无法确定配置职责时阻断，不猜通过。标准字节及必要 lib 不可自由修改，详见[检查参考](references/check.md)。发布支持根/唯一代码包及显式选中一个 workspace 成员，共用一套严格保护核心；根 silvermoon.yaml 是唯一交付来源，旧 release.config.json 与 release-packages 映射必须迁移并移除，CI 矩阵直接读取真实 workflow。
 
 Check 不执行目标代码：固定文件完整性与配置证明受支持的静态机制，不代表本次类型检查、覆盖率成绩、构建产物或线上发布已通过。自定义 build/扩展内部不解释，也不因未知实现报错。brief 包含目标路径、配置项及观察值；通用修复文档仍从 output 读取。开发 Node 必须精确匹配官方索引中最高 SemVer 的稳定、已标 LTS 且当前 schedule 仍支持的发行版；接受 registry、Node 索引和 schedule 官方端点的缓存延迟，不另设缓存年龄上限，按本次响应中的版本事实判定。Date/Age 与缓存状态保留为证据；请求失败或数据不完整、冲突仍无法确认，不回退旧成功。
 

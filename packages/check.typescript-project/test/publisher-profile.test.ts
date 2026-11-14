@@ -50,14 +50,19 @@ it.each([
   expect(problem?.brief).toContain("actions/checkout@v4");
   expect(problem?.brief).toContain("actions/checkout@v7");
 });
-it("allows unrelated publisher configuration metadata", async () => {
+it("rejects a second legacy publisher selection source even with unrelated metadata", async () => {
   const config = {
     schemaVersion: 1,
     package: { id: "library", name: "@acme/library", directory: "." },
     ci: { nodeVersions: ["22.15.0", "24.11.0"] },
   };
   await put(root, "release.config.json", { ...config, adapter: "workspace" });
-  expect(await check()).toEqual([]);
+  expect(await check()).toContainEqual(
+    expect.objectContaining({
+      code: "release-mismatch",
+      brief: expect.stringContaining("release.config.json") as unknown,
+    }),
+  );
 });
 it.each([1, 2])(
   "supports %s real code members with a private aggregate root and one explicitly selected publisher target",
@@ -129,8 +134,14 @@ it.each([1, 2])(
       name: project.manifest.name,
       directory: project.directory,
     }));
-    const mappingSource = `export const releasePackages = ${JSON.stringify(mappings)};`;
-    await put(root, "scripts/lib/release-packages.mjs", mappingSource);
+    const declaration = {
+      deliverables: mappings.map((mapping) => ({
+        path: mapping.directory,
+        type: "npm",
+        packageId: mapping.id,
+      })),
+    };
+    await put(root, "silvermoon.yaml", declaration);
     const problems: { code: string; brief: string }[] = [];
     const run = async () => {
       const files = new Files(root, new AbortController().signal);
@@ -150,18 +161,14 @@ it.each([1, 2])(
     });
     expect(problems).toEqual([]);
     expect(await check()).toEqual([]);
-    await put(
-      root,
-      "scripts/lib/release-packages.mjs",
-      `export const releasePackages = ${JSON.stringify([{ ...mappings[0], directory: ".", name: "@acme/root" }])};`,
-    );
+    await put(root, "silvermoon.yaml", {
+      deliverables: [{ path: ".", type: "npm", packageId: "library" }],
+    });
     expect(await run()).toBeUndefined();
-    expect(problems[0]?.code).toBe("release-unconfirmed");
-    expect(problems[0]?.brief).toContain(
-      `#${count === 1 ? "single-package" : "workspace"}`,
-    );
+    expect(problems[0]?.code).toBe("release-mismatch");
+    expect(problems[0]?.brief).toContain("private");
     problems.length = 0;
-    await put(root, "scripts/lib/release-packages.mjs", mappingSource);
+    await put(root, "silvermoon.yaml", declaration);
     await put(
       root,
       "scripts/lib/npm-publish.mjs",
@@ -231,6 +238,13 @@ it("keeps identically named missing sources in different npm packages distinct",
   await put(root, "pnpm-workspace.yaml", {
     ...dataYaml(await readFile(join(root, "pnpm-workspace.yaml"), "utf8")),
     packages: ["packages/*"],
+  });
+  await put(root, "silvermoon.yaml", {
+    deliverables: [".", "packages/a", "packages/b"].map((path, i) => ({
+      path,
+      type: "npm",
+      packageId: `package-${i}`,
+    })),
   });
   for (const name of ["a", "b"]) {
     const member = join(root, "packages", name);
@@ -464,11 +478,7 @@ it("does not infer an npm library from private:false alone", async () => {
   await fixture(root);
   await put(root, "package.json", { ...manifest, private: false });
   const problems = await check();
-  expect(
-    problems.some(
-      (p) => p.code === "delivery-unconfirmed" && p.brief.includes("职责"),
-    ),
-  ).toBe(true);
+  expect(problems).toEqual([]);
   expect(problems.some((p) => p.code.startsWith("release-"))).toBe(false);
   await put(root, "package.json", { ...manifest, main: "./dist/server.js" });
   const application = await check();
@@ -486,7 +496,7 @@ it("does not infer an npm library from private:false alone", async () => {
   expect(internal.some((p) => p.code === "delivery-unconfirmed")).toBe(false);
   expect(internal.some((p) => p.code.startsWith("release-"))).toBe(false);
 });
-it("skips npm delivery and publisher requirements for private packages even with explicit publishing declarations", async () => {
+it("does not promote private internal packages based on manifest features or old mappings", async () => {
   const m = record(
     JSON.parse(await readFile(join(root, "package.json"), "utf8")) as unknown,
   );
@@ -504,14 +514,7 @@ it("skips npm delivery and publisher requirements for private packages even with
     publishConfig: { access: "restricted" },
     license: undefined,
   });
-  await put(root, "release.config.json", {
-    package: { directory: ".", name: "@acme/library" },
-  });
-  await put(
-    root,
-    "scripts/lib/release-packages.mjs",
-    'export const releasePackages = [{id:"library",name:"@acme/library",directory:"."}];',
-  );
+  await put(root, "silvermoon.yaml", { deliverables: [] });
   await rm(join(root, ".github", "workflows", "npm-publish.yaml"));
   await rm(join(root, "scripts", "lib", "npm-publish.mjs"));
   expect(await check()).toEqual([]);
@@ -542,20 +545,28 @@ it("reports explicit private-protection removal followed by publication without 
     },
   };
   await put(root, ".github/workflows/release.yaml", workflow);
-  expect(await check()).toEqual([
+  expect(await check()).toContainEqual(
     expect.objectContaining({
       code: "release-mismatch",
       brief: expect.stringContaining("禁止发布 private 包") as unknown,
     }),
-  ]);
+  );
   workflow.jobs.release.steps[1]!.run = "npm publish --dry-run --tag latest";
   await put(root, ".github/workflows/release.yaml", workflow);
-  expect(await check()).toEqual([]);
+  expect(
+    (await check()).some((problem) =>
+      problem.brief.includes("禁止发布 private 包"),
+    ),
+  ).toBe(false);
   workflow.jobs.release.steps = [
     { run: "npm pkg delete private" },
     { run: "npm pkg set private=true" },
     { run: "npm publish --tag latest" },
   ];
   await put(root, ".github/workflows/release.yaml", workflow);
-  expect(await check()).toEqual([]);
+  expect(
+    (await check()).some((problem) =>
+      problem.brief.includes("禁止发布 private 包"),
+    ),
+  ).toBe(false);
 });
