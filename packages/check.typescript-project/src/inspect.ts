@@ -17,6 +17,7 @@ import {
   tsIncludes,
   typeAwarePreset,
   typescriptPreset,
+  workersTestPlugin,
 } from "./static.js";
 import { Scripts, projectStrategy, type Project } from "./commands.js";
 import { metrics, fixedRequirements } from "./requirements.js";
@@ -27,6 +28,7 @@ import { scriptProfile } from "./script-profile.js";
 import { qualityWorkflow, type QualityProfile } from "./quality-workflow.js";
 import { nativeWorkflow } from "./native-workflow.js";
 import { projectDeliverables } from "./deliverables.js";
+import { cloudflare } from "./cloudflare.js";
 
 type Domain =
   | "dependency"
@@ -505,7 +507,9 @@ export async function inspect(
         issue("testing", "missing", `${prefix}: 缺少 Vitest 配置`);
         return;
       }
-      const config = record(javascript(await files.text(path)));
+      const config = record(
+        javascript(await files.text(path), project.delivery === "cloudflare"),
+      );
       const test = record(config.test ?? {});
       scopeContext!.details = `include=${JSON.stringify(test.include)}；exclude=${JSON.stringify(test.exclude)}`;
       for (const key of ["watch", "passWithNoTests"]) {
@@ -524,11 +528,30 @@ export async function inspect(
         "testTimeout",
       ];
       if (
-        Object.keys(config).some((k) => !["test"].includes(k)) ||
+        Object.keys(config).some(
+          (k) =>
+            ![
+              "test",
+              ...(project.delivery === "cloudflare" ? ["plugins"] : []),
+            ].includes(k),
+        ) ||
         Object.keys(test).some((k) => !allowed.includes(k))
       )
         throw new Unconfirmed(
           `unsupported Vitest configuration key (including projects/workspace/root)；观察字段=${JSON.stringify(Object.keys(config))}/${JSON.stringify(Object.keys(test))}`,
+        );
+      if (
+        config.plugins !== undefined &&
+        (!Array.isArray(config.plugins) ||
+          config.plugins.some(
+            (plugin: unknown) =>
+              !plugin ||
+              typeof plugin !== "object" ||
+              !(workersTestPlugin in plugin),
+          ))
+      )
+        throw new Unconfirmed(
+          "only literal cloudflareTest plugins are supported",
         );
       const testBase = project.directory || ".";
       const actualTests = project.tests.filter((path) =>
@@ -813,6 +836,7 @@ export async function inspect(
     await nativeWorkflow(files, projects, issue);
   });
   await convention(files, projects, internal, report, quality ?? null);
+  await cloudflare(files, projects, report);
 }
 
 async function discover(files: Files): Promise<Project[]> {

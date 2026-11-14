@@ -6,7 +6,13 @@ import { promisify } from "node:util";
 import process from "node:process";
 import { expect, it } from "vitest";
 import { runCheckBuilderCli } from "@silvermoon-work/check-task-builder/cli";
-import { fixture, npmFixture, put, vitestConfig } from "./fixture.js";
+import {
+  fixture,
+  npmFixture,
+  cloudflareFixture,
+  put,
+  vitestConfig,
+} from "./fixture.js";
 
 it("builds a real CAR and independently verifies Engine pass/fail plus linked Chinese documents", async () => {
   const persistent = process.env["TYPESCRIPT_CHECK_PERSIST_EVIDENCE"] === "1";
@@ -19,9 +25,18 @@ it("builds a real CAR and independently verifies Engine pass/fail plus linked Ch
     const good = join(owned, "good");
     const bad = join(owned, "bad");
     const npm = join(owned, "npm");
+    const cloudflare = join(owned, "cloudflare");
+    const badCloudflare = join(owned, "bad-cloudflare");
     await fixture(good);
     await fixture(bad);
     await npmFixture(npm);
+    await cloudflareFixture(cloudflare);
+    await cloudflareFixture(badCloudflare);
+    await put(badCloudflare, "wrangler.jsonc", {
+      name: "bad-worker",
+      compatibility_date: "2999-01-01",
+      main: "src/worker.ts",
+    });
     await put(
       bad,
       "vitest.config.ts",
@@ -53,7 +68,15 @@ it("builds a real CAR and independently verifies Engine pass/fail plus linked Ch
     expect(code, output).toBe(0);
     const { stdout } = await promisify(execFile)(
       process.execPath,
-      ["scripts/smoke.mjs", join(owned, "bundle.car"), good, bad, npm],
+      [
+        "scripts/smoke.mjs",
+        join(owned, "bundle.car"),
+        good,
+        bad,
+        npm,
+        cloudflare,
+        badCloudflare,
+      ],
       { cwd: resolve("."), timeout: 90_000 },
     ).catch((error: unknown) => {
       if (error instanceof Error && "stderr" in error)
@@ -92,6 +115,19 @@ it("builds a real CAR and independently verifies Engine pass/fail plus linked Ch
       documentationReadable: true,
       assetsExact: true,
     });
+    expect(result.results[3]).toMatchObject({
+      pass: true,
+      documentationReadable: true,
+      assetsExact: true,
+    });
+    expect(result.results[4]).toMatchObject({
+      pass: false,
+      documentationReadable: true,
+      assetsExact: true,
+    });
+    expect(
+      result.results[4]?.problems?.map((problem) => problem.code),
+    ).toContain("cloudflare-mismatch");
     expect(result.results[1]?.problems?.map((p) => p.code)).toContain(
       "coverage-mismatch",
     );

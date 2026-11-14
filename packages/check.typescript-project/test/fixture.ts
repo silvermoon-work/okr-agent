@@ -292,3 +292,71 @@ export async function npmFixture(root: string): Promise<void> {
     Buffer.from(assets.publisher).toString("utf8"),
   );
 }
+
+export async function cloudflareFixture(root: string): Promise<void> {
+  await fixture(root);
+  await put(root, "silvermoon.yaml", {
+    deliverables: [{ path: ".", type: "cloudflare" }],
+  });
+  const versions = {
+    wrangler: "4.162.0",
+    "@cloudflare/vitest-plugin": "1.8.2",
+    "@vitest/coverage-istanbul": "5.0.4",
+  };
+  await put(root, "package.json", {
+    ...manifest,
+    devDependencies: {
+      ...manifest.devDependencies,
+      ...Object.fromEntries(
+        Object.keys(versions).map((name) => [name, "catalog:"]),
+      ),
+    },
+  });
+  await put(root, "pnpm-workspace.yaml", {
+    catalog: {
+      ...catalog,
+      ...Object.fromEntries(
+        Object.entries(versions).map(([name, version]) => [
+          name,
+          `^${version}`,
+        ]),
+      ),
+    },
+  });
+  const lock = await readFile(join(root, "pnpm-lock.yaml"), "utf8");
+  await put(
+    root,
+    "pnpm-lock.yaml",
+    `${lock}${Object.entries(versions)
+      .map(
+        ([name, version]) =>
+          `      '${name}':\n        specifier: 'catalog:'\n        version: '${version}'\n`,
+      )
+      .join("")}`,
+  );
+  await put(root, "wrangler.jsonc", {
+    name: "fixture-worker",
+    compatibility_date: "2026-01-01",
+    main: "src/worker.ts",
+  });
+  await put(
+    root,
+    "src/worker.ts",
+    'export default {async fetch(): Promise<Response> {throw new Error("DO NOT EXECUTE");}} satisfies ExportedHandler<Env>;',
+  );
+  await put(
+    root,
+    "worker-configuration.d.ts",
+    "declare namespace Cloudflare {interface Env {}} interface Env extends Cloudflare.Env {}",
+  );
+  await put(root, "tsconfig.json", {
+    extends: "./tsconfig.base.json",
+    compilerOptions: { types: ["./worker-configuration.d.ts"] },
+    include: ["src/**/*.ts", "test/**/*.ts"],
+  });
+  await put(
+    root,
+    "vitest.config.ts",
+    `import {cloudflareTest} from "@cloudflare/vitest-plugin";\n${vitestConfig.replace("defineConfig({ test:", 'defineConfig({plugins:[cloudflareTest({wrangler:{configPath:"./wrangler.jsonc"}})], test:').replace('provider: "v8"', 'provider: "istanbul"')}`,
+  );
+}

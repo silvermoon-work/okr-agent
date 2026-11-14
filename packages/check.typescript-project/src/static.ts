@@ -25,6 +25,7 @@ export const typeAwarePreset = Symbol(
   "recognized type-aware TypeScript preset",
 );
 export const typescriptPreset = Symbol("recognized TypeScript preset");
+export const workersTestPlugin = Symbol("recognized cloudflareTest literal");
 function reference(value: unknown): value is Reference {
   return (
     !!value &&
@@ -62,7 +63,7 @@ const preset = (name: string): unknown => {
 };
 
 /** Recognizes data and a finite set of declarative wrappers; never calls target code. */
-export function javascript(text: string): unknown {
+export function javascript(text: string, workers = false): unknown {
   let body: Node[];
   try {
     body = nodes(
@@ -82,6 +83,7 @@ export function javascript(text: string): unknown {
     "eslint/config",
     "prettier",
   ]);
+  if (workers) imports.add("@cloudflare/vitest-plugin");
   const material = (value: unknown): unknown =>
     reference(value) ? preset(value.reference) : value;
   const evaluate = (input: unknown, locals = environment): unknown => {
@@ -191,6 +193,7 @@ export function javascript(text: string): unknown {
             "vitest/config.defineConfig",
             "eslint/config.defineConfig",
             "typescript-eslint.config",
+            ...(workers ? ["@cloudflare/vitest-plugin.cloudflareTest"] : []),
           ].includes(callee.reference)
         )
           throw new Unconfirmed("configuration calls are not executed");
@@ -205,14 +208,19 @@ export function javascript(text: string): unknown {
             args.push(...(value as unknown[]));
           } else args.push(value);
         }
-        if (callee.reference === "vitest/config.defineConfig") {
+        if (
+          callee.reference === "vitest/config.defineConfig" ||
+          callee.reference === "@cloudflare/vitest-plugin.cloudflareTest"
+        ) {
           if (
             args.length !== 1 ||
             typeof args[0] !== "object" ||
             Array.isArray(args[0])
           )
             throw new Unconfirmed("defineConfig requires a static object");
-          return args[0];
+          return callee.reference === "vitest/config.defineConfig"
+            ? args[0]
+            : { [workersTestPlugin]: args[0] };
         }
         return args.flat();
       }

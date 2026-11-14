@@ -244,7 +244,12 @@ it("does not apply npm delivery to Cloudflare, custom types or undeclared public
   await put(root, "wrangler.jsonc", '{ "main": "src/index.ts" }');
   for (const type of [undefined, "cloudflare", "custom"]) {
     await declaration(type ? [{ path: ".", type }] : []);
-    expect(await observe()).toEqual([]);
+    const problems = await observe();
+    if (type === "cloudflare")
+      expect(
+        problems.every((problem) => problem.code.startsWith("cloudflare-")),
+      ).toBe(true);
+    else expect(problems).toEqual([]);
   }
   await put(root, "tsconfig.base.json", { compilerOptions: { strict: false } });
   expect(

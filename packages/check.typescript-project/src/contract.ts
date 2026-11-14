@@ -46,6 +46,9 @@ export const codes = [
   "release-missing",
   "release-mismatch",
   "release-unconfirmed",
+  "cloudflare-missing",
+  "cloudflare-mismatch",
+  "cloudflare-unconfirmed",
 ] as const;
 export const ProblemCode = Type.Union(codes.map((code) => Type.Literal(code)));
 export type ProblemCode = (typeof codes)[number];

@@ -124,8 +124,9 @@ export function validateDeliveryPaths(root, entries) {
       try {
         info = lstatSync(path);
       } catch (error) {
+        if (error.code !== "ENOENT") throw error;
         throw new DeliverablesError(
-          error.code === "ENOENT" ? "missing" : "unconfirmed",
+          "missing",
           `${entry.path}: directory unavailable`,
         );
       }

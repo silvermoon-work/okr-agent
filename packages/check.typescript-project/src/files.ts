@@ -183,6 +183,21 @@ export class Files {
       throw error;
     }
   }
+  async directory(path: string): Promise<boolean> {
+    return (await this.kind(path)) === "directory";
+  }
+  async kind(path: string): Promise<"file" | "directory" | undefined> {
+    try {
+      const info = await lstat(await this.guard(path));
+      if (info.isDirectory()) return "directory";
+      if (info.isFile()) return "file";
+      throw new Unconfirmed("unsupported filesystem entry");
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT")
+        return undefined;
+      throw error;
+    }
+  }
   parent(path: string): string {
     return slash(dirname(path));
   }

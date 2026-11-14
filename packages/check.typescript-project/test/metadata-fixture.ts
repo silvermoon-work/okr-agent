@@ -14,6 +14,7 @@ export const toolVersions: Record<string, string> = {
   "@eslint/js": "10.0.1",
   prettier: "3.9.10",
   "@vitest/coverage-v8": "5.0.4",
+  "@vitest/coverage-istanbul": "5.0.4",
   publint: "0.3.25",
   semver: "7.8.5",
   turbo: "2.11.10",
