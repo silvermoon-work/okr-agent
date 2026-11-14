@@ -188,6 +188,10 @@ it.each([
   [{ compatibility_flags: ["unknown_flag"] }, "unconfirmed", "flag"],
   [{ env: {} }, "unconfirmed", "env"],
   [{ services: [] }, "unconfirmed", "services"],
+  [{ vectorize: [] }, "unconfirmed", "vectorize"],
+  [{ vars: { TOKEN: "present" } }, "unconfirmed", "vars"],
+  [{ find_additional_modules: true }, "unconfirmed", "find_additional_modules"],
+  [{ not_a_field: true }, "unconfirmed", "reviewed Wrangler schema"],
   [{ assets: [] }, "mismatch", "assets"],
   [{ assets: {} }, "missing", "directory"],
   [{ assets: { directory: "../outside" } }, "mismatch", "path"],
@@ -220,6 +224,18 @@ it.each(["wrangler.toml", "cloudflare.config.ts", "wrangler.json"])(
     expect((await check())[0]?.code).toBe("cloudflare-unconfirmed");
   },
 );
+it("does not reject reviewed ordinary Wrangler metadata", async () => {
+  await mkdir(join(root, "public"));
+  await config({
+    assets: { directory: "./public" },
+    workers_dev: false,
+    minify: true,
+    account_id: "0123456789abcdef0123456789abcdef",
+    routes: [{ pattern: "example.com/*", zone_name: "example.com" }],
+    observability: { enabled: true },
+  });
+  expect(await check()).toEqual([]);
+});
 it("reports missing native configuration rather than treating intention as platform success", async () => {
   expect((await check())[0]?.code).toBe("cloudflare-missing");
 });

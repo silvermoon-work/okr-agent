@@ -306,6 +306,111 @@ async function workerTests(
     `${path}: Istanbul and Vitest versions must match`,
   );
 }
+const interpretedWranglerFields = new Set([
+  "assets",
+  "compatibility_date",
+  "compatibility_flags",
+  "durable_objects",
+  "main",
+  "migrations",
+  "name",
+]);
+const ordinaryWranglerFields = new Set([
+  "$schema",
+  "access",
+  "account_id",
+  "base_dir",
+  "cache",
+  "compliance_region",
+  "dev",
+  "first_party_worker",
+  "jsx_factory",
+  "jsx_fragment",
+  "keep_names",
+  "keep_vars",
+  "limits",
+  "logfwdr",
+  "logpush",
+  "minify",
+  "no_bundle",
+  "observability",
+  "placement",
+  "preserve_file_names",
+  "preview_urls",
+  "route",
+  "routes",
+  "send_metrics",
+  "tsconfig",
+  "upload_source_maps",
+  "workers_dev",
+]);
+const unsupportedWranglerFields = new Set([
+  "addresses",
+  "agent_memory",
+  "ai",
+  "ai_search",
+  "ai_search_namespaces",
+  "alias",
+  "analytics",
+  "analytics_engine_datasets",
+  "artifacts",
+  "browser",
+  "build",
+  "cloudchamber",
+  "connect",
+  "containers",
+  "d1_databases",
+  "data_blobs",
+  "define",
+  "dependencies_instrumentation",
+  "dispatch_namespaces",
+  "env",
+  "exports",
+  "find_additional_modules",
+  "flagship",
+  "hyperdrive",
+  "images",
+  "k2",
+  "kv_namespaces",
+  "media",
+  "mtls_certificates",
+  "pages_build_output_dir",
+  "pipelines",
+  "previews",
+  "python_modules",
+  "queues",
+  "r2_buckets",
+  "ratelimits",
+  "rules",
+  "secrets",
+  "secrets_store_secrets",
+  "send_email",
+  "services",
+  "site",
+  "stream",
+  "streaming_tail_consumers",
+  "tail_consumers",
+  "text_blobs",
+  "triggers",
+  "unsafe",
+  "unsafe_hello_world",
+  "vars",
+  "vectorize",
+  "version_metadata",
+  "vpc_networks",
+  "vpc_services",
+  "wasm_modules",
+  "worker_loaders",
+  "workflows",
+]);
+function reviewedWranglerField(
+  key: string,
+): "interpreted" | "ordinary" | "unsupported" | "unknown" {
+  if (interpretedWranglerFields.has(key)) return "interpreted";
+  if (ordinaryWranglerFields.has(key)) return "ordinary";
+  if (unsupportedWranglerFields.has(key)) return "unsupported";
+  return "unknown";
+}
 async function inspectWorker(
   files: Files,
   projects: Project[],
@@ -328,29 +433,16 @@ async function inspectWorker(
   );
   const path = candidates[0]!;
   const config = jsonc(await files.text(path));
-  for (const capability of [
-    "env",
-    "build",
-    "rules",
-    "exports",
-    "services",
-    "kv_namespaces",
-    "r2_buckets",
-    "d1_databases",
-    "queues",
-    "workflows",
-    "containers",
-    "unsafe",
-    "triggers",
-    "tail_consumers",
-    "send_email",
-    "dispatch_namespaces",
-  ])
-    requireValue(
-      config[capability] === undefined,
+  for (const key of Object.keys(config)) {
+    const review = reviewedWranglerField(key);
+    if (review === "interpreted" || review === "ordinary") continue;
+    throw new Finding(
       "unconfirmed",
-      `${path}: ${capability} capability is outside the reviewed profile`,
+      review === "unsupported"
+        ? `${path}: ${key} capability is outside the reviewed profile`
+        : `${path}: ${key} is outside the reviewed Wrangler schema`,
     );
+  }
   requireValue(
     /^[a-zA-Z0-9][a-zA-Z0-9-]*$/.test(string(config.name, `${path}: name`)),
     "unconfirmed",
@@ -421,7 +513,11 @@ async function inspectWorker(
       `${path}: assets.directory`,
     );
     const kind = await files.kind(directory);
-    requireValue(kind !== "file", "mismatch", `${path}: assets.directory is a file`);
+    requireValue(
+      kind !== "file",
+      "mismatch",
+      `${path}: assets.directory is a file`,
+    );
     requireValue(
       kind === "directory",
       "unconfirmed",

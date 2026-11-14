@@ -153,9 +153,12 @@ export function environmentBindings(text: string): Set<string> {
   const bindings = new Set<string>();
   let found = false;
   for (let i = 0; i < tokens.length; i++) {
-    if (    tokens[i]?.label !== "name" ||
-    tokens[i]?.value !== "interface" ||
-    tokens[i + 1]?.label !== "name" || tokens[i + 1]?.value !== "Env")
+    if (
+      tokens[i]?.label !== "name" ||
+      tokens[i]?.value !== "interface" ||
+      tokens[i + 1]?.label !== "name" ||
+      tokens[i + 1]?.value !== "Env"
+    )
       continue;
     found = true;
     i += 2;
