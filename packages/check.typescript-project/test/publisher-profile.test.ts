@@ -57,12 +57,15 @@ it("rejects a second legacy publisher selection source even with unrelated metad
     ci: { nodeVersions: ["22.15.0", "24.11.0"] },
   };
   await put(root, "release.config.json", { ...config, adapter: "workspace" });
-  expect(await check()).toContainEqual(
+  const problems = await check();
+  expect(
+    problems.filter((problem) => problem.brief.includes("release.config.json")),
+  ).toEqual([
     expect.objectContaining({
-      code: "release-mismatch",
-      brief: expect.stringContaining("release.config.json") as unknown,
+      code: "delivery-mismatch",
+      brief: expect.stringContaining("旧交付来源须迁移") as unknown,
     }),
-  );
+  ]);
 });
 it.each([1, 2])(
   "supports %s real code members with a private aggregate root and one explicitly selected publisher target",

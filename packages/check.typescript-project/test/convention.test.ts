@@ -148,15 +148,39 @@ it("requires an explicit legacy mapping migration without promoting a private no
   );
   const problems = await check();
   expect(problems.some((p) => p.brief.includes("目录/name"))).toBe(false);
-  expect(problems).toContainEqual(
-    expect.objectContaining({
-      code: "release-mismatch",
-      brief: expect.stringContaining("旧交付来源须迁移") as unknown,
-    }),
-  );
+  expect(problems.filter((p) => p.brief.includes("旧交付来源须迁移"))).toEqual([
+    expect.objectContaining({ code: "delivery-mismatch" }),
+  ]);
   expect(problems.some((p) => p.brief.includes("尚未支持的门卫包括"))).toBe(
     false,
   );
+});
+it("reports an undeclared delivery once and resumes derived release checks after declaration", async () => {
+  await put(root, "wrangler.jsonc", '{ "main": "src/index.ts" }');
+  await put(root, ".github/workflows/publish.yaml", {
+    on: { push: { tags: ["v*"] } },
+    jobs: {
+      publish: {
+        steps: [{ run: 'npm publish "./dist/pkg.tgz" --access public' }],
+      },
+    },
+  });
+  const undeclared = (await check()).filter(
+    (p) => p.code.startsWith("delivery-") || p.code.startsWith("release-"),
+  );
+  expect(undeclared).toEqual([
+    expect.objectContaining({ code: "delivery-missing" }),
+  ]);
+  expect(undeclared[0]?.brief).toContain("wrangler.jsonc");
+  expect(undeclared[0]?.brief).toContain(
+    ".github/workflows/publish.yaml:publish",
+  );
+  await put(root, "silvermoon.yaml", { deliverables: [] });
+  const declared = (await check()).filter(
+    (p) => p.code.startsWith("delivery-") || p.code.startsWith("release-"),
+  );
+  expect(declared.map((p) => p.code)).toEqual(["release-mismatch"]);
+  expect(declared[0]?.brief).toContain("./dist/pkg.tgz");
 });
 it("rejects direct publication precisely instead of speculating about custom guard internals", async () => {
   await put(root, "package.json", {
@@ -167,6 +191,7 @@ it("rejects direct publication precisely instead of speculating about custom gua
       registry: "https://registry.npmjs.org/",
     },
   });
+  await put(root, "silvermoon.yaml", { deliverables: [] });
   await put(
     root,
     ".github/workflows/release.yaml",
@@ -739,6 +764,48 @@ it("follows only patches in a 0.minor series and never auto-upgrades an exact 0.
   await select("^0.0.5", "0.0.5");
   expect((await check()).map((p) => p.code)).toContain("dependency-mismatch");
 });
+it("reports one lagging catalog entry once for every importer that shares it", async () => {
+  const provider = evidence.metadata.package;
+  evidence.metadata.package = async (name, selection) =>
+    name === "publint"
+      ? {
+          source: "https://fixture.invalid/publint",
+          observedAt: Date.now(),
+          authoritative: true,
+          data: packageFacts({
+            "0.3.25": { version: "0.3.25" },
+            "0.3.26": { version: "0.3.26" },
+          }),
+        }
+      : await provider(name, selection);
+  await put(root, "pnpm-workspace.yaml", {
+    packages: ["packages/*"],
+    catalog: { ...catalog, publint: "^0.3.25" },
+  });
+  await put(root, "package.json", {
+    ...manifest,
+    devDependencies: { ...manifest.devDependencies, publint: "catalog:" },
+  });
+  await put(root, "packages/a/package.json", {
+    name: "a",
+    private: true,
+    engines: { node: ">=22" },
+    devDependencies: { publint: "catalog:" },
+  });
+  const lock = dataYaml(await readFile(join(root, "pnpm-lock.yaml"), "utf8"));
+  const importers = record(lock.importers);
+  const entry = { specifier: "catalog:", version: "0.3.25" };
+  record(record(importers["."]).devDependencies).publint = entry;
+  importers["packages/a"] = { devDependencies: { publint: entry } };
+  await put(root, "pnpm-lock.yaml", stringify(lock));
+  const lagging = (await check()).filter(
+    (problem) =>
+      problem.code === "dependency-mismatch" &&
+      problem.brief.includes("最新 0.3.26"),
+  );
+  expect(lagging).toHaveLength(1);
+  expect(lagging[0]?.brief).toContain(".、packages/a: publint");
+});
 it("does not accept an unrelated safe CI job as proof of the actual check job environment", async () => {
   const { workflow } = await import("./fixture.js");
   await put(
@@ -768,6 +835,7 @@ it("rejects known unsafe release configuration without accepting guard keywords 
     },
     exports: { ".": { import: "./dist/index.js", types: "./dist/index.d.ts" } },
   });
+  await put(root, "silvermoon.yaml", { deliverables: [] });
   await put(
     root,
     ".github/workflows/release.yaml",

@@ -19,7 +19,7 @@ import { publisherProfile, compatibilityMatrix } from "./publisher-profile.js";
 import { resolvedPeer } from "./lockfile.js";
 import { configuredDelivery } from "./delivery.js";
 import type { QualityProfile } from "./quality-workflow.js";
-import { projectDeliverables } from "./deliverables.js";
+import { deliverableDeclaration } from "./deliverables.js";
 
 type Domain =
   | "environment"
@@ -109,9 +109,13 @@ export async function convention(
     reported.add(key);
     report(`${domain}-${status}` as ProblemCode, message);
   };
-  await projectDeliverables(files, projects, (status, brief) => {
-    issue("delivery", status, brief);
-  });
+  const declaration = await deliverableDeclaration(
+    files,
+    projects,
+    (status, brief) => {
+      issue("delivery", status, brief);
+    },
+  );
   const section = async (
     domain: Domain,
     action: () => Promise<void> | void,
@@ -266,6 +270,8 @@ export async function convention(
       }
     }
   });
+  // One declaration gap per package, but one finding for the same missing fact.
+  const missingEngines: string[] = [];
   for (const project of runtimeProjects)
     await section("environment", () => {
       const path = files.path(project.directory, "package.json");
@@ -278,8 +284,7 @@ export async function convention(
           `${path}: engines=${JSON.stringify(engines)}；要求包含 node 范围的静态对象`,
         );
       const range = record(engines ?? {}).node;
-      if (range === undefined)
-        issue("environment", "missing", `${path}: engines.node 缺失`);
+      if (range === undefined) missingEngines.push(path);
       else {
         if (typeof range !== "string" || !validRange(range))
           throw new Unconfirmed(
@@ -303,6 +308,12 @@ export async function convention(
           );
       }
     });
+  if (missingEngines.length)
+    issue(
+      "environment",
+      "missing",
+      `${missingEngines.length} 个适用代码包缺少 engines.node：${missingEngines.join("、")}`,
+    );
   const uniformRuntimeMinimum =
     runtimeMinimums.length === runtimeProjects.length &&
     new Set(runtimeMinimums.map((entry) => entry.minVersion)).size <= 1;
@@ -322,7 +333,9 @@ export async function convention(
       /^pnpm@(\d+\.\d+\.\d+)(?:\+sha(?:224|256|384|512)\.[a-f0-9]+)?$/.exec(
         declared,
       );
-    if (!match || !valid(match[1])) {
+    // The scope inspection already reports an absent or non-exact declaration.
+    if (!match) return;
+    if (!valid(match[1])) {
       issue(
         "dependency",
         "mismatch",
@@ -400,6 +413,8 @@ export async function convention(
     importer: string;
   }
   const actual = new Map<string, Map<string, InstalledTool>>();
+  // Members sharing one catalog entry lag behind together: one fix, one finding.
+  const lagging = new Map<string, { importers: string[]; brief: string }>();
   for (const project of projects) {
     await section("dependency", async () => {
       const own = record(project.manifest.devDependencies ?? {});
@@ -540,12 +555,17 @@ export async function convention(
           throw new Unconfirmed(
             `${observation.source}: 缺少完整候选/已解析版本证据`,
           );
-        if (installed !== newest)
-          issue(
-            "dependency",
-            "mismatch",
-            `${project.directory || "."}: ${name} 声明 ${raw} -> ${range}; importer ${installed}; 系列 ${stableSeries(minimum.version)} 最新 ${newest}; ${observation.source}; ${new Date(observation.observedAt).toISOString()}`,
-          );
+        if (installed !== newest) {
+          const key = `${name}|${raw}|${range}|${installed}|${newest}`;
+          const importer = project.directory || ".";
+          const existing = lagging.get(key);
+          if (existing) existing.importers.push(importer);
+          else
+            lagging.set(key, {
+              importers: [importer],
+              brief: `${name} 声明 ${raw} -> ${range}; importer ${installed}; 系列 ${stableSeries(minimum.version)} 最新 ${newest}; ${observation.source}; ${new Date(observation.observedAt).toISOString()}`,
+            });
+        }
         const release = versions[installed];
         const latestEngine = versions[newest].engines?.node;
         if (latestEngine && (!node || !validRange(latestEngine)))
@@ -582,6 +602,8 @@ export async function convention(
       }
     });
   }
+  for (const { importers, brief } of lagging.values())
+    issue("dependency", "mismatch", `${importers.join("、")}: ${brief}`);
   for (const project of projects)
     await section("dependency", async () => {
       const resolved = new Map([
@@ -759,8 +781,12 @@ export async function convention(
       "check",
     ];
     const rootScripts = record(root.manifest.scripts ?? {});
+    const renamed = new Set(
+      Object.keys(rootScripts).map((name) => name.replaceAll(":", "-")),
+    );
     for (const name of names) {
-      if (rootScripts[name] === undefined) {
+      // An invalid colon name already carries the required rename.
+      if (rootScripts[name] === undefined && !renamed.has(name)) {
         issue(
           "gate",
           "missing",
@@ -769,16 +795,17 @@ export async function convention(
       }
     }
   });
-  await section("release", async () => {
-    await publisherProfile(files, projects, evidence, issue, quality);
-  });
+  if (!declaration.blocked)
+    await section("release", async () => {
+      await publisherProfile(files, projects, evidence, issue, quality);
+    });
   const deliveries = projects.filter(artifact);
   for (const project of projects) {
     if (deliveries.includes(project))
       await section("delivery", async () => {
         await delivery(files, project, nonempty, issue);
       });
-    if (project.sources.length)
+    if (project.sources.length && !declaration.blocked)
       await section("delivery", async () => {
         const build = record(project.manifest.scripts ?? {}).build;
         if (
@@ -820,9 +847,10 @@ export async function convention(
         }
       });
   }
-  await section("release", async () => {
-    await release(files, issue);
-  });
+  if (!declaration.blocked)
+    await section("release", async () => {
+      await release(files, issue);
+    });
   await section("release", async () => {
     await privatePublishEvidence(files, projects, (status, brief) => {
       issue("release", status, brief);

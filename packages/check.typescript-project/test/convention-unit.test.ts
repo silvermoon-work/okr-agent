@@ -16,6 +16,7 @@ it("selects stable compatibility series without treating prereleases as stable",
 async function check(
   patch: Record<string, unknown> = {},
   data: Record<string, string> = {},
+  members: Project[] = [],
 ) {
   const evidence = await testEvidence();
   const content: Record<string, string> = {
@@ -50,7 +51,7 @@ async function check(
   const problems: { code: ProblemCode; brief: string }[] = [];
   await convention(
     files,
-    [project],
+    [project, ...members],
     evidence,
     (code, brief) => problems.push({ code, brief }),
     null,
@@ -64,7 +65,7 @@ it("reports empty free documentation instead of accepting mere file presence", a
   });
 });
 it.each([
-  ["missing", undefined, "environment-missing", "engines.node 缺失"],
+  ["missing", undefined, "environment-missing", "缺少 engines.node"],
   ["array", [], "environment-unconfirmed", "静态对象"],
   ["invalid range", { node: "latest" }, "environment-unconfirmed", "无法解析"],
   ["empty range", { node: "<0.0.0" }, "environment-unconfirmed", "无法解析"],
@@ -77,6 +78,25 @@ it.each([
     });
   },
 );
+it("reports packages missing engines.node as one finding listing each manifest", async () => {
+  const member = (directory: string): Project => ({
+    directory,
+    manifest: { name: directory, private: true },
+    sources: [`${directory}/src/index.ts`],
+    tests: [],
+  });
+  const problems = (
+    await check({}, {}, [member("packages/a"), member("packages/b")])
+  ).filter(
+    (problem) =>
+      problem.code === "environment-missing" &&
+      problem.brief.includes("engines.node"),
+  );
+  expect(problems).toHaveLength(1);
+  expect(problems[0]?.brief).toContain("2 个适用代码包缺少 engines.node");
+  expect(problems[0]?.brief).toContain("packages/a/package.json");
+  expect(problems[0]?.brief).toContain("packages/b/package.json");
+});
 it("requires an exact stable developer Node and reports conflicting Volta and nvm choices", async () => {
   expect(await check({}, { ".node-version": "24.11.0-rc.0" })).toContainEqual({
     code: "environment-mismatch",

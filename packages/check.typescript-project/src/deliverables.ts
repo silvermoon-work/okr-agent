@@ -12,11 +12,23 @@ type Report = (
   status: "missing" | "mismatch" | "unconfirmed",
   brief: string,
 ) => void;
+export interface DeliverableDeclaration {
+  entries: Deliverable[];
+  /** Delivery-derived checks have no trustworthy target selection. */
+  blocked: boolean;
+}
 export async function projectDeliverables(
   files: Files,
   projects: Project[],
   report: Report,
 ): Promise<Deliverable[]> {
+  return (await deliverableDeclaration(files, projects, report)).entries;
+}
+export async function deliverableDeclaration(
+  files: Files,
+  projects: Project[],
+  report: Report,
+): Promise<DeliverableDeclaration> {
   for (const project of projects) delete project.delivery;
   for (const path of legacyDeliveryPaths)
     if (files.exists(path))
@@ -25,8 +37,8 @@ export async function projectDeliverables(
         `${path}: 旧交付来源须迁移到 silvermoon.yaml；不回退或并行选择`,
       );
   try {
-    const source = await files.optionalText("silvermoon.yaml");
-    const entries = parseDeliverables(source);
+    const declared = await files.optionalText("silvermoon.yaml");
+    const entries = parseDeliverables(declared);
     validateDeliveryPaths(files.root, entries);
     for (const entry of entries) {
       const project = projects.find(
@@ -39,6 +51,12 @@ export async function projectDeliverables(
           `silvermoon.yaml: ${entry.path}: ${entry.type} 交付项必须精确匹配根包或工作区成员`,
         );
     }
+    const signs: string[] = [];
+    for (const project of projects)
+      for (const name of ["wrangler.jsonc", "wrangler.json", "wrangler.toml"]) {
+        const path = files.path(project.directory, name);
+        if (files.exists(path)) signs.push(path);
+      }
     for (const path of files.paths.filter((path) =>
       /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path),
     )) {
@@ -52,10 +70,6 @@ export async function projectDeliverables(
       const workflow = dataYaml(source);
       for (const [name, raw] of Object.entries(record(workflow.jobs ?? {}))) {
         const job = record(raw);
-        const defaults = {
-          ...record(record(workflow.defaults ?? {}).run ?? {}),
-          ...record(record(job.defaults ?? {}).run ?? {}),
-        };
         if (!Array.isArray(job.steps)) continue;
         for (const rawStep of job.steps as unknown[]) {
           const step = record(rawStep);
@@ -63,69 +77,56 @@ export async function projectDeliverables(
           const commands = step.run
             .split(/\r?\n|&&|;/)
             .map((command) => command.trim());
-          if (
-            commands.some((command) =>
-              /^pnpm\s+(?:run\s+)?release(?:-dry-run)?(?:\s|$)/.test(command),
-            )
-          ) {
-            if (!entries.some((entry) => entry.type === "npm"))
-              report(
-                "missing",
-                `${path}:${name}: 明确 npm 发布入口缺少 silvermoon.yaml npm 交付声明`,
-              );
-            const selected = {
-              ...record(workflow.env ?? {}),
-              ...record(job.env ?? {}),
-              ...record(step.env ?? {}),
-            }.PACKAGE_INPUT;
-            if (
-              typeof selected === "string" &&
-              !selected.includes("${{") &&
-              !entries.some(
-                (entry) => entry.type === "npm" && entry.packageId === selected,
-              )
-            )
-              report(
-                "missing",
-                `${path}:${name}: 发布选择 ${selected} 未登记 npm 交付声明`,
-              );
+          const release = commands.some((command) =>
+            /^pnpm\s+(?:run\s+)?release(?:-dry-run)?(?:\s|$)/.test(command),
+          );
+          const publish = commands.some((command) =>
+            /^(?:npm|pnpm)\s+(?:(?:-r|--recursive)\s+)?publish(?:\s|$)/.test(
+              command,
+            ),
+          );
+          if (release || publish) signs.push(`${path}:${name}`);
+          // A direct publish is always a release-domain violation; its
+          // directory is irrelevant until it uses the fixed release entry.
+          if (!release || declared === undefined) continue;
+          if (!entries.some((entry) => entry.type === "npm")) {
+            report(
+              "missing",
+              `${path}:${name}: 明确 npm 发布入口缺少 silvermoon.yaml npm 交付声明`,
+            );
+            continue;
           }
+          const selected = {
+            ...record(workflow.env ?? {}),
+            ...record(job.env ?? {}),
+            ...record(step.env ?? {}),
+          }.PACKAGE_INPUT;
           if (
-            commands.some((command) =>
-              /^(?:npm|pnpm)\s+(?:(?:-r|--recursive)\s+)?publish(?:\s|$)/.test(
-                command,
-              ),
+            typeof selected === "string" &&
+            !selected.includes("${{") &&
+            !entries.some(
+              (entry) => entry.type === "npm" && entry.packageId === selected,
             )
-          ) {
-            const directory =
-              step["working-directory"] ?? defaults["working-directory"] ?? ".";
-            if (
-              typeof directory !== "string" ||
-              directory.includes("${{") ||
-              /(?:--dir|--prefix|-C|cd\s)/.test(step.run)
-            )
-              report("unconfirmed", `${path}:${name}: 发布目录无法静态确认`);
-            else {
-              const normalized = files.path("", directory) || ".";
-              if (
-                !entries.some(
-                  (entry) => entry.type === "npm" && entry.path === normalized,
-                )
-              )
-                report(
-                  "missing",
-                  `${path}:${name}: 发布目录 ${normalized} 未登记 npm 交付声明`,
-                );
-            }
-          }
+          )
+            report(
+              "missing",
+              `${path}:${name}: 发布选择 ${selected} 未登记 npm 交付声明`,
+            );
         }
       }
     }
-    return entries;
+    if (declared === undefined && signs.length) {
+      report(
+        "missing",
+        `silvermoon.yaml: 未声明 deliverables，但观察到交付迹象 ${[...new Set(signs)].join(", ")}；先声明每个交付单元（npm 包或 cloudflare 部署单元，不交付则写 deliverables: []），之后才检查发布工作流、npm 交付元数据和平台配置`,
+      );
+      return { entries, blocked: true };
+    }
+    return { entries, blocked: false };
   } catch (error) {
     if (error instanceof DeliverablesError) report(error.status, error.message);
     else if (error instanceof Unconfirmed) report("unconfirmed", error.message);
     else throw error;
-    return [];
+    return { entries: [], blocked: true };
   }
 }

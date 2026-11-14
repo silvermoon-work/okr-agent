@@ -15,7 +15,11 @@ deliverables:
 
 应用与库均须登记实际对外交付项；内部代码、未启用示例无需登记，不添加 `none` 或
 `inactive`。没有交付项时可以省略文件或使用
-`deliverables: []`。明确 npm 发布入口/选择缺少对应声明时报告 missing；未知动态发布目录报告 unconfirmed，不自动补声明。发布器绝不选择未登记目标。
+`deliverables: []`；但省略文件而工作流含 npm/pnpm 发布步骤或成员含 Wrangler 配置时，只报告一次 missing 并列出这些交付迹象，此时不再推导发布工作流、npm 交付元数据和平台配置，补上声明后这些检查才恢复。迹象不推导交付意图，显式
+`deliverables: []`
+即视为已声明。声明本身无效时同样跳过这些依赖它的检查。已声明后，`pnpm release`
+入口/选择缺少对应 npm 声明时报告 missing；直接 `npm publish`/`pnpm publish`
+由发布域统一报告为不匹配，不再另行推断其发布目录。不自动补声明，发布器绝不选择未登记目标。
 
 ## 字段
 

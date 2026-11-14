@@ -95,7 +95,9 @@ it("short-circuits each invalid invocation before file/lib checks while retainin
     problems.filter((p) => p.brief.includes("scripts/check.mjs:")),
   ).toEqual([]);
   expect(
-    problems.filter((p) => p.brief.includes("scripts/lint.mjs:")),
+    problems.filter(
+      (p) => p.code === "gate-missing" && p.brief.includes("scripts/lint.mjs"),
+    ),
   ).toHaveLength(1);
   expect(
     problems.filter((p) => p.brief.includes("scripts/lib/commands.mjs")),
@@ -343,11 +345,14 @@ it("reports missing entries and orphan top-level files but exempts shared module
     'throw new Error("DO NOT EXECUTE");',
   );
   const problems = await check();
-  expect(problems.map((p) => p.code)).toEqual([
+  // One manifest, one structural finding: both orphans are listed together.
+  expect(problems.map((p) => p.code).sort()).toEqual([
+    "gate-mismatch",
     "gate-missing",
-    "gate-mismatch",
-    "gate-mismatch",
   ]);
+  const mismatch = problems.find((p) => p.code === "gate-mismatch")!;
+  expect(mismatch.brief).toContain("scripts/orphan.mjs");
+  expect(mismatch.brief).toContain("scripts/helper.js");
   expect(problems.some((p) => p.brief.includes("scripts/lib/"))).toBe(true);
   expect(
     problems.some((p) => p.brief.startsWith("scripts/lib/commands.mjs")),
@@ -374,6 +379,64 @@ it.each([
       brief: expect.stringContaining(`无效 script 名称: ${name}`) as unknown,
     }),
   ]);
+});
+it("reports a colon-named required script once with its required name", async () => {
+  const scripts: Record<string, unknown> = { ...manifest.scripts };
+  delete scripts["format-check"];
+  scripts["format:check"] = "node scripts/format-check.mjs";
+  await put(root, "package.json", { ...manifest, scripts });
+  expect(
+    (await check()).filter((problem) => problem.code.startsWith("gate-")),
+  ).toEqual([
+    {
+      code: "gate-mismatch",
+      brief: expect.stringContaining("改名为 format-check") as unknown,
+    },
+  ]);
+});
+it("does not report a top-level script again when its invoking script is already wrong", async () => {
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: { ...manifest.scripts, preview: "node scripts/build-preview.mjs" },
+  });
+  await put(root, "scripts/build-preview.mjs", "");
+  expect(await check()).toEqual([
+    {
+      code: "gate-mismatch",
+      brief: expect.stringContaining('scripts["preview"]') as unknown,
+    },
+  ]);
+  await put(root, "package.json", manifest);
+  expect(await check()).toEqual([
+    {
+      code: "gate-mismatch",
+      brief: expect.stringContaining("scripts/build-preview.mjs") as unknown,
+    },
+  ]);
+});
+it("reports an absent package manager and type configuration once at their own domain", async () => {
+  const withoutManager: Record<string, unknown> = { ...manifest };
+  delete withoutManager.packageManager;
+  await put(root, "package.json", withoutManager);
+  expect(
+    (await check()).filter((problem) =>
+      problem.brief.includes("packageManager"),
+    ),
+  ).toEqual([
+    {
+      code: "dependency-missing",
+      brief: "package.json: packageManager 未声明",
+    },
+  ]);
+  await put(root, "package.json", manifest);
+  await rm(join(root, "tsconfig.json"));
+  const problems = await check();
+  expect(problems.map((problem) => problem.code)).toContain(
+    "typescript-missing",
+  );
+  expect(
+    problems.some((problem) => problem.brief.includes("projectService")),
+  ).toBe(false);
 });
 it("validates optional and lifecycle scripts with the same structural rule", async () => {
   await put(root, "package.json", {
@@ -467,6 +530,82 @@ it("keeps independent CI and lint failures when coverage blocks dependent checks
 it("skips coverage diagnostics when test discovery is unconfirmed", async () => {
   await put(root, "vitest.config.ts", "export default unknownConfiguration();");
   expect((await check()).map((p) => p.code)).toEqual(["testing-unconfirmed"]);
+});
+it("gives vitest.config priority over vite.config but keeps same-tier configs ambiguous", async () => {
+  await put(root, "vite.config.ts", "export default unknownConfiguration();");
+  expect(await check()).toEqual([]);
+  await put(root, "vitest.config.mts", vitestConfig);
+  expect((await check()).map((p) => p.code)).toEqual(["testing-unconfirmed"]);
+});
+it("names the unsupported Vitest key instead of listing every field", async () => {
+  await put(
+    root,
+    "vitest.config.ts",
+    vitestConfig.replace(
+      'include: ["test/**/*.test.ts"],',
+      'include: ["test/**/*.test.ts"], hookTimeout: 1,',
+    ),
+  );
+  const problem = (await check()).find((p) => p.code === "testing-unconfirmed");
+  expect(problem?.brief).toContain(
+    "unsupported Vitest configuration key: test.hookTimeout",
+  );
+});
+it("expands brace groups in ESLint file patterns only, and rejects groups that are not choices", async () => {
+  await put(
+    root,
+    "eslint.config.js",
+    lintConfig.replace(
+      "{ ignores:",
+      '{ files: ["**/*.{js,mjs}"], rules: {} },\n { ignores:',
+    ),
+  );
+  expect(await check()).toEqual([]);
+  await put(
+    root,
+    "eslint.config.js",
+    lintConfig.replace(
+      "{ ignores:",
+      '{ files: ["**/*.{js}"], rules: {} },\n { ignores:',
+    ),
+  );
+  expect((await check()).map((p) => p.code)).toContain("lint-unconfirmed");
+  await put(
+    root,
+    "tsconfig.json",
+    JSON.stringify({
+      extends: "./tsconfig.base.json",
+      include: ["src/**/*.{ts,tsx}", "test/**/*.ts"],
+    }),
+  );
+  expect((await check()).map((p) => p.code)).toContain(
+    "typescript-unconfirmed",
+  );
+});
+it("applies gitignore negation in ignore files, with a parent exclusion still winning", async () => {
+  await put(root, ".prettierignore", "tsconfig.json\n!tsconfig.json\n");
+  expect(await check()).toEqual([]);
+  await put(root, ".prettierignore", "src/\n!src/index.ts\n");
+  const problems = await check();
+  expect(problems.map((p) => p.code)).toEqual(["formatting-mismatch"]);
+  expect(problems[0]?.brief).toContain("src/index.ts");
+});
+it("reports one structural finding per manifest for all non-standard scripts", async () => {
+  await put(root, "package.json", {
+    ...manifest,
+    scripts: {
+      ...manifest.scripts,
+      build: "tsc",
+      dev: "vite",
+      "test:unit": "vitest",
+    },
+  });
+  const gates = (await check()).filter((p) => p.code.startsWith("gate-"));
+  expect(gates).toHaveLength(1);
+  expect(gates[0]?.brief).toContain("3 处 scripts 结构不符合标准入口约定");
+  for (const name of ['"build"', '"dev"', '"test:unit"'])
+    expect(gates[0]?.brief).toContain(`scripts[${name}]`);
+  expect(gates[0]?.brief).toContain("改名为 test-unit");
 });
 it("allows a generated lockfile formatting exclusion but names excluded maintained configurations once", async () => {
   await put(root, ".prettierignore", "pnpm-lock.yaml\n");
@@ -579,8 +718,9 @@ it("keeps independent gate safety checks when lint blocks capability linkage", a
   expect(problems).toContainEqual(
     expect.objectContaining({
       code: "gate-mismatch",
-      brief:
-        'package.json scripts["check"] = "pnpm format"；必须为 node scripts/check.mjs（无参数）',
+      brief: expect.stringContaining(
+        'scripts["check"] = "pnpm format"；必须为 node scripts/check.mjs（无参数）',
+      ) as unknown,
     }),
   );
 });
@@ -797,11 +937,10 @@ it.each([1, 2])(
       },
     });
     const partial = await check();
-    expect(partial.map((p) => p.code)).toEqual([
-      "gate-mismatch",
-      "gate-mismatch",
-    ]);
+    expect(partial.map((p) => p.code)).toEqual(["gate-mismatch"]);
     expect(partial[0]?.brief).toContain("packages/a/package.json");
+    expect(partial[0]?.brief).toContain('scripts["test"]');
+    expect(partial[0]?.brief).toContain('scripts["test-coverage"]');
     await put(member, "package.json", memberManifest);
     await put(root, "packages\\uncovered\\package.json", {
       name: "uncovered",

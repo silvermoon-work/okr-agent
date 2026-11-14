@@ -398,13 +398,27 @@ it("supports a DO-only deployment unit without forcing an HTTP handler", async (
   );
   expect(await check(true)).toEqual([]);
 });
-it.each(["pnpm-lock.yaml", "pnpm-workspace.yaml", ".node-version"])(
-  "reports missing platform prerequisites without hiding unrelated I/O: %s",
-  async (path) => {
+it("reports a missing platform-only catalog without hiding unrelated I/O", async () => {
+  await mkdir(join(root, "public"));
+  await config({ assets: { directory: "public" } });
+  await rm(join(root, "pnpm-workspace.yaml"));
+  expect((await check())[0]?.code).toBe("cloudflare-missing");
+});
+it.each([
+  ["pnpm-lock.yaml", "dependency-missing"],
+  [".node-version", "environment-missing"],
+])(
+  "leaves a generic prerequisite to its own domain: %s",
+  async (path, code) => {
     await mkdir(join(root, "public"));
     await config({ assets: { directory: "public" } });
     await rm(join(root, path));
-    expect((await check())[0]?.code).toBe("cloudflare-missing");
+    expect(await check()).toEqual([]);
+    const problems = await check(true);
+    expect(problems.map((problem) => problem.code)).toContain(code);
+    expect(
+      problems.filter((problem) => problem.code.startsWith("cloudflare-")),
+    ).toEqual([]);
   },
 );
 it.each([
@@ -485,9 +499,23 @@ it("distinguishes a malformed generated-directory path from unavailable output",
   expect((await check())[0]?.code).toBe("cloudflare-mismatch");
 });
 it.each([
-  ["tsconfig.json", undefined, "missing"],
+  ["tsconfig.json", "typescript-missing"],
+  ["vitest.config.ts", "testing-missing"],
+])(
+  "does not restate a missing generic configuration: %s",
+  async (path, code) => {
+    await server(true);
+    await rm(join(root, path));
+    expect(await check()).toEqual([]);
+    const problems = await check(true);
+    expect(problems.map((problem) => problem.code)).toContain(code);
+    expect(
+      problems.filter((problem) => problem.code.startsWith("cloudflare-")),
+    ).toEqual([]);
+  },
+);
+it.each([
   ["worker-configuration.d.ts", undefined, "missing"],
-  ["vitest.config.ts", undefined, "missing"],
   [
     "src/worker.ts",
     "export class Room {} export class Log {} export default {fetch(){}};",
@@ -555,6 +583,14 @@ it("rejects custom Workers environments and missing or dynamic plugin arguments"
     text.replace('configPath:"./wrangler.jsonc"', 'environment:"preview"'),
   );
   expect((await check())[0]?.code).toBe("cloudflare-unconfirmed");
+  await put(root, "vitest.config.ts", text);
   await put(root, "vitest.config.js", text);
-  expect((await check())[0]?.code).toBe("cloudflare-unconfirmed");
+  expect(await check()).toEqual([]);
+  expect(
+    (await check(true)).filter(
+      (problem) =>
+        problem.code.startsWith("cloudflare-") ||
+        problem.brief.includes("ambiguous configuration"),
+    ),
+  ).toEqual([expect.objectContaining({ code: "testing-unconfirmed" })]);
 });

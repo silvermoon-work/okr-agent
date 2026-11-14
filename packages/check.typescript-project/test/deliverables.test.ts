@@ -257,28 +257,54 @@ it("does not apply npm delivery to Cloudflare, custom types or undeclared public
   ).toBe(true);
 });
 it.each([
-  ["pnpm release", {}, "missing"],
-  ["pnpm release-dry-run", { env: { PACKAGE_INPUT: "undeclared" } }, "missing"],
-  ["npm publish", { "working-directory": "." }, "missing"],
-  [
-    "pnpm publish",
-    { "working-directory": "${{ inputs.directory }}" },
-    "unconfirmed",
-  ],
-  ["npm publish --prefix packages/x", {}, "unconfirmed"],
+  ["pnpm release", {}],
+  ["pnpm release-dry-run", { env: { PACKAGE_INPUT: "undeclared" } }],
+  ["npm publish", { "working-directory": "." }],
+  ["pnpm publish", { "working-directory": "${{ inputs.directory }}" }],
+  ["npm publish --prefix packages/x", {}],
+  ['npm publish "./dist/pkg.tgz"', {}],
 ])(
-  "reports explicit unregistered/unknown publication selection: %s",
-  async (run, extra, status) => {
+  "reports a missing declaration once for publication evidence: %s",
+  async (run, extra) => {
     await put(root, ".github/workflows/release.yaml", {
       jobs: { release: { steps: [{ run, ...extra }] } },
     });
-    expect(
-      (await readProjects()).problems.some(
-        (problem) => problem.status === status,
-      ),
-    ).toBe(true);
+    const { problems } = await readProjects();
+    expect(problems).toEqual([
+      {
+        status: "missing",
+        brief: expect.stringContaining(
+          "未声明 deliverables，但观察到交付迹象 .github/workflows/release.yaml:release",
+        ) as unknown,
+      },
+    ]);
   },
 );
+it("reports platform configuration as delivery evidence only without any declaration", async () => {
+  await put(root, "wrangler.toml", 'name = "app"');
+  const missing = await readProjects();
+  expect(missing.problems).toEqual([
+    {
+      status: "missing",
+      brief: expect.stringContaining("wrangler.toml") as unknown,
+    },
+  ]);
+  await declaration([]);
+  expect((await readProjects()).problems).toEqual([]);
+});
+it("leaves direct publication directories to the release domain once declared", async () => {
+  await npmFixture(root);
+  for (const step of [
+    { run: "npm publish", "working-directory": "elsewhere" },
+    { run: 'npm publish "./dist/pkg.tgz"' },
+    { run: "pnpm publish --prefix packages/x" },
+  ]) {
+    await put(root, ".github/workflows/release.yaml", {
+      jobs: { release: { steps: [step] } },
+    });
+    expect((await readProjects()).problems).toEqual([]);
+  }
+});
 it("accepts a registered release selection and ignores inert non-publishing steps", async () => {
   await npmFixture(root);
   await put(root, ".github/workflows/extra.yaml", {
@@ -316,7 +342,7 @@ it("accepts a registered release selection and ignores inert non-publishing step
     ),
   ).toBe(true);
 });
-it("honors inherited workflow selectors and directories, without treating echo text as invocation", async () => {
+it("honors inherited workflow selectors without treating echo text as invocation", async () => {
   await npmFixture(root);
   await put(root, ".github/workflows/extra.yaml", {
     env: { PACKAGE_INPUT: "undeclared" },
@@ -331,20 +357,6 @@ it("honors inherited workflow selectors and directories, without treating echo t
     (await readProjects()).problems.some(
       (problem) =>
         problem.status === "missing" && problem.brief.includes("undeclared"),
-    ),
-  ).toBe(true);
-  await put(root, ".github/workflows/extra.yaml", {
-    defaults: { run: { "working-directory": "elsewhere" } },
-    jobs: {
-      release: {
-        defaults: { run: { shell: "bash" } },
-        steps: [{ run: "npm publish" }],
-      },
-    },
-  });
-  expect(
-    (await readProjects()).problems.some((problem) =>
-      problem.brief.includes("elsewhere"),
     ),
   ).toBe(true);
   await put(root, ".github/workflows/extra.yaml", {

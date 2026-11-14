@@ -205,24 +205,76 @@ it("reports unsupported dynamic behavior only at the applicable predicate", () =
   ]);
 });
 it.each([
-  "node mutate-package-config.mjs",
-  'echo "{}" > package.json',
-  'echo "BASH_ENV=skip.sh" >> "$GITHUB_ENV"',
-])("does not assume arbitrary extension effects are harmless: %s", (run) => {
+  ["node mutate-package-config.mjs", "extension effects"],
+  ['echo "{}" > package.json', "extension effects"],
+  ['echo "BASH_ENV=skip.sh" >> "$GITHUB_ENV"', "must not mutate"],
+])(
+  "does not assume arbitrary extension effects are harmless: %s",
+  (run, reason) => {
+    const w = quality();
+    steps(w).splice(4, 0, { run });
+    const failures = workflowPredicates(w).filter((failure) =>
+      failure.brief.includes("steps[4]"),
+    );
+    expect(failures).toEqual([
+      {
+        status: "unconfirmed",
+        brief: expect.stringContaining(reason) as unknown,
+      },
+    ]);
+    expect(() => publisher.workflowMatrix(JSON.stringify(w))).toThrow(reason);
+  },
+);
+it("reports an absent required job once instead of each expected field", () => {
   const w = quality();
-  steps(w).splice(4, 0, { run });
-  const failures = workflowPredicates(w);
+  const jobs = record(w.jobs);
+  delete jobs.compatibility;
+  delete jobs["release-verification"];
   expect(
-    failures.some(
+    workflowPredicates(w).filter(
       (failure) =>
-        failure.status === "unconfirmed" &&
-        failure.brief.includes("steps[4]") &&
-        failure.brief.includes("extension effects"),
+        failure.brief.startsWith("jobs.compatibility") ||
+        failure.brief.startsWith("jobs.release-verification"),
+    ),
+  ).toEqual([
+    {
+      status: "missing",
+      brief: "jobs.compatibility: required job; observed undeclared",
+    },
+    {
+      status: "missing",
+      brief: "jobs.release-verification: required job; observed undeclared",
+    },
+  ]);
+});
+it("reports an unsupported quality matrix once without its derived identity and runtime", () => {
+  const w = quality();
+  const check = job(w);
+  check.strategy = {
+    matrix: { os: ["ubuntu-latest"], "node-version": ["24.11.1"] },
+  };
+  check.name = "${{ matrix.os }} / Node.js ${{ matrix.node-version }}";
+  check["runs-on"] = "${{ matrix.os }}";
+  const setupNode = steps(w).find((step) =>
+    String(step.uses).startsWith("actions/setup-node@"),
+  )!;
+  const settings = { ...record(setupNode.with) };
+  delete settings["node-version-file"];
+  setupNode.with = {
+    ...settings,
+    "node-version": "${{ matrix.node-version }}",
+  };
+  expect(
+    workflowPredicates(w)
+      .filter((failure) => failure.brief.startsWith("jobs.check"))
+      .map((failure) => failure.brief.split(":")[0]),
+  ).toEqual(["jobs.check.strategy"]);
+  check.name = "Custom";
+  expect(
+    workflowPredicates(w).some((failure) =>
+      failure.brief.startsWith("jobs.check.name"),
     ),
   ).toBe(true);
-  expect(() => publisher.workflowMatrix(JSON.stringify(w))).toThrow(
-    "extension effects",
-  );
 });
 it("scopes extension effects before the required result, including the aggregate guard", () => {
   const w = quality();

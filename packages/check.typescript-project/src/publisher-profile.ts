@@ -26,20 +26,12 @@ export async function publisherProfile(
   report: Report,
   quality?: QualityProfile | null,
 ): Promise<PublisherProfile | undefined> {
-  const problems: {
-    status: "missing" | "mismatch" | "unconfirmed";
-    brief: string;
-  }[] = [];
-  const entries = await projectDeliverables(
-    files,
-    projects,
-    (status, brief) => {
-      problems.push({ status, brief });
-    },
-  );
-  for (const problem of problems)
-    report("release", problem.status, problem.brief);
-  if (problems.length) return undefined;
+  // The delivery domain owns declaration findings; release only depends on them.
+  let declarationProblems = 0;
+  const entries = await projectDeliverables(files, projects, () => {
+    declarationProblems++;
+  });
+  if (declarationProblems) return undefined;
   const targets = projects.filter((project) => project.delivery === "npm");
   if (!targets.length) return undefined;
   const topology =

@@ -33,3 +33,37 @@ Pinboard 的 CI 只有一个带矩阵的 `check`。检查器仍对不存在的 `
 ## 同一入口被两条规则各报一次
 
 `format:check` 被报成非法脚本名，同时缺失的标准名 `format-check` 再报一次。`apps/worker` 的 `preview:assets` 与它实际调用的 `scripts/build-preview-assets.mjs` 同样被名称规则和 `scripts/` 一对一规则各报一次。
+
+## 第二轮收敛后的处理状态
+
+2026-11-14 用 CAR `bafybeiges6ric6t2k5mfi5si2uadtx6532wxztzhftnpyf7vgiuufat2s4` 复跑同一个项目，问题总数从 90 降到 36（首轮 110）。
+
+已处理：
+
+- Vitest 配置按优先级读取：`vitest.config.*` 优先于 `vite.config.*`，同一档位出现多个文件才算有歧义。
+- ESLint 的 `files`/`ignores` 展开 `{a,b}` 花括号。TypeScript include 与 gitignore 语法不支持花括号，所以只对 ESLint 开启；没有逗号的 `{js}` 仍报无法确认。
+- 忽略文件按 gitignore 语义处理：后面的规则优先，`!` 可重新纳入文件，父目录已被排除时子文件仍被排除。
+- Vitest 不支持字段的诊断只列出具体字段（如 `test.hookTimeout`），未知 import 的诊断带上 import 名。
+- 同一个 manifest 的 script 结构问题合并为一条，包括不符的 script、冒号名及改名建议、scripts 顶层孤儿文件。入口文件缺失另合并为一条 `gate-missing`。
+- 多个包缺少 `engines.node` 合并为一条，列出每个 package.json。
+- 多个 importer 共用同一 catalog 条目且同样落后时只报一次，列出所有 importer。
+
+按决定保持不变：
+
+- CI 里 Action 的 SHA pin 仍必须字面等于 `@v7`、`@v6`，SHA 写法继续报 `ci-mismatch`。
+
+纠正此前的几处判断：
+
+- scripts 顶层的 `.py`、`.wat` 文件被报告符合 Ideal，该规则写明入口均为 `.mjs`，不是误报。
+- `compatibility` 与 `release-verification` 是 CI 固定标准对 GitHub 项目的要求，不依赖 npm 交付，不应随交付声明跳过。
+- `steps[5]` 是独立的扩展步骤，不是 `steps[4]` 写 `GITHUB_ENV` 的连带结果，两条各自成立。
+- `apps/worker/vitest.config.ts` 使用的是自定义插件加 `node:fs`，不是 Cloudflare 测试插件，不属于 Cloudflare 检查的范围。
+- `esbuild` 确实声明在根 `devDependencies`，但它是被规定工具 `vite` 的 peer，Check 的元数据查询名单是封闭的，名单里没有它。Ideal 要求这类 peer 有独立证据，所以报告本身与 Ideal 一致，缺的是名单。
+
+新暴露的真问题：`apps/web` 有 `.tsx` 文件，而 ESLint 类型感知配置只覆盖 `**/*.ts`，现在报 `lint-mismatch`。以前被无法确认挡住。
+
+仍待决定，均不在本轮范围：
+
+- 去掉 `unconfirmed`，只保留过/不过。该状态写在已验收的上游 Ideal（`project-standards-composition` 等）里，改它需要作为上游变更单独立项。已确认的方向：外部证据拿不到（registry 超时、发布索引过期）时，整次检查执行失败，不产生报告条目；检查器解析不了的形态按不满足处理；有歧义的按规则消歧，消不了的判不满足。
+- 是否把 `esbuild` 等 `vite` 的 peer 加入元数据查询名单。
+- Vitest 允许字段列表是否加入 `hookTimeout` 等纯超时字段。

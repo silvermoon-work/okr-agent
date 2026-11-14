@@ -63,31 +63,50 @@ export class Scripts {
   ): { status: "missing" | "mismatch"; brief: string }[] {
     const scripts = record(project.manifest.scripts ?? {});
     const manifest = this.files.path(project.directory, "package.json");
-    const result: { status: "missing" | "mismatch"; brief: string }[] = [];
+    // One manifest has one structural predicate (scripts <-> top-level .mjs
+    // entries), so its violations are reported together, not one per script.
+    const mismatches: string[] = [];
+    const missing: string[] = [];
     const mapped = new Set<string>();
+    // A file invoked by an already reported script follows that script's fix.
+    const invoked = new Set<string>();
+    for (const value of Object.values(scripts))
+      if (typeof value === "string")
+        for (const match of value.matchAll(
+          /(?:^|[\s&;|(])node\s+(?:\.\/)?scripts\/([A-Za-z0-9._-]+)(?=$|[\s&;|)"'])/g,
+        ))
+          invoked.add(
+            this.files.path(project.directory, `scripts/${match[1]}`),
+          );
     for (const [name, value] of Object.entries(scripts)) {
       let path: string;
       try {
         path = this.entry(project, name);
       } catch (error) {
         if (!(error instanceof Unconfirmed)) throw error;
-        result.push({
-          status: "mismatch",
-          brief: `${manifest} scripts[${JSON.stringify(name)}]: ${error.message}；名称禁止冒号、路径分隔或 shell 元字符`,
-        });
+        const renamed = name.replaceAll(":", "-");
+        let suggestion = "";
+        if (renamed !== name)
+          try {
+            this.entry(project, renamed);
+            suggestion = `；改名为 ${renamed}`;
+          } catch (error) {
+            if (!(error instanceof Unconfirmed)) throw error;
+          }
+        mismatches.push(
+          `scripts[${JSON.stringify(name)}]: ${error.message}；名称禁止冒号、路径分隔或 shell 元字符${suggestion}`,
+        );
         continue;
       }
       mapped.add(path);
       const expected = `node scripts/${name}.mjs`;
       if (value !== expected) {
-        result.push({
-          status: "mismatch",
-          brief: `${manifest} scripts[${JSON.stringify(name)}] = ${JSON.stringify(value)}；必须为 ${expected}（无参数）`,
-        });
+        mismatches.push(
+          `scripts[${JSON.stringify(name)}] = ${JSON.stringify(value)}；必须为 ${expected}（无参数）`,
+        );
         continue;
       }
-      if (!this.files.exists(path))
-        result.push({ status: "missing", brief: `${path}: script 入口缺失` });
+      if (!this.files.exists(path)) missing.push(path);
     }
     const base = this.files.path(project.directory, "scripts");
     for (const path of this.files.paths.filter((path) =>
@@ -98,13 +117,23 @@ export class Scripts {
       if (
         relative.includes("/") ||
         !relative.endsWith(".mjs") ||
-        !mapped.has(path)
+        (!mapped.has(path) && !invoked.has(path))
       )
-        result.push({
-          status: "mismatch",
-          brief: `${path}: scripts 顶层仅允许与 package scripts 一一对应的 .mjs 入口；共享模块放 scripts/lib/`,
-        });
+        mismatches.push(
+          `${path}: scripts 顶层仅允许与 package scripts 一一对应的 .mjs 入口；共享模块放 scripts/lib/`,
+        );
     }
+    const result: { status: "missing" | "mismatch"; brief: string }[] = [];
+    if (mismatches.length)
+      result.push({
+        status: "mismatch",
+        brief: `${manifest}: ${mismatches.length} 处 scripts 结构不符合标准入口约定（scripts 与顶层 .mjs 入口严格一一对应）：${mismatches.join("；")}`,
+      });
+    if (missing.length)
+      result.push({
+        status: "missing",
+        brief: `${manifest}: ${missing.length} 个 script 入口文件缺失：${missing.join("、")}`,
+      });
     return result;
   }
 }

@@ -388,7 +388,7 @@ export async function inspect(
           if (Object.keys(config).some((k) => !allowed.includes(k)))
             throw new Unconfirmed("unsupported ESLint configuration key");
           if (config.ignores !== undefined) {
-            const isIgnored = matches(config.ignores, rel);
+            const isIgnored = matches(config.ignores, rel, true);
             if (
               Object.keys(config).every((k) => k === "ignores" || k === "name")
             ) {
@@ -397,7 +397,7 @@ export async function inspect(
             }
             if (isIgnored) continue;
           }
-          if (config.files !== undefined && !matches(config.files, rel))
+          if (config.files !== undefined && !matches(config.files, rel, true))
             continue;
           if ((config as Record<symbol, unknown>)[typeAwarePreset] === true)
             typed = true;
@@ -464,8 +464,9 @@ export async function inspect(
           const tsPath = findConfig(files, files.parent(target), [
             "tsconfig.json",
           ]);
+          // Without any tsconfig the typescript domain reports the root cause.
           if (
-            !tsPath ||
+            tsPath &&
             !tsIncludes(files, await tsconfig(files, tsPath), target)
           )
             failures.push(`${target}: projectService 默认 tsconfig 未覆盖`);
@@ -492,15 +493,18 @@ export async function inspect(
       scopeContext!.details = "";
       const r = requirements.testing;
       if (!r.enabled || !applicable) return;
+      // Vitest gives vitest.config.* priority over vite.config.*, so the
+      // latter is only consulted when no vitest.config.* exists.
       const path = findConfig(files, project.directory, [
-        "vitest.config.ts",
-        "vitest.config.js",
-        "vitest.config.mjs",
-        "vitest.config.mts",
-        "vitest.config.cjs",
-        "vitest.config.cts",
-        "vite.config.ts",
-        "vite.config.js",
+        [
+          "vitest.config.ts",
+          "vitest.config.js",
+          "vitest.config.mjs",
+          "vitest.config.mts",
+          "vitest.config.cjs",
+          "vitest.config.cts",
+        ],
+        ["vite.config.ts", "vite.config.js"],
       ]);
       scopeContext!.path = path;
       if (!path) {
@@ -527,18 +531,19 @@ export async function inspect(
         "name",
         "testTimeout",
       ];
-      if (
-        Object.keys(config).some(
-          (k) =>
-            ![
-              "test",
-              ...(project.delivery === "cloudflare" ? ["plugins"] : []),
-            ].includes(k),
-        ) ||
-        Object.keys(test).some((k) => !allowed.includes(k))
-      )
+      const topAllowed = [
+        "test",
+        ...(project.delivery === "cloudflare" ? ["plugins"] : []),
+      ];
+      const unsupported = [
+        ...Object.keys(config).filter((k) => !topAllowed.includes(k)),
+        ...Object.keys(test)
+          .filter((k) => !allowed.includes(k))
+          .map((k) => `test.${k}`),
+      ];
+      if (unsupported.length)
         throw new Unconfirmed(
-          `unsupported Vitest configuration key (including projects/workspace/root)；观察字段=${JSON.stringify(Object.keys(config))}/${JSON.stringify(Object.keys(test))}`,
+          `unsupported Vitest configuration key: ${unsupported.join(", ")}（含 projects/workspace/root 的配置不在可证明范围内）；观察字段=${JSON.stringify(Object.keys(config))}/${JSON.stringify(Object.keys(test))}`,
         );
       if (
         config.plugins !== undefined &&
@@ -949,19 +954,27 @@ async function declaredMajor(
   const match = /^(?:\^|~)?(\d+)\.\d+\.\d+$/.exec(value);
   return match ? Number(match[1]) : undefined;
 }
+// `names` is one group of equal candidates, or ordered groups where an earlier
+// group takes priority over later ones. Several files inside one group are
+// ambiguous.
 function findConfig(
   files: Files,
   directory: string,
-  names: string[],
+  names: string[] | string[][],
 ): string | undefined {
+  const groups = Array.isArray(names[0])
+    ? (names as string[][])
+    : [names as string[]];
   let current = directory;
   for (;;) {
-    const found = names
-      .map((name) => files.path(current, name))
-      .filter((p) => files.exists(p));
-    if (found.length > 1)
-      throw new Unconfirmed(`ambiguous configuration: ${found.join(", ")}`);
-    if (found[0]) return found[0];
+    for (const group of groups) {
+      const found = group
+        .map((name) => files.path(current, name))
+        .filter((p) => files.exists(p));
+      if (found.length > 1)
+        throw new Unconfirmed(`ambiguous configuration: ${found.join(", ")}`);
+      if (found[0]) return found[0];
+    }
     if (!current || current === ".") return undefined;
     current = files.parent(current);
   }
@@ -971,16 +984,28 @@ function ignorePatterns(text: string): string[] {
     .split(/\r?\n/)
     .map((p) => p.trim())
     .filter((p) => p && !p.startsWith("#"));
-  for (const pattern of patterns) glob(pattern.replace(/\/$/, ""), "");
+  for (const pattern of patterns)
+    glob(pattern.replace(/^!/, "").replace(/\/$/, ""), "");
   return patterns;
 }
+// gitignore semantics: the last matching pattern decides, `!` re-includes, and
+// a path stays excluded when one of its parent directories is excluded.
 function ignoreMatch(patterns: string[], path: string): boolean {
-  return patterns.some((pattern) => {
-    const p = pattern.replace(/^\//, "").replace(/\/$/, "");
-    return (
-      glob(p, path) ||
-      glob(`${p}/**`, path) ||
-      (!p.includes("/") && path.split("/").some((part) => glob(p, part)))
-    );
-  });
+  const decide = (candidate: string): boolean => {
+    let ignored = false;
+    for (const pattern of patterns) {
+      const negated = pattern.startsWith("!");
+      const p = (negated ? pattern.slice(1) : pattern)
+        .replace(/^\//, "")
+        .replace(/\/$/, "");
+      const name = candidate.split("/").at(-1)!;
+      if (glob(p, candidate) || (!p.includes("/") && glob(p, name)))
+        ignored = !negated;
+    }
+    return ignored;
+  };
+  const parts = path.split("/");
+  for (let i = 1; i < parts.length; i++)
+    if (decide(parts.slice(0, i).join("/"))) return true;
+  return decide(path);
 }

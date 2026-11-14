@@ -347,6 +347,13 @@ export function workflowPredicates(workflow, kind = "quality", native = []) {
   const setup = (job, path, node, commands, publisher = false) => {
     scope(job, path);
     const steps = Array.isArray(job.steps) ? job.steps : [];
+    // The unsupported strategy is reported once; values it supplies follow it.
+    const fromMatrix = (value) =>
+      kind === "quality" &&
+      path === "jobs.check" &&
+      job.strategy !== undefined &&
+      /\$\{\{\s*matrix\./.test(JSON.stringify(value) ?? "");
+    const mutating = new Set();
     let checkout = -1,
       selectedNode = -1,
       pnpm = -1,
@@ -407,11 +414,12 @@ export function workflowPredicates(workflow, kind = "quality", native = []) {
           );
           selectedNode = i;
           expect(
-            node === ".node-version"
-              ? settings["node-version-file"] === node &&
+            fromMatrix(settings) ||
+              (node === ".node-version"
+                ? settings["node-version-file"] === node &&
                   settings["node-version"] === undefined
-              : settings["node-version"] === node &&
-                  settings["node-version-file"] === undefined,
+                : settings["node-version"] === node &&
+                  settings["node-version-file"] === undefined),
             `${p}.with`,
             "declared project/matrix Node selection without override",
             settings,
@@ -465,13 +473,15 @@ export function workflowPredicates(workflow, kind = "quality", native = []) {
       if (
         typeof step.run === "string" &&
         /\bGITHUB_(?:ENV|PATH)\b|::(?:set-env|add-path)::/.test(step.run)
-      )
+      ) {
+        mutating.add(i);
         fail(
           `${p}.run`,
           "extension step must not mutate required process environment/tool path",
           step.run,
           "unconfirmed",
         );
+      }
     }
     expect(
       checkout >= 0 && selectedNode > checkout && pnpm > checkout,
@@ -515,7 +525,14 @@ export function workflowPredicates(workflow, kind = "quality", native = []) {
         previous = index;
       } else complete = false;
     }
-    if (complete) extensionEffects(job, path, required, previous, publisher);
+    if (complete)
+      extensionEffects(
+        job,
+        path,
+        new Set([...required, ...mutating]),
+        previous,
+        publisher,
+      );
   };
   const jobs = obj(workflow.jobs);
   if (kind === "publisher") {
@@ -685,23 +702,34 @@ export function workflowPredicates(workflow, kind = "quality", native = []) {
       "${{ matrix.node-version }}",
     ],
   ]) {
+    if (jobs[id] === undefined) {
+      fail(`jobs.${id}`, "required job", undefined, "missing");
+      continue;
+    }
     const job = obj(jobs[id]);
-    expect(
-      id === "compatibility"
-        ? /^Node\.js \$\{\{\s*matrix\.node-version\s*\}\}$/.test(job.name ?? "")
-        : job.name === name,
-      `jobs.${id}.name`,
-      "stable publisher required-check identity",
-      job.name,
-    );
-    expect(
-      job["runs-on"] === "ubuntu-latest",
-      `jobs.${id}.runs-on`,
-      "supported quality execution runtime",
-      job["runs-on"],
-      "unconfirmed",
-    );
-    if (id === "check" && job.strategy !== undefined)
+    const strategy = id === "check" && job.strategy !== undefined;
+    const derived = (value) =>
+      strategy && /\$\{\{\s*matrix\./.test(String(value));
+    if (!derived(job.name))
+      expect(
+        id === "compatibility"
+          ? /^Node\.js \$\{\{\s*matrix\.node-version\s*\}\}$/.test(
+              job.name ?? "",
+            )
+          : job.name === name,
+        `jobs.${id}.name`,
+        "stable publisher required-check identity",
+        job.name,
+      );
+    if (!derived(job["runs-on"]))
+      expect(
+        job["runs-on"] === "ubuntu-latest",
+        `jobs.${id}.runs-on`,
+        "supported quality execution runtime",
+        job["runs-on"],
+        "unconfirmed",
+      );
+    if (strategy)
       fail(
         `jobs.${id}.strategy`,
         "single default quality identity",
@@ -713,25 +741,31 @@ export function workflowPredicates(workflow, kind = "quality", native = []) {
       ["pnpm check"],
     ]);
   }
-  const matrix = obj(obj(obj(jobs.compatibility).strategy).matrix);
-  expect(
-    isNodeVersions(matrix["node-version"]),
-    "jobs.compatibility.strategy.matrix.node-version",
-    "2..8 unique exact stable Node versions",
-    matrix["node-version"],
-    typeof matrix["node-version"] === "string" &&
-      matrix["node-version"].includes("${{")
-      ? "unconfirmed"
-      : "mismatch",
-  );
-  for (const key of Object.keys(matrix))
-    if (key !== "node-version")
-      fail(
-        `jobs.compatibility.strategy.matrix.${key}`,
-        "publisher identities require one complete Node axis (additional job matrices are free)",
-        matrix[key],
-        "unconfirmed",
-      );
+  if (jobs.compatibility !== undefined) {
+    const matrix = obj(obj(obj(jobs.compatibility).strategy).matrix);
+    expect(
+      isNodeVersions(matrix["node-version"]),
+      "jobs.compatibility.strategy.matrix.node-version",
+      "2..8 unique exact stable Node versions",
+      matrix["node-version"],
+      typeof matrix["node-version"] === "string" &&
+        matrix["node-version"].includes("${{")
+        ? "unconfirmed"
+        : "mismatch",
+    );
+    for (const key of Object.keys(matrix))
+      if (key !== "node-version")
+        fail(
+          `jobs.compatibility.strategy.matrix.${key}`,
+          "publisher identities require one complete Node axis (additional job matrices are free)",
+          matrix[key],
+          "unconfirmed",
+        );
+  }
+  if (jobs["release-verification"] === undefined) {
+    fail("jobs.release-verification", "required job", undefined, "missing");
+    return failures;
+  }
   const aggregate = obj(jobs["release-verification"]);
   scope(aggregate, "jobs.release-verification", true);
   expect(

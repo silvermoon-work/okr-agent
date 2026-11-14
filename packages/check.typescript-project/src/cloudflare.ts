@@ -26,12 +26,29 @@ class Finding extends Error {
     super(message);
   }
 }
+/** A generic domain already reports this cause; platform checks wait for it. */
+class Prerequisite extends Error {}
 function requireValue(
   condition: unknown,
   status: Finding["status"],
   message: string,
 ): asserts condition {
   if (!condition) throw new Finding(status, message);
+}
+function requirePrerequisite(condition: unknown): asserts condition {
+  if (!condition) throw new Prerequisite();
+}
+function inherited(files: Files, directory: string, names: string[]) {
+  let current = directory;
+  for (;;) {
+    if (names.some((name) => files.exists(files.path(current, name))))
+      return true;
+    if (!current || current === ".") return false;
+    current = files.parent(current);
+  }
+}
+function generic(project: Project): boolean {
+  return project.sources.length + project.tests.length > 0;
 }
 function object(value: unknown, path: string): Record<string, unknown> {
   requireValue(
@@ -107,11 +124,7 @@ async function installed(
     `${project.directory || "."}: ${name} devDependency is required`,
   );
   const lockText = await files.optionalText("pnpm-lock.yaml");
-  requireValue(
-    lockText !== undefined,
-    "missing",
-    "pnpm-lock.yaml: platform tool importer is required",
-  );
+  requirePrerequisite(lockText !== undefined);
   const lock = dataYaml(lockText);
   const entry = object(
     record(record(lock.importers)[owner.directory || "."]).devDependencies,
@@ -168,6 +181,11 @@ async function typeDeclarations(
   nodeImports: Set<string>,
 ) {
   const path = files.path(project.directory, "tsconfig.json");
+  requirePrerequisite(
+    files.exists(path) ||
+      !generic(project) ||
+      inherited(files, project.directory, ["tsconfig.json"]),
+  );
   requireValue(
     files.exists(path),
     "missing",
@@ -239,6 +257,11 @@ async function workerTests(
     .map((name) => files.path(project.directory, name))
     .filter((path) => files.exists(path));
   if (!required && !candidates.length) return;
+  if (generic(project))
+    requirePrerequisite(
+      candidates.length === 1 ||
+        (!candidates.length && inherited(files, project.directory, names)),
+    );
   requireValue(
     candidates.length === 1,
     candidates.length ? "unconfirmed" : "missing",
@@ -468,11 +491,7 @@ async function inspectWorker(
   );
   await installed(files, projects, project, "wrangler", "4.162.0");
   const nodeText = await files.optionalText(".node-version");
-  requireValue(
-    nodeText !== undefined,
-    "missing",
-    ".node-version: developer Node is required",
-  );
+  requirePrerequisite(nodeText !== undefined);
   const node = nodeText.trim().replace(/^v/, "");
   requireValue(
     valid(node) && satisfies(node, ">=22.12.0"),
@@ -705,6 +724,7 @@ export async function cloudflare(
     try {
       await inspectWorker(files, projects, project);
     } catch (error) {
+      if (error instanceof Prerequisite) continue;
       if (error instanceof Finding)
         report(`cloudflare-${error.status}`, error.message);
       else if (error instanceof Unconfirmed)

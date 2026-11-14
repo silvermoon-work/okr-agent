@@ -1,5 +1,5 @@
 export interface WorkflowFailure {
-  status: "mismatch" | "unconfirmed";
+  status: "missing" | "mismatch" | "unconfirmed";
   brief: string;
 }
 export function isNodeVersions(value: unknown): value is string[];

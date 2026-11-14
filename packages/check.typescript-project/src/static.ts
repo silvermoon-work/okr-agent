@@ -233,7 +233,9 @@ export function javascript(text: string, workers = false): unknown {
     if (statement.type === "ImportDeclaration") {
       const source = node(statement.source).value;
       if (typeof source !== "string" || !imports.has(source))
-        throw new Unconfirmed("unknown configuration import (not loaded)");
+        throw new Unconfirmed(
+          `unknown configuration import (not loaded): ${String(source)}`,
+        );
       for (const specifier of nodes(statement.specifiers)) {
         const local = node(specifier.local).name;
         if (typeof local !== "string")

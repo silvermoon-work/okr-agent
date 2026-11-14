@@ -22,7 +22,28 @@ export function stringArray(value: unknown): string[] {
 export function slash(path: string): string {
   return path.split(sep).join("/");
 }
-export function glob(pattern: string, path: string): boolean {
+// Expands the innermost `{a,b}` group; a group needs a comma to be a choice.
+function expandBraces(pattern: string): string[] | undefined {
+  const match = /\{([^{}]*)\}/.exec(pattern);
+  if (!match) return undefined;
+  if (!match[1]!.includes(","))
+    throw new Unconfirmed(`unsupported glob: ${pattern}`);
+  return match[1]!
+    .split(",")
+    .map(
+      (choice) =>
+        pattern.slice(0, match.index) +
+        choice +
+        pattern.slice(match.index + match[0].length),
+    );
+}
+// Brace groups are minimatch syntax (ESLint); TypeScript and gitignore patterns
+// do not support them, so only callers that opt in get them expanded.
+export function glob(pattern: string, path: string, braces = false): boolean {
+  if (braces && !pattern.startsWith("!") && !/[\\[\]()+@!]/.test(pattern)) {
+    const expanded = expandBraces(pattern);
+    if (expanded) return expanded.some((choice) => glob(choice, path, true));
+  }
   if (
     pattern.startsWith("!") ||
     /[\\[\]{}()+@!]/.test(pattern) ||
@@ -47,9 +68,13 @@ export function glob(pattern: string, path: string): boolean {
   }
   return new RegExp(`${source}$`).test(path);
 }
-export function matches(patterns: unknown, path: string): boolean {
+export function matches(
+  patterns: unknown,
+  path: string,
+  braces = false,
+): boolean {
   const list = stringArray(patterns);
-  const results = list.map((pattern) => glob(pattern, path));
+  const results = list.map((pattern) => glob(pattern, path, braces));
   return results.some(Boolean);
 }
 export class Files {
