@@ -4,9 +4,11 @@
 
 - Silvermoon 是跨技术栈、面向 Agent 的项目补充描述层，不绑定 Node workspace。
 - 项目顶层独立 YAML 声明交付意图，不在 package.json 增加品牌字段。
-- 列表字段为 deliverables，每项使用 path 和 type；首期交付类型为 npm、cloudflare。
+- 列表字段为 deliverables，每项使用 path 和 type；已讨论的交付方式包括 npm、cloudflare 和自定义交付，类型标识与扩展机制尚需确定。
 - 暂不引入 schemaVersion；结构稳定后考虑 YAML 的 JSON Schema。
 - 应用目录可同时容纳 npm 安装型应用和 Cloudflare 线上应用。共享库仍可通过 npm 交付。
+- deliverables 必须登记所有对外交付项，不局限于 apps；packages 中对外发布的库也必须登记。
+- 私有 Checker 作者包也可以对外交付：构建 CAR，通过 IPFS 并可借助 Pinboard 分发。此类自定义交付项同样需要登记；private: true 不是“不交付”的证据。
 - 一个 Cloudflare 应用 Package 对应一个 Workers 部署目标，可含静态资产、API/SSR 和多个 DO 类。共享代码不因被应用使用而成为部署项。
 - WebSocket/realtime 是可选能力，不是独立的交付类型。纯静态应用不强制编写 Worker 请求处理代码。
 - 描述文件是交付意图的唯一来源；生态配置是实现事实，检查验证一致性，不隐式授权发布。
@@ -19,17 +21,21 @@ deliverables:
     type: npm
   - path: apps/web
     type: cloudflare
+  - path: packages/sdk
+    type: npm
 ```
 
 ## B01: 声明覆盖范围和遗漏语义
 
 这决定 Check 与发布调度究竟把哪些目录视为交付项。
 
-建议登记所有对外交付项，包括 apps 中的应用和 packages 中的 npm 库；不列入内部工具、示例或纯内部共享代码，不添加 type: none。
+已确认：登记所有对外交付项，包括 apps 中的应用和 packages 中的 npm 库，不仅限于应用。
+
+尚待确认：内部工具、示例或纯内部共享代码是否无需登记，以及是否不添加 type: none。
 
 未登记目录不能被发布调度选中，但不能仅因遗漏就证明其已被明确禁止发布。若目录存在明确发布入口或被 workflow 选择却未登记，应报告未声明交付意图；private 或平台配置文件本身不足以证明发布意图。
 
-需要确认：采用上述显式交付清单，还是要求所有应用目录都显式标记交付或不交付？不能同时把遗漏解释为“不交付”和“声明缺失”。
+需要确认：非交付目录可不登记，还是需要显式标记不交付？不能同时把遗漏解释为“不交付”和“声明缺失”。上述发布调度和缺失报告策略仍是建议，不因覆盖范围已确认而自动生效。
 
 ## B02: 首期身份、路径和环境边界
 
@@ -40,6 +46,14 @@ deliverables:
 使用单包仓库时是否接受 path: .，以及是否允许目录嵌套，需纳入明确的路径规则。文件名称建议 silvermoon.yaml；它不替代或迁移现有 .silvermoon/config.yaml 生命周期配置。与现有 CLI 的接入是后续明确变更，不假定 CLI 已支持新文件。
 
 需要确认：首期保持 path/type 最小模型，不加入稳定 ID、多目标或环境声明；确有标签身份或编排需求时再扩展。
+
+## B04: 自定义交付类型与执行契约
+
+Checker 包揭示交付类型不能闭合为 npm/cloudflare。CAR 是制品格式，IPFS 是内容寻址与分发机制，Pinboard 是可用的发布入口；三者不是同一层次。
+
+建议 type 指向具名的交付机制，而不是所有扩展都使用无法辨别职责的 custom。具体名称尚未确定，不提前把 check-task、ipfs 或 pinboard 作为正式类型。
+
+需要确认：首期是否为 Checker 定义一个具名类型，以及其实现由既有标准入口还是后续发布适配器承接。描述交付意图不等于允许执行任意 YAML 命令，也不意味着本次授权上传 IPFS 或发布 Pinboard。
 
 ## B03: 既有标准的所有权与迁移
 
