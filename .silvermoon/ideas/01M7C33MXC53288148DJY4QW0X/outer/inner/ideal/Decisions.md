@@ -1,71 +1,58 @@
 # 交付项描述的设计决策
 
-## 已确定的方向
+## B01: 唯一交付意图与遗漏语义
 
-- Silvermoon 是跨技术栈、面向 Agent 的项目补充描述层，不绑定 Node workspace。
-- 项目顶层独立 YAML 声明交付意图，不在 package.json 增加品牌字段。
-- 列表字段为 deliverables，每项使用 path 和 type。type 可自定义，通用层只约束命名，不预设各类型必须具有的附加字段；具体要求按需约定。本轮仅约定 npm、cloudflare，IPFS 交付设计暂缓。
-- 暂不引入 schemaVersion；结构稳定后考虑 YAML 的 JSON Schema。
-- 应用目录可同时容纳 npm 安装型应用和 Cloudflare 线上应用。共享库仍可通过 npm 交付。
-- deliverables 必须登记所有对外交付项，不局限于 apps；packages 中对外发布的库也必须登记。
-- 私有 Checker 作者包也可以对外交付：构建 CAR，通过 IPFS 并可借助 Pinboard 分发。此类自定义交付项同样需要登记；private: true 不是“不交付”的证据。
-- 一个 Cloudflare 应用 Package 对应一个 Workers 部署目标，可含静态资产、API/SSR 和多个 DO 类。共享代码不因被应用使用而成为部署项。
-- WebSocket/realtime 是可选能力，不是独立的交付类型。纯静态应用不强制编写 Worker 请求处理代码。
-- 描述文件是交付意图的唯一来源；生态配置是实现事实，检查验证一致性，不隐式授权发布。
-- 工作拆成两个阶段、两个 Idea：本 Idea 先实际调整 TypeScript Check 及相关标准；第二阶段 cloudflare-project-check 再实现 Cloudflare 专项。当前仍为准备阶段，不据此跳过构想验收。
+仓库根独立文件 `silvermoon.yaml` 的 `deliverables` 列表是对外交付意图的唯一来源；每项有 `path` 和 `type`。它跨技术栈，不要求所有交付项属于 Node workspace，不修改或替代 `.silvermoon/config.yaml` 生命周期配置，也不假定当前 Silvermoon CLI 已支持该文件。
 
-下例仅展示字段方向，不是已安装配置；文件名称尚未确定：
+登记所有对外交付项，包含应用和 npm 库；内部工具、示例、内部共享代码无需登记，不增加 `none` 类型。未登记不代表明确禁止交付，但不能被发布调度选中。明确发布入口、发布映射或 workflow 选择未登记目录时，报告交付声明缺失，不替它补声明。`private: false`、`wrangler` 文件、普通构建/包校验接口本身都不能证明交付意图；`private: true` 也不能证明没有其他交付方式。
+
+无交付项目可以省略文件或声明空列表；有明确发布入口而缺文件/条目时不可据此通过。单独存在的配置不作为缺声明错误的依据。必填字段缺失归为缺失；重复、非法声明和已确认的配置矛盾归为不匹配；无法静态确认的发布选择或配置关系应明确无法确认，不推测通过。
+
+## B02: 最小身份与路径
+
+`path` 是仓库根相对、使用 `/` 分隔的明确现存目录；单包仓库可用 `.`。拒绝绝对路径、盘符、反斜杠、空段、`.`/`..` 子段、尾分隔符、glob、重复路径和同目录多类型。不得经符号链接逃出检查根，无法确认安全边界时不继续选择。
+
+嵌套目录可以分别登记，但只选择各自目录，不递归继承交付意图；父项与子项不得导致同一交付包被重复选择。Node 消费者将登记目录与真实根包/工作区成员精确匹配；非 Node 自定义项不因此被冒充为 Node 包。一个 Cloudflare 应用 Package 代表一个 Workers 部署单元，不代表只能有一个环境；环境仍由平台原生配置管理。
+
+不增加通用稳定 ID、namespace、环境清单或编排层，不在 `package.json` 复制交付意图；本轮无 `schemaVersion`，未来再为 YAML 提供 JSON Schema。
+
+## B03: 开放类型与首期支持
+
+`type` 满足 `^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`，例如 `npm`、`cloudflare`、`my-target`；不归一化非法名称。通用层不封闭类型枚举，也不要求不同类型拥有同一套附加字段。自定义类型的合法声明不等于任一消费者已支持其交付协议；消费者必须明确支持边界，既不回退 npm，也不执行声明中的命令。
+
+首期只约定 `npm` 与 `cloudflare`。npm 可包含安装型应用与库，仍须通过适用的 npm 交付和发布保护；Cloudflare 项不承担 npm exports、npm 产物映射或 publint 要求。Cloudflare 应用可仅有静态资产，也可含服务端/API/SSR、多个 DO 类；realtime/WebSocket 不是独立类型，纯静态应用不强制写 Worker handler。
+
+私有 Check 作者包可能通过 CAR/IPFS 对外交付，但本轮不设计 `ipfs`、`check-task` 或 `pinboard` 类型，不为它们创建发布处理器。实际迁移清单不得漏掉明确已知的此类交付意图，也不得把未设计协议伪装成已支持；如需登记，只使用使用方明确选定的自定义名称并说明协议未验证。
+
+## B04: 第一阶段必须落实的调整
+
+实际修改 TypeScript Check 的只读识别、npm 专项适用范围、标准资产、当前仓库消费副本及直接相关文档/测试；不只交付描述文档。所有适用代码和测试继续承担 strict TypeScript、type-aware lint、格式、单次测试、含未测试源码的覆盖率及项目明确的四项阈值。普通 TypeScript 与 Cloudflare 交付项保留通用质量门禁。
+
+只调整交付识别所直接需要的职责传递；不在第一阶段引入通用多 tsconfig 图解释、Workers 测试运行器、bindings/DO 配置或部署检查。当前静态配置能力无法确认的形态继续明确无法确认，不因为声明 `cloudflare` 就豁免或宣称专项成功。[第二阶段](../../../../01M7C4F10CACDE64QM4JZCZPPB/outer/inner/ideal/Idea.md)再按实际底座确定专项设计；不预先批准独立包或组合接口。
+
+## B05: 旧发布映射的单一来源迁移
+
+现有 `scripts/lib/release-packages.mjs` 静态数组与受支持的旧 `release.config.json` 均不能与新清单长期并行决定发布目标。新版标准将 npm 交付项选择统一改为 `silvermoon.yaml`；npm 的既有标签身份迁入该条目专用的 `packageId` 字段，不增加通用 deliverable ID，真实 npm 名称始终读取对应 manifest。`packageId` 沿用已有包 ID 命名及唯一性规则，只服务既有 `<package-id>-v<version>` 标签，不从目录名重新猜测或改名。
+
+例如现有 `check-task-sdk` 原样迁移为：
 
 ```yaml
 deliverables:
-  - path: apps/cli
+  - path: packages/check-task-sdk
     type: npm
-  - path: apps/web
-    type: cloudflare
-  - path: packages/sdk
-    type: npm
+    packageId: check-task-sdk
 ```
 
-## B01: 声明覆盖范围和遗漏语义
+`packageId` 不是 Cloudflare/自定义类型的共同要求。旧映射中的 `name` 必须先与真实 manifest 核对；迁移保留每个 npm 项的准确目录、包名和包 ID，冲突/缺失必须修正后再切换，不能静默丢项、重命名标签或改成按 `private` 推断。旧版本消费者保持其既有版本边界；新版不隐式兼容回退旧清单。新旧选择数据同时存在时报冲突；旧模块如保留路径兼容，只能是新清单的只读投影，不再保留独立目标数组；旧 profile 的重复目标字段移除。第一阶段必须同步新版固定发布器、Check 静态验证、调度、workflow 选择及本仓库消费副本，使之共同遵守唯一来源。
 
-这决定 Check 与发布调度究竟把哪些目录视为交付项。
+已有 `core`、`check-task-sdk`、`check-task-builder` 的 ID/name/path 映射必须保持。声明 npm 而 manifest 为 private 仍拒绝 npm 发布，不能因显式交付意图绕过保护。保留单包显式授权、准确版本/提交、main 祖先与准确 SHA CI 全矩阵/聚合门卫、不可变标签、RC 连续性、已存在版本/依赖检查、Trusted Publishing、单次 pack 后验证并发布同一 tarball 等既有保护。固定标准的本次演进只服务已批准的范围，不允许任意改写可信发布核心。
 
-已确认：登记所有对外交付项，包括 apps 中的应用和 packages 中的 npm 库，不仅限于应用。
+## B06: 阶段与证据边界
 
-尚待确认：内部工具、示例或纯内部共享代码是否无需登记，以及是否不添加 type: none。
+准备阶段仅形成契约与未勾选的下游种子；父代理负责 ideal/inner/outer 审批，提交准备就绪不等于接受，也不授权实现。构想接受后第一阶段必须实际实现并通过相关回归及根 `check`。
 
-未登记目录不能被发布调度选中，但不能仅因遗漏就证明其已被明确禁止发布。若目录存在明确发布入口或被 workflow 选择却未登记，应报告未声明交付意图；private 或平台配置文件本身不足以证明发布意图。
+两个阶段的部署均仅验证本地候选、样例和本地产物的可追溯性，不要求 npm 发布、外部消费者或线上运行。不得发包、发版、推送发布标签、上传 IPFS/Pinboard、部署或迁移 Cloudflare 资源；普通生命周期提交与非强制同步 primary 不属于发布。静态检查器不执行目标仓库脚本、模块、配置或 hook；检查器自身受控测试和本仓库获准质量门禁不等同于执行被检查项目代码。
 
-需要确认：非交付目录可不登记，还是需要显式标记不交付？不能同时把遗漏解释为“不交付”和“声明缺失”。上述发布调度和缺失报告策略仍是建议，不因覆盖范围已确认而自动生效。
+本次准备只读核对发现：`src/convention.ts`、`publisher-profile.ts`、`release-evidence.ts` 与 `assets/npm-publish.mjs` 仍依赖 `private`/manifest 特征及旧映射；`assets/commands.mjs` 的 publint 调度也依赖这些特征。迁移应同时覆盖作者标准和 `scripts/lib/` 消费副本，避免只换识别器却继续误选发布目标。这是可行性定位，不是实现完成证据。
 
-## B02: 首期身份、路径和环境边界
-
-这决定仅凭 path/type 能否唯一定位一次交付。
-
-建议首期每项 path 是仓库根相对的明确目录，不使用 glob；禁止重复和同一目录声明多个交付类型。一个应用对应一个部署单元，不表示只有一个开发/预览/生产环境；环境仍由平台原生配置描述。
-
-使用单包仓库时是否接受 path: .，以及是否允许目录嵌套，需纳入明确的路径规则。文件名称建议 silvermoon.yaml；它不替代或迁移现有 .silvermoon/config.yaml 生命周期配置。与现有 CLI 的接入是后续明确变更，不假定 CLI 已支持新文件。
-
-需要确认：首期保持 path/type 最小模型，不加入稳定 ID、多目标或环境声明；确有标签身份或编排需求时再扩展。
-
-## B04: 类型命名规则
-
-已确认：type 不是封闭枚举，可由使用方自定义。通用描述层不强制每种类型具有某套交付契约或附加字段，具体规则按需约定；本轮只保留 npm、cloudflare 的约定。
-
-IPFS 交付目标可能有多种，尚未仔细设计，本轮不定义 ipfs、check-task 或 pinboard 类型，也不实现相应发布处理。Checker 的例子保留为扩展背景，不作为当前必须实现的验收项。
-
-仍需确定命名规则。建议使用小写 ASCII 字母开头，后续允许小写字母、数字和单个连字符分段，例如 npm、cloudflare、my-target；不引入 namespace 或固定名称清单。此规则尚待确认，不自动改变或归一化用户提供的类型名称。
-
-自定义名称不等于某个 Check 或发布工具已支持该类型，也不授权执行任意命令或发布操作；具体消费者的支持边界应明确说明，不把未知类型错误地解释为 npm 或 Cloudflare。
-
-## B03: 已确认的阶段范围与待细化迁移
-
-这决定声明能否真正成为唯一来源，而不是另一份长期并存的清单。
-
-当前 TypeScript Check 固定资产和 npm publisher 使用既有发布映射与固定质量 CI；通用底座还有多 tsconfig、Workers 测试配置和执行职责的支持边界。新描述文件本身不会解决这些问题。
-
-建议先定义新的交付描述契约及职责边界，再同步迁移 Check 作者标准、固定发布实现和消费者；过渡期必须明确版本边界和冲突处理。不得直接改写受保护的固定核心或让新字段覆盖旧发布保护。
-
-已确认：本 Idea 不只交付设计文档，包含 TypeScript Check 的实际调整及直接相关标准演进、必要迁移。Cloudflare 专项由[第二阶段 Idea](../../../../01M7C4F10CACDE64QM4JZCZPPB/outer/inner/ideal/Idea.md)承接。
-
-仍需细化：旧描述的迁移方式、通用多配置能力在第一阶段的必要范围，以及固定标准升级的准确边界。是否最终独立建立 Cloudflare Check 仍是实现方案选择，不因阶段拆分而自动批准特定包结构。
+准备验证（2026-11-14）：根 `pnpm check` 退出 0，现有格式、构建、类型、lint、覆盖率、13 项发布回归及包校验均通过；未修改实现或阈值。实际 Node 为 `26.13.0`，与 `.node-version` 的 `26.13.1` 不一致，pnpm 为固定的 `11.28.12`；该结果不冒充固定 Node 下的验证，未改共享机器全局配置。构建仅生成本地忽略产物，未发布或上传。
