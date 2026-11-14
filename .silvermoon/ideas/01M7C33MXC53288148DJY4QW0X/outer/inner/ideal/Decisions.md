@@ -4,7 +4,7 @@
 
 - Silvermoon 是跨技术栈、面向 Agent 的项目补充描述层，不绑定 Node workspace。
 - 项目顶层独立 YAML 声明交付意图，不在 package.json 增加品牌字段。
-- 列表字段为 deliverables，每项使用 path 和 type；已讨论的交付方式包括 npm、cloudflare 和自定义交付，类型标识与扩展机制尚需确定。
+- 列表字段为 deliverables，每项使用 path 和 type。type 可自定义，通用层只约束命名，不预设各类型必须具有的附加字段；具体要求按需约定。本轮仅约定 npm、cloudflare，IPFS 交付设计暂缓。
 - 暂不引入 schemaVersion；结构稳定后考虑 YAML 的 JSON Schema。
 - 应用目录可同时容纳 npm 安装型应用和 Cloudflare 线上应用。共享库仍可通过 npm 交付。
 - deliverables 必须登记所有对外交付项，不局限于 apps；packages 中对外发布的库也必须登记。
@@ -47,13 +47,15 @@ deliverables:
 
 需要确认：首期保持 path/type 最小模型，不加入稳定 ID、多目标或环境声明；确有标签身份或编排需求时再扩展。
 
-## B04: 自定义交付类型与执行契约
+## B04: 类型命名规则
 
-Checker 包揭示交付类型不能闭合为 npm/cloudflare。CAR 是制品格式，IPFS 是内容寻址与分发机制，Pinboard 是可用的发布入口；三者不是同一层次。
+已确认：type 不是封闭枚举，可由使用方自定义。通用描述层不强制每种类型具有某套交付契约或附加字段，具体规则按需约定；本轮只保留 npm、cloudflare 的约定。
 
-建议 type 指向具名的交付机制，而不是所有扩展都使用无法辨别职责的 custom。具体名称尚未确定，不提前把 check-task、ipfs 或 pinboard 作为正式类型。
+IPFS 交付目标可能有多种，尚未仔细设计，本轮不定义 ipfs、check-task 或 pinboard 类型，也不实现相应发布处理。Checker 的例子保留为扩展背景，不作为当前必须实现的验收项。
 
-需要确认：首期是否为 Checker 定义一个具名类型，以及其实现由既有标准入口还是后续发布适配器承接。描述交付意图不等于允许执行任意 YAML 命令，也不意味着本次授权上传 IPFS 或发布 Pinboard。
+仍需确定命名规则。建议使用小写 ASCII 字母开头，后续允许小写字母、数字和单个连字符分段，例如 npm、cloudflare、my-target；不引入 namespace 或固定名称清单。此规则尚待确认，不自动改变或归一化用户提供的类型名称。
+
+自定义名称不等于某个 Check 或发布工具已支持该类型，也不授权执行任意命令或发布操作；具体消费者的支持边界应明确说明，不把未知类型错误地解释为 npm 或 Cloudflare。
 
 ## B03: 既有标准的所有权与迁移
 
