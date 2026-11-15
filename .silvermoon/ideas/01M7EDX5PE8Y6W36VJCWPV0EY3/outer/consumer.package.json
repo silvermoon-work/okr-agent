@@ -1,0 +1,15 @@
+{
+  "name": "@silvermoon-work/target-checker-independent-consumer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.28.12",
+  "dependencies": {
+    "@silvermoon-work/check-task-sdk": "file:./check-task-sdk.tgz",
+    "@silvermoon-work/ipfs-store": "0.1.0-rc.1",
+    "@silvermoon-work/task-builder": "0.2.0-rc.2",
+    "@silvermoon-work/task-engine": "0.2.0-rc.2",
+    "@sinclair/typebox": "0.34.52",
+    "ipfs-unixfs-exporter": "16.2.3"
+  }
+}
