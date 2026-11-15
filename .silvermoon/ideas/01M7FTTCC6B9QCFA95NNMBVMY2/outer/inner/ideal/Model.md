@@ -9,7 +9,8 @@
 | --- | --- |
 | Checker | 检测函数，接收目标及 AbortSignal，完成本节点判断并返回 CheckerResult。 |
 | CheckerName | 注册表内唯一的函数注册名，受命名规范约束的字符串，不强制 space/name 两层。 |
-| CheckerRegistry | CheckerName 到 Checker 及其 target 校验契约的绑定；一次执行内不可重绑。 |
+| CheckerDefinition | target schema 与 Checker 函数的作者定义包装，由 SDK 的 defineChecker 辅助定义，不包含执行状态。 |
+| CheckerRegistry | CheckerName 到 CheckerDefinition 的显式绑定；一次执行内不可重绑。 |
 | Target | 某个 Checker 接收的可序列化目标描述值，不要求 type 字段；不是函数或执行状态。 |
 | CheckItem | `{ checker: CheckerName, target: Target }`，表示一项检查，不包含运行状态。 |
 | CheckerResult | 单节点结果：通过并返回 children，或不通过并返回非空 problems。 |
@@ -49,6 +50,19 @@ type CheckerResult =
 “子节点必须等待所有入边的父节点成功”。确实要求 A、B 都成立的检查，
 需要显式的组合前置设计，不能从入度猜测；本轮不增加通用 join 调度器。
 父节点失败不能阻止同一项从另一条有效路径被发现。
+
+## 作者定义和工程组织
+
+采用[作者最佳实践](./Authoring.md)：Check SDK 提供 defineChecker，作者把
+target schema 与检测函数放在一起；静态 object 注册表组合各定义，按职责组织
+Checker 模块，不强制一个叶函数一个文件。注册名只需在注册表中绑定，
+定义不通过副作用自动注册，静态定义不持有本次执行状态。
+
+target 契约属于各 Checker，但运行时结构/值域校验由执行器在规范身份登记前
+统一完成；第一版不隐式转换或修改输入。目标文件读取和业务解析仍由 Checker
+负责。defineChecker 的泛型推导与运行时验证须配合，不能把编译期类型视为验证。
+把这些最佳实践自动化为检查作者/Bundle 写法的 Check 是未来方向，当前只写文档，
+不属于此 Idea 必须实现的新检测规则。
 
 ## 注册名和节点身份
 

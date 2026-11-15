@@ -16,12 +16,16 @@
 
 实现 CheckerRegistry、CheckItem、内部节点记录、FIFO 有界并发和本次执行
 去重；接入显式 signal、取消清理、稳定汇总及 runCheck 的注册表/根名入口。
+SDK 提供 defineChecker，将 target schema 与类型推导的 Checker 函数组合为
+静态定义；执行器在身份登记前统一验证，不隐式转换输入。
 实现符合已定 Check 契约的 Bundle 适配，不改造成通用 Task 结果合并器。
 
 ### I-S03: 迁移作者和验证质量
 
 迁移两个现有 Check 的通用/非 Cloudflare 流程及直接依赖模板/调用点，
 去除对 serial DFS 共享 mutable scope 的依赖，保留业务规则、来源与安全边界。
+按[作者最佳实践](./ideal/Authoring.md)采用显式 object 注册表和职责模块，
+不强制逐叶拆文件；自动化检查最佳实践的 Checker 不在本次范围内。
 同步文档、针对性测试和新候选交付身份，保持全部已有质量门限。
 
 ## Acceptance criteria
@@ -31,6 +35,8 @@
 G01–G03、G11–G12 的类型/运行时/编码用例证明值相等与规范编码对应、
 合法根名及异构 children 类型正确、登记后的身份稳定且无跨执行缓存；
 注册重复/未知或不支持的数据明确失败。
+defineChecker 的 target 类型推导、静态注册表键保留和执行前结构验证有聚焦测试，
+不会通过静默转换、属性覆盖或裸函数调用假设绕过身份契约。
 
 ### I-AC02: 调度和取消语义可证
 
