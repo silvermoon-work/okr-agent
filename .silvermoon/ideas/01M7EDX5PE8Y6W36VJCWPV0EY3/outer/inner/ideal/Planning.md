@@ -9,6 +9,11 @@
 lint 和测试。当前两个 Check 作者项目均保持私有 Task Bundle，SDK 保持 npm 库，
 不能因为新增 Cloudflare 分支就把检测运行时迁到 Cloudflare。
 
+`check.typescript-project` 是项目级统一入口，负责通用检查、目标发现和所有
+已支持 deliverable 类型的分派。各类型的专项规则保持独立 TargetChecker，
+不为 npm、Cloudflare 等类型复制整套项目 checker；SDK 只提供编排，不内置
+平台规则。未来类型沿相同注册边界扩展，本轮不因此新增尚未支持的专项。
+
 沿用根 `silvermoon.yaml` 的显式 deliverables 与 pnpm workspace 成员声明。
 不从 `private`、目录名、Wrangler 文件或发布脚本自动授权交付；这些只能作为
 缺失/矛盾声明的证据。保留现有开放类型语义，未知类型不自动套用 npm 或

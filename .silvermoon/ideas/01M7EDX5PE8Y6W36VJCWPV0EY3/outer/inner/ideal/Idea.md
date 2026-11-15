@@ -6,7 +6,7 @@
 
 ## 结果
 
-迭代 Check SDK，并将 `check.typescript-project` 与 `check.nodejs-toolchain` 迁移为按类型注册、由根 target 驱动的 DFS 检测树；成功发现子项，失败报告问题并阻断该分支，独立分支继续。
+迭代 Check SDK，并将两个现有 Check 迁移为按类型注册、由根 target 驱动的 DFS 检测树。`check.typescript-project` 统一编排项目内各类已支持 deliverable 的适用检查；`check.nodejs-toolchain` 独立检查授权环境。成功发现子项，失败报告问题并阻断该分支，独立分支继续。
 
 ## 边界
 
@@ -18,4 +18,4 @@
 
 1. SDK 提供类型安全的 target、checker 注册与根参数接口；测试证明有序 DFS、叶节点、分支剪枝、兄弟继续及故障传播。
 2. 两个 Check 的实际入口使用新编排器；回归证明规则保留、独立目标不被连带阻断，两个新 CAR 可通过公开 Engine 消费。
-3. 规划明确从项目根到 package、deliverable、平台/工具约束的职责和阻断边界，覆盖单包、混合 workspace 与共享前置条件，能够指导迁移而非只给概念图。
+3. 规划明确项目级统一入口到 package、deliverable、平台/工具约束的职责和阻断边界，覆盖单包、混合 workspace 与共享前置条件；各类已支持交付由类型分派，不重复整套项目检查。
