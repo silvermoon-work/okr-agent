@@ -1,0 +1,266 @@
+{
+  "observedAt": "2026-11-15T02:41:05.861Z",
+  "node": "v26.13.1",
+  "platform": "win32",
+  "architecture": "x64",
+  "dependencies": {
+    "@silvermoon-work/task-engine": "published dependency resolved outside author repository",
+    "@silvermoon-work/task-builder": "published dependency resolved outside author repository",
+    "@silvermoon-work/ipfs-store": "published dependency resolved outside author repository",
+    "ipfs-unixfs-exporter": "published dependency resolved outside author repository"
+  },
+  "authorPackagesInstalled": false,
+  "remotePublication": false,
+  "archives": [
+    {
+      "name": "nodejs-toolchain",
+      "role": "production",
+      "cid": "bafybeihg3hca453wf4ukcx6ulqw76qzxdlyfuaij37tsrckxjnrdyrnu6i",
+      "sha256": "f74a9aff2f0a5ba7c80f2f99fdc2040c7d659e8158da93cbb343a02fcac39004",
+      "bytes": 311544
+    },
+    {
+      "name": "typescript-project",
+      "role": "production-live-metadata-adapter",
+      "cid": "bafybeifmac4srult3w6hunlixc2afhrdbdrvpdgmn6tdmybegab7hogbba",
+      "sha256": "6fe34ff46e9bde733171af00cd8d52e053325d6796905893b6154098c0e89780",
+      "bytes": 704654
+    },
+    {
+      "name": "typescript-project-deterministic",
+      "role": "controlled-metadata-verification-not-production",
+      "cid": "bafybeidqbbwbfczams6roqphvrsa6jowrwikxbxl2txtwvcxssao5wzsde",
+      "sha256": "47699df5f66760446ac2bd2f99c025fdb618e529f6eb28aeb9b659d1c10bdd5d",
+      "bytes": 705665
+    }
+  ],
+  "results": [
+    {
+      "archive": "nodejs-toolchain",
+      "name": "node-only",
+      "stage": "completed",
+      "pass": true,
+      "problems": [],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": [
+        "references/check.md"
+      ],
+      "assets": [],
+      "reclaimed": true,
+      "callerContentStillOpenAfterDrain": true,
+      "targetUnchanged": true
+    },
+    {
+      "archive": "nodejs-toolchain",
+      "name": "node-npm-pairing-registry",
+      "stage": "completed",
+      "pass": true,
+      "problems": [],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": [
+        "references/check.md"
+      ],
+      "assets": [],
+      "reclaimed": true,
+      "callerContentStillOpenAfterDrain": true,
+      "targetUnchanged": true
+    },
+    {
+      "archive": "nodejs-toolchain",
+      "name": "minimum-failures-do-not-block-registry",
+      "stage": "completed",
+      "pass": false,
+      "problems": [
+        "version-too-low",
+        "version-too-low",
+        "registry-mismatch"
+      ],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": [
+        "references/check.md",
+        "references/problems/version-too-low.md",
+        "references/problems/registry-mismatch.md"
+      ],
+      "assets": [],
+      "reclaimed": true,
+      "callerContentStillOpenAfterDrain": true,
+      "targetUnchanged": true
+    },
+    {
+      "archive": "nodejs-toolchain",
+      "name": "missing-npm-prunes-only-dependent-relationships",
+      "stage": "completed",
+      "pass": false,
+      "problems": [
+        "version-too-low",
+        "tool-missing"
+      ],
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": [
+        "references/check.md",
+        "references/problems/version-too-low.md",
+        "references/problems/tool-missing.md"
+      ],
+      "assets": [],
+      "reclaimed": true,
+      "callerContentStillOpenAfterDrain": true,
+      "targetUnchanged": true
+    },
+    {
+      "archive": "nodejs-toolchain",
+      "name": "invalid-directory-is-execution-fault",
+      "stage": "failed",
+      "reclaimed": true
+    },
+    {
+      "archive": "nodejs-toolchain",
+      "name": "cancel-no-normal-output",
+      "canceled": true,
+      "stage": "initial",
+      "runStarted": false,
+      "reclaimed": true,
+      "targetUnchanged": true
+    },
+    {
+      "archive": "typescript-project",
+      "name": "scope-missing-independent-root-findings",
+      "stage": "completed",
+      "pass": false,
+      "problems": [
+        "scope-unconfirmed",
+        "ci-unconfirmed",
+        "document-missing",
+        "document-missing",
+        "document-missing",
+        "document-missing",
+        "document-missing",
+        "environment-missing"
+      ],
+      "outputCid": "bafybeiewqronyez7jjmtfeor3kxuacmbygk5rwfhcevjhlo5pnzourh2wq",
+      "documents": [
+        "references/check.md",
+        "references/problems/scope-unconfirmed.md",
+        "references/problems/ci-unconfirmed.md",
+        "references/problems/document-missing.md",
+        "references/problems/environment-missing.md"
+      ],
+      "assets": [
+        "AGENTS.md",
+        "commands.mjs",
+        "npm-publish.mjs",
+        "deliverables.mjs"
+      ],
+      "reclaimed": true,
+      "callerContentStillOpenAfterDrain": true,
+      "targetUnchanged": true
+    },
+    {
+      "archive": "typescript-project",
+      "name": "relative-directory-execution-fault",
+      "stage": "failed",
+      "reclaimed": true
+    },
+    {
+      "archive": "typescript-project",
+      "name": "cancel-no-normal-output",
+      "canceled": true,
+      "stage": "initial",
+      "runStarted": false,
+      "reclaimed": true,
+      "targetUnchanged": true
+    },
+    {
+      "archive": "typescript-project-deterministic",
+      "name": "ordinary-pass",
+      "stage": "completed",
+      "pass": true,
+      "problems": [],
+      "outputCid": "bafybeiewqronyez7jjmtfeor3kxuacmbygk5rwfhcevjhlo5pnzourh2wq",
+      "documents": [
+        "references/check.md"
+      ],
+      "assets": [
+        "AGENTS.md",
+        "commands.mjs",
+        "npm-publish.mjs",
+        "deliverables.mjs"
+      ],
+      "reclaimed": true,
+      "callerContentStillOpenAfterDrain": true,
+      "targetUnchanged": true
+    },
+    {
+      "archive": "typescript-project-deterministic",
+      "name": "npm-pass",
+      "stage": "completed",
+      "pass": true,
+      "problems": [],
+      "outputCid": "bafybeiewqronyez7jjmtfeor3kxuacmbygk5rwfhcevjhlo5pnzourh2wq",
+      "documents": [
+        "references/check.md"
+      ],
+      "assets": [
+        "AGENTS.md",
+        "commands.mjs",
+        "npm-publish.mjs",
+        "deliverables.mjs"
+      ],
+      "reclaimed": true,
+      "callerContentStillOpenAfterDrain": true,
+      "targetUnchanged": true
+    },
+    {
+      "archive": "typescript-project-deterministic",
+      "name": "independent-multiple-findings",
+      "stage": "completed",
+      "pass": false,
+      "problems": [
+        "gate-missing",
+        "coverage-mismatch",
+        "document-mismatch"
+      ],
+      "outputCid": "bafybeiewqronyez7jjmtfeor3kxuacmbygk5rwfhcevjhlo5pnzourh2wq",
+      "documents": [
+        "references/check.md",
+        "references/problems/gate-missing.md",
+        "references/problems/coverage-mismatch.md",
+        "references/problems/document-mismatch.md"
+      ],
+      "assets": [
+        "AGENTS.md",
+        "commands.mjs",
+        "npm-publish.mjs",
+        "deliverables.mjs"
+      ],
+      "reclaimed": true,
+      "callerContentStillOpenAfterDrain": true,
+      "targetUnchanged": true
+    },
+    {
+      "archive": "typescript-project-deterministic",
+      "name": "bad-member-pruned-independent-root-continues",
+      "stage": "completed",
+      "pass": false,
+      "problems": [
+        "scope-unconfirmed",
+        "document-mismatch"
+      ],
+      "outputCid": "bafybeiewqronyez7jjmtfeor3kxuacmbygk5rwfhcevjhlo5pnzourh2wq",
+      "documents": [
+        "references/check.md",
+        "references/problems/scope-unconfirmed.md",
+        "references/problems/document-mismatch.md"
+      ],
+      "assets": [
+        "AGENTS.md",
+        "commands.mjs",
+        "npm-publish.mjs",
+        "deliverables.mjs"
+      ],
+      "reclaimed": true,
+      "callerContentStillOpenAfterDrain": true,
+      "targetUnchanged": true
+    }
+  ],
+  "passed": true
+}

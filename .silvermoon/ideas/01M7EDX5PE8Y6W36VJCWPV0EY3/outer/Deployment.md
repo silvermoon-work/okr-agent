@@ -65,3 +65,44 @@ TypeScript 成功逻辑使用明示的确定性验证 CAR，生产 CAR 的独立
 新交付身份、执行环境与验证范围可复核，旧 CAR/CID 不被覆盖。
 无明确授权不发布 npm、上传/pin 或部署 Cloudflare；没有线上证据就不声称线上成功。
 迁移记录明确 Cloudflare 专项未纳入本阶段交付与验收，不要求其新的消费或部署证据。
+
+## 独立消费证据
+
+本次验证按已同步的 Outer 契约
+`1a219af075efd32513e13bb9666d5137a186c16d` 执行，其 primary commit 为
+`a9b1377b301af928df95524360792096bb59d34b`。以下是执行后的成绩，
+不变更已执行的场景或验收条件。
+
+- [SDK 消费报告](./SDK-consumer.json)：同一未发布 tarball 安装到仓库之外；
+  验证完整 target、有序 DFS、失败分支/兄弟、未知类型、空失败与取消。
+- [CAR 消费报告](./Consumer-verification.json)：13 场景全部满足预期，包含
+  4 个正常通过、5 个正常不通过、2 个执行故障和 2 个取消。正常结果均从
+  output CID 读取中文 references，TypeScript 所需 assets 与 Bundle 字节一致。
+- 11 个实际启动的 Run 均已回收；2 个取消发生在 Run 启动之前，没有业务 output，
+  不将其描述为新增的运行中子进程取消证明。运行中取消与子 PID 回收仍由已接受
+  Inner 的既有 CAR/Engine 回归覆盖。
+- 正常输出后的 `IpfsStore` 仍可读取（Engine 不关闭调用方内容存储）；
+  目标文件树 SHA256 前后相同。依赖解析在作者仓库之外，不安装或 import
+  两个作者包，不使用作者 SDK 私有 API。
+- 环境为 Windows x64、Node `26.13.1`，工具链约束使用自有 Node/npm 副本，
+  npm 为 `11.20.0`，隔离用户/全局配置；未修改共享工具、宿主 registry 或原配置。
+  公开 Engine/Builder/IPFS Store 的精确版本见消费者 manifest。
+
+### 准确交付身份
+
+| 交付物 | 准确身份 | SHA256 |
+| --- | --- | --- |
+| SDK 本地未发布 tarball，manifest 仍为 `0.1.0-rc.1` | `dist/silvermoon-work-check-task-sdk-0.1.0-rc.1.tgz` | `8903dc5030f978b48181a62165e3eb738c5f98e8938c02f39bedd97b20d129ff` |
+| TypeScript 生产 CAR，704654 字节 | `bafybeifmac4srult3w6hunlixc2afhrdbdrvpdgmn6tdmybegab7hogbba` | `6fe34ff46e9bde733171af00cd8d52e053325d6796905893b6154098c0e89780` |
+| 工具链生产 CAR，311544 字节 | `bafybeihg3hca453wf4ukcx6ulqw76qzxdlyfuaij37tsrckxjnrdyrnu6i` | `f74a9aff2f0a5ba7c80f2f99fdc2040c7d659e8158da93cbb343a02fcac39004` |
+| 仅确定性元数据验证 CAR，705665 字节 | `bafybeidqbbwbfczams6roqphvrsa6jowrwikxbxl2txtwvcxssao5wzsde` | `47699df5f66760446ac2bd2f99c025fdb618e529f6eb28aeb9b659d1c10bdd5d` |
+
+生产 TypeScript CAR 已独立确认准入、通用缺失诊断、故障及取消；
+单包/npm 的通过与坏成员局部剪枝成绩来自明示的确定性 CAR。
+没有宣称本次证明所有生产联网版本新鲜度，也没有把验证 CAR 当作生产身份。
+SDK 只是本地候选包，registry 已有的同版本 rc.1 不会因此拥有新 API；
+两个新生产 CID 须由消费者显式切换，历史 CAR、CID 与证据未覆盖。
+
+Cloudflare 专项未迁移或新增；未发布 npm、上传/pin CAR 或部署 Cloudflare，
+也未新增真实 Unix、其他架构或线上平台支持声明。SDK 与两个生产 CAR 的
+本地独立消费验收通过，主会话据用户委托负责准确最终 Outer revision 的审批。
