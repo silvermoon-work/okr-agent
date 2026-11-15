@@ -1,0 +1,237 @@
+{
+  "observedAt": "2026-11-15T18:01:31.340Z",
+  "node": "v26.13.1",
+  "platform": "win32",
+  "architecture": "x64",
+  "archives": [
+    {
+      "name": "toolchain-production",
+      "cid": "bafybeidrewa4ommkoogtndb5idog2cfn5xuhjstnsb2hxm4l6nd6tm7taa",
+      "sha256": "d98229bbadc311591ace3d14041341d713d1aebcf60ecd7950aa6dfe5e2cf24f",
+      "bytes": 471251
+    },
+    {
+      "name": "typescript-production",
+      "cid": "bafybeiaqow5thznglyi4ufkulzrk5fel5bc5zl77xya6qvnbmt55ujcnci",
+      "sha256": "2bda7acb3c901f4ca2547d4d0c8cda42081367013a91d46b5726bf0aec338709",
+      "bytes": 868985
+    },
+    {
+      "name": "typescript-deterministic-not-production",
+      "cid": "bafybeid6vx2qztpjyp732yqixxwz2yt2p2dpguodrwhoa3d5yjohawalsa",
+      "sha256": "40eda472726ede7645623baad889ab666ddff916dc55549917105f7771e8dc0b",
+      "bytes": 869996
+    }
+  ],
+  "cases": [
+    {
+      "archive": "toolchain-production",
+      "name": "node-pass",
+      "pass": true,
+      "codes": [],
+      "nodes": 2,
+      "edges": 1,
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": [
+        "references/check.md"
+      ],
+      "assets": [],
+      "targetUnchanged": true,
+      "reclaimed": true
+    },
+    {
+      "archive": "toolchain-production",
+      "name": "npm-pairing-registry-pass",
+      "pass": true,
+      "codes": [],
+      "nodes": 7,
+      "edges": 7,
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": [
+        "references/check.md"
+      ],
+      "assets": [],
+      "targetUnchanged": true,
+      "reclaimed": true
+    },
+    {
+      "archive": "toolchain-production",
+      "name": "low-version-independent-registry",
+      "pass": false,
+      "codes": [
+        "version-too-low",
+        "version-too-low",
+        "registry-mismatch"
+      ],
+      "nodes": 7,
+      "edges": 6,
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": [
+        "references/check.md",
+        "references/problems/version-too-low.md",
+        "references/problems/registry-mismatch.md"
+      ],
+      "assets": [],
+      "targetUnchanged": true,
+      "reclaimed": true
+    },
+    {
+      "archive": "toolchain-production",
+      "name": "missing-tool-local-pruning",
+      "pass": false,
+      "codes": [
+        "version-too-low",
+        "tool-missing"
+      ],
+      "nodes": 4,
+      "edges": 3,
+      "outputCid": "bafybeid34lp2g3vvu44b5waqzbxx24u2l6qlxhataeshymot3alabzifdi",
+      "documents": [
+        "references/check.md",
+        "references/problems/version-too-low.md",
+        "references/problems/tool-missing.md"
+      ],
+      "assets": [],
+      "targetUnchanged": true,
+      "reclaimed": true
+    },
+    {
+      "archive": "toolchain-production",
+      "name": "execution-fault",
+      "stage": "failed",
+      "reclaimed": true
+    },
+    {
+      "archive": "typescript-production",
+      "name": "missing-scope-independent-root",
+      "pass": false,
+      "codes": [
+        "ci-unconfirmed",
+        "document-missing",
+        "document-missing",
+        "document-missing",
+        "document-missing",
+        "document-missing",
+        "environment-missing",
+        "scope-unconfirmed"
+      ],
+      "nodes": 10,
+      "edges": 9,
+      "outputCid": "bafybeiewqronyez7jjmtfeor3kxuacmbygk5rwfhcevjhlo5pnzourh2wq",
+      "documents": [
+        "references/check.md",
+        "references/problems/ci-unconfirmed.md",
+        "references/problems/document-missing.md",
+        "references/problems/environment-missing.md",
+        "references/problems/scope-unconfirmed.md"
+      ],
+      "assets": [
+        "AGENTS.md",
+        "commands.mjs",
+        "npm-publish.mjs",
+        "deliverables.mjs"
+      ],
+      "targetUnchanged": true,
+      "reclaimed": true
+    },
+    {
+      "archive": "typescript-production",
+      "name": "invalid-path-fault",
+      "stage": "failed",
+      "reclaimed": true
+    },
+    {
+      "archive": "typescript-deterministic-not-production",
+      "name": "ordinary-pass",
+      "pass": true,
+      "codes": [],
+      "nodes": 36,
+      "edges": 35,
+      "outputCid": "bafybeiewqronyez7jjmtfeor3kxuacmbygk5rwfhcevjhlo5pnzourh2wq",
+      "documents": [
+        "references/check.md"
+      ],
+      "assets": [
+        "AGENTS.md",
+        "commands.mjs",
+        "npm-publish.mjs",
+        "deliverables.mjs"
+      ],
+      "targetUnchanged": true,
+      "reclaimed": true
+    },
+    {
+      "archive": "typescript-deterministic-not-production",
+      "name": "npm-pass",
+      "pass": true,
+      "codes": [],
+      "nodes": 37,
+      "edges": 36,
+      "outputCid": "bafybeiewqronyez7jjmtfeor3kxuacmbygk5rwfhcevjhlo5pnzourh2wq",
+      "documents": [
+        "references/check.md"
+      ],
+      "assets": [
+        "AGENTS.md",
+        "commands.mjs",
+        "npm-publish.mjs",
+        "deliverables.mjs"
+      ],
+      "targetUnchanged": true,
+      "reclaimed": true
+    },
+    {
+      "archive": "typescript-deterministic-not-production",
+      "name": "independent-multiple-findings",
+      "pass": false,
+      "codes": [
+        "coverage-mismatch",
+        "document-mismatch",
+        "gate-missing"
+      ],
+      "nodes": 36,
+      "edges": 35,
+      "outputCid": "bafybeiewqronyez7jjmtfeor3kxuacmbygk5rwfhcevjhlo5pnzourh2wq",
+      "documents": [
+        "references/check.md",
+        "references/problems/coverage-mismatch.md",
+        "references/problems/document-mismatch.md",
+        "references/problems/gate-missing.md"
+      ],
+      "assets": [
+        "AGENTS.md",
+        "commands.mjs",
+        "npm-publish.mjs",
+        "deliverables.mjs"
+      ],
+      "targetUnchanged": true,
+      "reclaimed": true
+    },
+    {
+      "archive": "typescript-deterministic-not-production",
+      "name": "member-pruning",
+      "pass": false,
+      "codes": [
+        "document-mismatch",
+        "scope-unconfirmed"
+      ],
+      "nodes": 45,
+      "edges": 46,
+      "outputCid": "bafybeiewqronyez7jjmtfeor3kxuacmbygk5rwfhcevjhlo5pnzourh2wq",
+      "documents": [
+        "references/check.md",
+        "references/problems/document-mismatch.md",
+        "references/problems/scope-unconfirmed.md"
+      ],
+      "assets": [
+        "AGENTS.md",
+        "commands.mjs",
+        "npm-publish.mjs",
+        "deliverables.mjs"
+      ],
+      "targetUnchanged": true,
+      "reclaimed": true
+    }
+  ],
+  "passed": true
+}
