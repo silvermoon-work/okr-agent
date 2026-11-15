@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
@@ -120,16 +120,14 @@ await observed;
 assert.equal(childCalls, 0);
 results.push({ name: "local-midflight-abort-waits-cleanup-no-late-child", passed: true });
 
-await writeFile(join(directory, "probe-check.md"), "# 独立检查\n受控组合验证。\n");
-await writeFile(join(directory, "probe-problem.md"), "# 子问题\n独立子输出文档。\n");
+await mkdir(join(directory, "probe-references", "problems"), { recursive: true });
+await writeFile(join(directory, "probe-references", "check.md"), "# 独立检查\n受控组合验证。\n");
+await writeFile(join(directory, "probe-references", "problems", "child-only.md"), "# 子问题\n独立子输出文档。\n");
 const tree = await buildTaskBundle(await directoryTree(directory), {
   name: "Independent v2 Check graph probe",
   runtime: { minVersion: "22.15.0" },
   source: { entry: "probe-graph-worker.mjs", contract, mode: "explicit" },
-  include: [
-    { from: "probe-check.md", to: "resources/references/check.md" },
-    { from: "probe-problem.md", to: "resources/references/problems/child-only.md" },
-  ],
+  include: [{ from: "probe-references/**", to: "resources/references/" }],
 });
 const encoded = await encodeTaskBundleCar(tree);
 await rm(join(directory, "graph-probe.car"), { force: true });
@@ -193,7 +191,7 @@ try {
   assert.ok(document.type === "file" || document.type === "raw");
   const chunks = [];
   for await (const chunk of document.content()) chunks.push(chunk);
-  assert.equal(Buffer.concat(chunks).toString("utf8"), await readFile(join(directory, "probe-problem.md"), "utf8"));
+  assert.equal(Buffer.concat(chunks).toString("utf8"), await readFile(join(directory, "probe-references", "problems", "child-only.md"), "utf8"));
   results.push({ name: "bundle-leaf-mixed-provenance-and-dedup", passed: true, outputCid: foreign.source.outputCid });
 
   for (const mode of ["cancel", "sibling-fault"]) {
