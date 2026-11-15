@@ -5,4 +5,8 @@ import type { Metadata } from "../src/metadata.js";
 import { metadataFixture } from "./metadata-fixture.js";
 
 const provider = (): Metadata => metadataFixture();
-runCheck(contract, projectCheck(provider), { assets: true });
+runCheck(
+  contract,
+  { registry: projectCheck(provider), root: "project" },
+  { assets: true },
+);

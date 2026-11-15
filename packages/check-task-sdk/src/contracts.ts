@@ -1,19 +1,5 @@
 import { Kind, Type, type Static, type TSchema } from "@sinclair/typebox";
 
-export interface CheckProblem<Code extends string = string> {
-  readonly code: Code;
-  readonly brief: string;
-  readonly documentation: string;
-}
-
-export type CheckResult<Code extends string = string> =
-  | { readonly pass: true; readonly documentation: string }
-  | {
-      readonly pass: false;
-      readonly documentation: string;
-      readonly problems: readonly [CheckProblem<Code>, ...CheckProblem<Code>[]];
-    };
-
 /** A finite TypeBox literal or union of literals; codes are portable file stems. */
 export function problemCodes(schema: TSchema): readonly string[] {
   const members: TSchema[] =
@@ -50,19 +36,83 @@ export function createCheckContract<
     },
     { additionalProperties: false },
   );
+  const localSource = Type.Object(
+    {
+      kind: Type.Literal("local"),
+      checker: Type.String(),
+      nodeKey: Type.String(),
+    },
+    { additionalProperties: false },
+  );
+  const externalSource = Type.Object(
+    {
+      kind: Type.Literal("output"),
+      bundleCid: Type.String(),
+      outputCid: Type.String(),
+      checker: Type.String(),
+      nodeKey: Type.String(),
+    },
+    { additionalProperties: false },
+  );
+  const reportProblem = Type.Union([
+    Type.Object(
+      {
+        ...problem.properties,
+        nodeKey: Type.String(),
+        source: localSource,
+      },
+      { additionalProperties: false },
+    ),
+    Type.Object(
+      {
+        ...problem.properties,
+        code: Type.String(),
+        nodeKey: Type.String(),
+        source: externalSource,
+      },
+      { additionalProperties: false },
+    ),
+  ]);
+  const body = {
+    protocol: Type.Literal("check-report/v2"),
+    documentation: Type.String({ minLength: 1 }),
+    root: Type.String(),
+    nodes: Type.Array(
+      Type.Object(
+        {
+          key: Type.String(),
+          pass: Type.Boolean(),
+          item: Type.Object(
+            {
+              checker: Type.String(),
+              target: Type.Object({}, { additionalProperties: true }),
+            },
+            { additionalProperties: false },
+          ),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    edges: Type.Array(
+      Type.Object(
+        { from: Type.String(), to: Type.String() },
+        { additionalProperties: false },
+      ),
+    ),
+  };
   const result = Type.Union([
     Type.Object(
       {
         pass: Type.Literal(true),
-        documentation: Type.String({ minLength: 1 }),
+        ...body,
       },
       { additionalProperties: false },
     ),
     Type.Object(
       {
         pass: Type.Literal(false),
-        documentation: Type.String({ minLength: 1 }),
-        problems: Type.Array(problem, { minItems: 1 }),
+        ...body,
+        problems: Type.Array(reportProblem, { minItems: 1 }),
       },
       { additionalProperties: false },
     ),
@@ -71,7 +121,7 @@ export function createCheckContract<
     input,
     result,
     message: Type.Never(),
-    schemas: { "check-problem-code": code, "check-problem": problem },
+    schemas: { "check-problem-code": code, "check-problem": reportProblem },
   };
 }
 

@@ -20,7 +20,7 @@ it("builds a real CAR and independently verifies Engine pass/fail plus linked Ch
   const persistent = process.env["TYPESCRIPT_CHECK_PERSIST_EVIDENCE"] === "1";
   const owned = resolve(
     "dist",
-    persistent ? "verification" : `.typescript-car-${randomUUID()}`,
+    persistent ? "graph-verification" : `.typescript-car-${randomUUID()}`,
   );
   await mkdir(owned, { recursive: true });
   try {
@@ -154,7 +154,7 @@ it("builds a real CAR and independently verifies Engine pass/fail plus linked Ch
       assetsExact: true,
     });
     expect(result.results[5]?.problems?.map((problem) => problem.code)).toEqual(
-      ["scope-unconfirmed", "document-mismatch"],
+      ["document-mismatch", "scope-unconfirmed"],
     );
     expect(
       result.results[4]?.problems?.map((problem) => problem.code),

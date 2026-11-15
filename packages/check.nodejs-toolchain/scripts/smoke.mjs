@@ -171,7 +171,7 @@ const cases = [
       },
     },
     pass: false,
-    codes: ["nrm-registration-mismatch", "nrm-registration-missing"],
+    codes: ["nrm-registration-missing", "nrm-registration-mismatch"],
   },
   {
     name: "directory-fault",
@@ -288,7 +288,7 @@ fs.writeFileSync(${JSON.stringify(marker)},String(child.pid));setInterval(()=>{}
     name,
     timeoutMs: taskTimeoutMs,
     marker,
-    stage: "failed",
+    stage: name === "command-timeout" ? "failed" : "stopped",
     input: {
       context: context(project, {
         ...executionEnvironment,
@@ -465,13 +465,14 @@ try {
       assert.equal(run.output, undefined);
       if (sample.name === "cancel") {
         assert.equal(task.canceled, true);
-        assert.match(run.error.message, /cancelled/);
+        assert.equal(run.error, undefined);
         assert.ok(run.stopRequested);
       }
       if (sample.name === "task-timeout") {
         assert.equal(task.canceled, false);
-        assert.ok(Date.parse(run.failedAt) >= Date.parse(task.deadlineAt));
-        assert.match(run.error.message, /cancelled/);
+        assert.ok(Date.parse(run.stoppedAt) >= Date.parse(task.deadlineAt));
+        assert.equal(run.error, undefined);
+        assert.ok(run.stopRequested);
       }
       if (sample.name === "command-timeout")
         assert.match(run.error.message, /timed out/);
@@ -494,6 +495,7 @@ try {
     const output = run.output;
     assert.ok(output);
     const result = output.result;
+    assert.equal(result.protocol, "check-report/v2");
     assert.equal(
       result.pass,
       sample.pass,
@@ -513,12 +515,25 @@ try {
       result.documentation,
       ...(result.problems ?? []).map((p) => p.documentation),
     ];
-    for (const problem of result.problems ?? [])
+    for (const problem of result.problems ?? []) {
       assert.deepEqual(Object.keys(problem).sort(), [
         "brief",
         "code",
         "documentation",
+        "nodeKey",
+        "source",
       ]);
+      assert.equal(problem.source.kind, "local");
+      assert.equal(problem.source.nodeKey, problem.nodeKey);
+      assert.ok(
+        result.nodes.some(
+          (node) =>
+            node.key === problem.nodeKey &&
+            node.item.checker === problem.source.checker &&
+            node.pass === false,
+        ),
+      );
+    }
     for (const path of new Set(paths)) {
       const file = await exporter(`${output.cid}/${path}`, {
         async *get(cid) {

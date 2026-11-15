@@ -30,6 +30,7 @@ async function check(
     ...data,
   };
   const files = new Files(resolve("."), new AbortController().signal);
+  vi.spyOn(files, "withSignal").mockReturnValue(files);
   files.paths.push(...Object.keys(content));
   vi.spyOn(files, "text").mockImplementation((path) =>
     Promise.resolve(content[path]!),

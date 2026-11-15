@@ -1,34 +1,28 @@
-import { describe, expect, it, vi } from "vitest";
-import { Type, type Static } from "@sinclair/typebox";
-import { runTask } from "@silvermoon-work/task-sdk";
-import type { TaskContext } from "@silvermoon-work/task-sdk";
+import { expect, it, vi } from "vitest";
+import { Type } from "@sinclair/typebox";
+import { runTask, type TaskContext } from "@silvermoon-work/task-sdk";
 import {
   createCheckCallback,
   runCheck,
+  defineChecker,
   type CheckContext,
-  type ProblemReporter,
+  type CheckerResult,
+  type CheckOutputOptions,
 } from "../src/index.js";
 import { createCheckContract, problemCodes } from "../src/contracts.js";
 
 vi.mock("@silvermoon-work/task-sdk", () => ({ runTask: vi.fn() }));
-
 const Input = Type.Object({ text: Type.String() });
 const Code = Type.Union([Type.Literal("mismatch"), Type.Literal("missing")]);
 const contract = createCheckContract(Input, Code);
-
 function context() {
   const link = vi.fn().mockResolvedValue(undefined);
   const resolve = vi.fn().mockReturnValue({ path: "/resources/references" });
-  const signal = new AbortController().signal;
   const value = {
-    signal,
+    signal: new AbortController().signal,
     log: vi.fn(),
     progress: vi.fn(),
-    bundle: {
-      root: {
-        resolve,
-      },
-    },
+    bundle: { root: { resolve } },
     space: vi.fn(),
     invokeTask: vi.fn(),
     output: { link },
@@ -38,95 +32,23 @@ function context() {
   return {
     value: value as unknown as TaskContext,
     link,
+    resolve,
     log: value.log,
     space: value.space,
     invokeTask: value.invokeTask,
-    resolve,
   };
 }
+const pass = () => Promise.resolve({ pass: true, children: [] } as const);
 
-describe("Check callbacks", () => {
-  it("registers a restricted Check callback with the worker runtime", async () => {
-    const host = context();
-    const callback = vi.fn().mockResolvedValue(undefined);
-    runCheck(contract, callback, { assets: true });
-    const registered = vi.mocked(runTask).mock.calls.at(-1)?.[0];
-    expect(registered).toBeDefined();
-    expect(await registered?.({ text: "hello" }, host.value)).toEqual({
-      pass: true,
-      documentation: "references/check.md",
-    });
-    expect(callback).toHaveBeenCalledWith(
-      { text: "hello" },
-      expect.objectContaining({ signal: host.value.signal }),
-      expect.any(Function),
-    );
-    expect(host.link).toHaveBeenCalledWith("assets", {
-      path: "/resources/references",
-    });
-  });
-
-  it("rejects nonboolean asset configuration before registering a worker", () => {
-    vi.mocked(runTask).mockClear();
-    expect(() => {
-      runCheck(contract, vi.fn().mockResolvedValue(undefined), {
-        // @ts-expect-error JavaScript callers may supply an invalid option.
-        assets: "true",
-      });
-    }).toThrow("assets option must be a boolean");
-    expect(runTask).not.toHaveBeenCalled();
-  });
-
-  it.each([false, true])(
-    "links standard assets on normal completion (reported problem: %s)",
-    async (nonpassing) => {
-      const host = context();
-      const options = { assets: true };
-      const callback = createCheckCallback(
-        contract,
-        async (_input, _check, report) => {
-          options.assets = false;
-          if (nonpassing) report("mismatch", "Restore the standard asset.");
-          await Promise.resolve();
-        },
-        options,
-      );
-      const result = await callback({ text: "hello" }, host.value);
-      expect(result.pass).toBe(!nonpassing);
-      expect(host.link.mock.calls.map((call: unknown[]) => call[0])).toEqual([
-        "references",
-        "assets",
-      ]);
-      expect(host.resolve).toHaveBeenCalledWith("resources/assets");
-    },
-  );
-
-  it("keeps an asset link failure a Run fault even after reporting a problem", async () => {
-    const host = context();
-    host.link
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error("Standard assets unavailable."));
-    const callback = createCheckCallback(
-      contract,
-      async (_input, check, report) => {
-        expect("output" in check).toBe(false);
-        report("missing", "A real problem.");
-        await Promise.resolve();
-      },
-      { assets: true },
-    );
-    await expect(callback({ text: "hello" }, host.value)).rejects.toThrow(
-      "Standard assets unavailable.",
-    );
-  });
-
-  it("infers input/codes, explicitly restricts capabilities and links documentation on pass", async () => {
-    const host = context();
-    const callback = createCheckCallback(
-      contract,
-      async (input, check, report) => {
-        expect(input.text).toBe("hello");
-        expect(Object.keys(check).sort()).toEqual([
+it("registers a real worker callback with an ordinary root and restricted context", async () => {
+  const host = context();
+  const check = vi.fn(pass);
+  runCheck(
+    contract,
+    {
+      root: "ordinary",
+      registry: (context: CheckContext) => {
+        expect(Object.keys(context).sort()).toEqual([
           "bundle",
           "invokeTask",
           "log",
@@ -134,94 +56,138 @@ describe("Check callbacks", () => {
           "signal",
           "space",
         ]);
-        if (input.text === "typecheck-only") {
-          // @ts-expect-error input derives from TypeBox
-          void input.noSuchProperty;
-          // @ts-expect-error codes derive from TypeBox
-          report("undeclared", "bad");
-          // @ts-expect-error output is not an author capability
-          void check.output;
-        }
-        await Promise.resolve();
+        expect("output" in context).toBe(false);
+        return { ordinary: defineChecker({ target: Input, check }) };
       },
-    );
-    expect(await callback({ text: "hello" }, host.value)).toEqual({
-      pass: true,
-      documentation: "references/check.md",
-    });
-    expect(host.link).toHaveBeenCalledWith("references", {
-      path: "/resources/references",
-    });
-  });
-
-  it("collects only code/brief/docs and closes the reporter without mutable aliases", async () => {
-    const host = context();
-    let late!: ProblemReporter<Static<typeof Code>>;
-    const result = await createCheckCallback(
-      contract,
-      async (_input, _context, report) => {
-        late = report;
-        report("mismatch", "The supplied text differs.");
-        await Promise.resolve();
-      },
-    )({ text: "wrong" }, host.value);
-    expect(result).toEqual({
-      pass: false,
-      documentation: "references/check.md",
-      problems: [
-        {
-          code: "mismatch",
-          brief: "The supplied text differs.",
-          documentation: "references/problems/mismatch.md",
-        },
-      ],
-    });
-    expect(() => {
-      late("missing", "late");
-    }).toThrow("closed");
-    if (!result.pass) {
-      expect(result.problems).toHaveLength(1);
-      expect(Object.isFrozen(result.problems[0])).toBe(true);
-      expect(Object.isFrozen(result.problems)).toBe(true);
-    }
-  });
-
-  it.each(["unknown", "blank", "throw", "cancel", "docs"])(
-    "preserves %s as execution failure, even after reporting",
-    async (mode) => {
-      const host = context();
-      const abort = new AbortController();
-      if (mode === "cancel")
-        host.value = { ...host.value, signal: abort.signal };
-      if (mode === "docs")
-        host.link.mockRejectedValue(new Error("docs unavailable"));
-      const callback = createCheckCallback(
-        contract,
-        async (_input, _context, report) => {
-          report("missing", "A real problem.");
-          if (mode === "throw") throw new Error("Cannot finish.");
-          if (mode === "cancel") abort.abort();
-          if (mode === "unknown" || mode === "blank") {
-            try {
-              report(
-                mode === "unknown" ? ("unknown" as "missing") : "missing",
-                mode === "blank" ? " \n " : "bad",
-              );
-            } catch {
-              /* Invalid reporting cannot be swallowed into a normal result. */
-            }
-          }
-          await Promise.resolve();
-        },
-      );
-      await expect(callback({ text: "x" }, host.value)).rejects.toThrow();
-      if (mode !== "docs") expect(host.link).not.toHaveBeenCalled();
     },
+    { assets: true },
   );
-
-  it("forwards the allowed operations rather than the raw context", async () => {
+  const registered = vi.mocked(runTask).mock.calls.at(-1)?.[0];
+  expect(registered).toBeDefined();
+  expect(await registered?.({ text: "hello" }, host.value)).toMatchObject({
+    protocol: "check-report/v2",
+    pass: true,
+    documentation: "references/check.md",
+  });
+  expect(check).toHaveBeenCalledWith(
+    { text: "hello" },
+    expect.any(AbortSignal),
+  );
+  expect(host.link.mock.calls.map((call: unknown[]) => call[0])).toEqual([
+    "references",
+    "assets",
+  ]);
+});
+it("rejects invalid asset options before registering", () => {
+  vi.mocked(runTask).mockClear();
+  const invalid: CheckOutputOptions = {
+    // @ts-expect-error Runtime callers can provide invalid options.
+    assets: "true",
+  };
+  expect(() => {
+    runCheck(
+      contract,
+      {
+        root: "text",
+        registry: { text: defineChecker({ target: Input, check: pass }) },
+      },
+      invalid,
+    );
+  }).toThrow("assets option must be a boolean");
+  expect(runTask).not.toHaveBeenCalled();
+});
+it.each([false, true])(
+  "links output references/assets on normal completion: fail=%s",
+  async (fail) => {
     const host = context();
-    await createCheckCallback(contract, async (_input, check: CheckContext) => {
+    const output = { assets: true };
+    const callback = createCheckCallback(
+      contract,
+      {
+        root: "text",
+        registry: {
+          text: defineChecker({
+            target: Input,
+            check: async (): Promise<CheckerResult<never, "missing">> => {
+              output.assets = false;
+              await Promise.resolve();
+              return fail
+                ? {
+                    pass: false,
+                    problems: [
+                      { code: "missing", brief: "Restore the standard." },
+                    ],
+                  }
+                : { pass: true, children: [] };
+            },
+          }),
+        },
+      },
+      output,
+    );
+    const result = await callback({ text: "x" }, host.value);
+    expect(result.pass).toBe(!fail);
+    expect(host.link.mock.calls.map((call: unknown[]) => call[0])).toEqual([
+      "references",
+      "assets",
+    ]);
+    if (!result.pass)
+      expect(result.problems[0]).toMatchObject({
+        code: "missing",
+        documentation: "references/problems/missing.md",
+        source: { kind: "local", checker: "text" },
+      });
+  },
+);
+it.each(["unknown", "blank", "throw", "cancel", "docs", "assets"] as const)(
+  "keeps %s as an execution failure",
+  async (mode) => {
+    const host = context();
+    const abort = new AbortController();
+    host.value = { ...host.value, signal: abort.signal };
+    if (mode === "docs")
+      host.link.mockRejectedValue(new Error("docs unavailable"));
+    if (mode === "assets")
+      host.link
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error("assets unavailable"));
+    const callback = createCheckCallback(
+      contract,
+      {
+        root: "text",
+        registry: {
+          text: defineChecker({
+            target: Input,
+            check: async (): Promise<CheckerResult<never>> => {
+              await Promise.resolve();
+              if (mode === "throw") throw new Error("Cannot finish.");
+              if (mode === "cancel") abort.abort();
+              return {
+                pass: false,
+                problems: [
+                  {
+                    code: mode === "unknown" ? "unknown" : "missing",
+                    brief: mode === "blank" ? " " : "A real finding.",
+                  },
+                ],
+              };
+            },
+          }),
+        },
+      },
+      { assets: true },
+    );
+    await expect(callback({ text: "x" }, host.value)).rejects.toThrow();
+    if (mode !== "docs" && mode !== "assets")
+      expect(host.link).not.toHaveBeenCalled();
+  },
+);
+it("forwards only authorized context methods and freezes input before factory binding", async () => {
+  const host = context();
+  await createCheckCallback(contract, {
+    root: "text",
+    registry: async (check: CheckContext, input: { text: string }) => {
+      expect(Object.isFrozen(input)).toBe(true);
       await check.log({ level: "info", message: "checking" });
       await check.progress({
         stage: "execution",
@@ -232,22 +198,41 @@ describe("Check callbacks", () => {
       await check.invokeTask({
         key: "child",
         bundle: check.bundle.root.resolve("resources/child"),
-        input: {},
+        input,
         timeoutMs: 1000,
       });
-    })({ text: "x" }, host.value);
-    expect(host.log).toHaveBeenCalled();
-    expect(host.space).toHaveBeenCalledWith("cid");
-    expect(host.invokeTask).toHaveBeenCalledWith({
-      key: "child",
-      bundle: host.value.bundle.root.resolve("resources/child"),
-      input: {},
-      timeoutMs: 1000,
-    });
-  });
+      return { text: defineChecker({ target: Input, check: pass }) };
+    },
+  })({ text: "x" }, host.value);
+  expect(host.log).toHaveBeenCalled();
+  expect(host.space).toHaveBeenCalledWith("cid");
+  expect(host.invokeTask).toHaveBeenCalled();
 });
-
-it("rejects open, duplicate and unsafe code schemas", () => {
+it("rejects invalid Task input and oversized report bodies before linking output", async () => {
+  const host = context();
+  const callback = createCheckCallback(contract, {
+    root: "text",
+    registry: {
+      text: defineChecker({
+        target: Input,
+        check: async (): Promise<CheckerResult<never>> => {
+          await Promise.resolve();
+          return {
+            pass: false,
+            problems: [{ code: "missing", brief: "x".repeat(65_536) }],
+          };
+        },
+      }),
+    },
+  });
+  await expect(callback({ text: "x" }, host.value)).rejects.toThrow(
+    "byte budget",
+  );
+  expect(host.link).not.toHaveBeenCalled();
+  // @ts-expect-error Runtime schema still checks JavaScript input.
+  await expect(callback({ text: 1 }, host.value)).rejects.toThrow("input");
+});
+it("rejects open, duplicate and unsafe problem code schemas", () => {
   expect(problemCodes(Code)).toEqual(["mismatch", "missing"]);
   for (const invalid of [
     Type.String(),

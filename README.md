@@ -4,7 +4,7 @@
 
 ## Check Task 作者入口
 
-- [`@silvermoon-work/check-task-sdk`](packages/check-task-sdk/README.md)：TypeBox单一输入/问题码契约、受限检查回调、业务结果与参考文档输出。
+- [`@silvermoon-work/check-task-sdk`](packages/check-task-sdk/README.md)：TypeBox 输入/问题码契约、命名 Checker 与有界并发检查图、v2 结果及来源文档。
 - [`@silvermoon-work/check-task-builder`](packages/check-task-builder/README.md)：
   `check-task-builder init/build`，一次构建交付标准 Task Bundle/CAR。
 
@@ -12,6 +12,11 @@
 0.2.0-rc.2 及 IPFS Store 0.1.0-rc.1，不复制运行时或编译器。先运行
 `check-task-builder init text-check`，编辑逻辑、契约与
 `references/`，再运行生成项目中的 `pnpm build`。
+
+当前源码迁移为 `runCheck(contract,{registry,root})` 和 `check-report/v2`；
+Bundle 适配仅支持调用方拥有的执行端口，原始 Worker invokeTask 不提供单次
+取消或 output envelope，不能冒充该端口。历史已发布 npm/CAR 不自动升级，
+新候选需重建并以准确 tarball/CID 验证，详见 SDK 迁移说明。
 
 - [`@silvermoon-work/check.nodejs-toolchain`](packages/check.nodejs-toolchain/README.md)：私有 Node.js 工具链 Check 作者项目，仅交付标准 CAR/CID，不发布 npm。显式执行上下文、CAR-only 消费方式与真实平台证据边界见包文档。
 

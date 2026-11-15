@@ -1,46 +1,49 @@
 import { expect, it, vi } from "vitest";
-import type { ProblemReporter } from "@silvermoon-work/check-task-sdk";
-import contract, { type Input, type ProblemCode } from "../src/contract.js";
+import contract, { type Input } from "../src/contract.js";
 
 const mocks = vi.hoisted(() => ({
-  runCheck:
-    vi.fn<
-      (
-        contract: unknown,
-        callback: (
-          input: Input,
-          context: { signal: AbortSignal },
-          report: ProblemReporter<ProblemCode>,
-        ) => Promise<void>,
-      ) => void
-    >(),
-  inspect: vi.fn<(...args: unknown[]) => Promise<void>>(),
+  runCheck: vi.fn<
+    (
+      contract: unknown,
+      options: {
+        root: string;
+        registry: (context: { signal: AbortSignal }, input: Input) => unknown;
+      },
+    ) => void
+  >(),
+  toolchainRegistry: vi.fn<(...args: unknown[]) => unknown>(),
 }));
 vi.mock("@silvermoon-work/check-task-sdk", () => ({
   runCheck: mocks.runCheck,
 }));
-vi.mock("../src/inspect.js", () => ({ inspect: mocks.inspect }));
+vi.mock("../src/inspect.js", () => ({
+  toolchainRegistry: mocks.toolchainRegistry,
+}));
 
-it("registers the contract and delegates input, cancellation and reporting without swallowing faults", async () => {
+it("registers the explicit root and binds input/signal without swallowing factory faults", async () => {
   await import("../src/main.js");
-  expect(mocks.runCheck).toHaveBeenCalledExactlyOnceWith(
-    contract,
-    expect.any(Function),
-  );
-  const callback = mocks.runCheck.mock.calls[0]![1];
+  expect(mocks.runCheck).toHaveBeenCalledExactlyOnceWith(contract, {
+    root: "toolchain",
+    registry: expect.any(Function) as unknown,
+  });
+  const options = mocks.runCheck.mock.calls[0]![1];
   const input: Input = {
     context: {
-      projectDirectory: "unused-by-mocked-inspect",
+      projectDirectory: "unused-by-mock",
       executionEnvironment: { path: [] },
     },
     requirements: { tools: { node: {} } },
   };
   const signal = new AbortController().signal;
-  const report = vi.fn<ProblemReporter<ProblemCode>>();
-  mocks.inspect.mockResolvedValueOnce(undefined);
-  await expect(callback(input, { signal }, report)).resolves.toBeUndefined();
-  expect(mocks.inspect).toHaveBeenCalledExactlyOnceWith(input, signal, report);
-  const fault = new Error("inspection fault");
-  mocks.inspect.mockRejectedValueOnce(fault);
-  await expect(callback(input, { signal }, report)).rejects.toBe(fault);
+  const registry = {};
+  mocks.toolchainRegistry.mockReturnValueOnce(registry);
+  expect(options.registry({ signal }, input)).toBe(registry);
+  expect(mocks.toolchainRegistry).toHaveBeenCalledExactlyOnceWith(
+    input,
+    signal,
+  );
+  mocks.toolchainRegistry.mockImplementationOnce(() => {
+    throw new Error("inspection fault");
+  });
+  expect(() => options.registry({ signal }, input)).toThrow("inspection fault");
 });

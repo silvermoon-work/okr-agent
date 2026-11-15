@@ -41,6 +41,11 @@ binary: []
 outDirectory: dist/text-check
 ```
 
+生成入口使用 `defineChecker` 和 `runCheck(contract,{registry,root})`，
+输出 `check-report/v2`，不再生成 reporter callback 或旧 DFS。
+这是当前源码模板；消费尚未发布的候选时须使用同一验证 SDK tarball，
+不能假定历史 registry 版本已具有新 API。
+
 `source.entry` 使用 SDK 的 `runCheck`；`source.contract` 默认导出
 `createCheckContract` 生成的契约。问题码仅来自作者 TypeBox Schema；不接受 YAML
 `problemCodes`，也不接受 source 的

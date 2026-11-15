@@ -56,6 +56,54 @@ function handle(
   );
   return file;
 }
+it("shares an in-flight read and preserves both read and close failures", async () => {
+  const file = handle("{}");
+  const subject = files();
+  expect(
+    await Promise.all([subject.text("shared"), subject.text("shared")]),
+  ).toEqual(["{}", "{}"]);
+  expect(open).toHaveBeenCalledTimes(1);
+  expect(file.close).toHaveBeenCalledTimes(1);
+  const broken = handle("{}");
+  const readFailure = new Error("read failed");
+  const closeFailure = new Error("close failed");
+  broken.read.mockRejectedValueOnce(readFailure);
+  broken.close.mockRejectedValueOnce(closeFailure);
+  const error: unknown = await subject
+    .text("broken")
+    .catch((error: unknown) => error);
+  expect(error).toBeInstanceOf(AggregateError);
+  if (!(error instanceof AggregateError))
+    throw new Error("Expected both failures.");
+  expect(error.errors).toEqual([readFailure, closeFailure]);
+});
+
+it("reserves the shared byte budget before concurrent reads can exceed it", async () => {
+  const size = 1_048_576;
+  const close = vi.fn(() => Promise.resolve());
+  vi.mocked(open).mockImplementation(() =>
+    Promise.resolve({
+      stat: () => Promise.resolve({ size, mtimeMs: 1, isFile: () => true }),
+      read: (buffer: Buffer, offset: number) => {
+        if (offset) return Promise.resolve({ bytesRead: 0 });
+        buffer.fill("x", 0, size);
+        return Promise.resolve({ bytesRead: size });
+      },
+      close,
+    } as unknown as Awaited<ReturnType<typeof open>>),
+  );
+  const subject = files();
+  const results = await Promise.allSettled(
+    Array.from({ length: 17 }, (_, i) => subject.text(`file-${i}`)),
+  );
+  expect(
+    results.filter((result) => result.status === "fulfilled"),
+  ).toHaveLength(16);
+  expect(results.filter((result) => result.status === "rejected")).toHaveLength(
+    1,
+  );
+  expect(close).toHaveBeenCalledTimes(17);
+});
 it("refuses relative roots, escaping paths and redirected filesystem components", async () => {
   expect(() => new Files("relative", new AbortController().signal)).toThrow(
     "absolute",

@@ -11,7 +11,10 @@ import {
 import { randomUUID } from "node:crypto";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createCheckCallback } from "@silvermoon-work/check-task-sdk";
+import {
+  createCheckCallback,
+  defineChecker,
+} from "@silvermoon-work/check-task-sdk";
 import contract, {
   type Input,
   type ProblemCode,
@@ -285,9 +288,9 @@ describe("composite requirements", () => {
       host,
     );
     expect(problems.map((problem) => problem.code)).toEqual([
+      "version-too-low",
+      "version-too-low",
       "tool-missing",
-      "version-too-low",
-      "version-too-low",
       "tool-missing",
     ]);
     expect(locate.mock.calls.map(([name]) => name)).toEqual([
@@ -299,18 +302,22 @@ describe("composite requirements", () => {
     ]);
     expect(provenance).not.toHaveBeenCalled();
     expect(
-      run.mock.calls.map(
-        ([entry, args]) =>
-          `${entry.executable.slice(cwd.length + 1)}:${args.join(" ")}`,
-      ),
-    ).toEqual([
-      "npm:--version",
-      "pnpm:--version",
-      "nrm:--version",
-      "npm:config get registry",
-      "pnpm:config get registry",
-      "nrm:ls",
-    ]);
+      run.mock.calls
+        .map(
+          ([entry, args]) =>
+            `${entry.executable.slice(cwd.length + 1)}:${args.join(" ")}`,
+        )
+        .sort(),
+    ).toEqual(
+      [
+        "npm:--version",
+        "pnpm:--version",
+        "nrm:--version",
+        "npm:config get registry",
+        "pnpm:config get registry",
+        "nrm:ls",
+      ].sort(),
+    );
     expect(await check(all)).toEqual([]);
   });
   it("does not let a low version prune feasible pairing or registry checks", async () => {
@@ -389,8 +396,8 @@ describe("composite requirements", () => {
       ),
     ).toMatchObject([
       { code: "version-unparseable" },
-      { code: "tool-unusable" },
       { code: "tool-missing" },
+      { code: "tool-unusable" },
     ]);
   });
   it("separates pairing, uncertain evidence and per-tool nvm management", async () => {
@@ -404,24 +411,24 @@ describe("composite requirements", () => {
       "npm-cli.js",
     );
     expect(await check(all, fixture({ npm: outside }))).toMatchObject([
-      { code: "pairing-mismatch" },
       {
         code: "management-mismatch",
         brief: expect.stringContaining("npm") as string,
       },
+      { code: "pairing-mismatch" },
     ]);
     expect(await check(all, fixture({ npm: null }))).toMatchObject([
-      { code: "pairing-unconfirmed" },
       { code: "management-unconfirmed" },
+      { code: "pairing-unconfirmed" },
     ]);
     expect(
       await check(all, fixture({ npmNode: join(cwd, "system", "node.exe") })),
     ).toMatchObject([
-      { code: "pairing-mismatch" },
       {
         code: "management-mismatch",
         brief: expect.stringContaining("npm") as string,
       },
+      { code: "pairing-mismatch" },
     ]);
     expect(
       await check({ tools: { node: {}, npm: {} } }, fixture({ npm: outside })),
@@ -488,8 +495,8 @@ describe("composite requirements", () => {
         }),
       ),
     ).toMatchObject([
-      { code: "registry-mismatch" },
       { code: "nrm-registration-mismatch" },
+      { code: "registry-mismatch" },
     ]);
     expect(
       await check(
@@ -533,8 +540,14 @@ describe("composite requirements", () => {
     ).rejects.toThrow();
     // SDK callback is used by the entrypoint, not a bespoke result envelope.
     expect(
-      typeof createCheckCallback(contract, async () => {
-        await Promise.resolve();
+      typeof createCheckCallback(contract, {
+        root: "toolchain",
+        registry: {
+          toolchain: defineChecker({
+            target: contract.input,
+            check: () => Promise.resolve({ pass: true, children: [] } as const),
+          }),
+        },
       }),
     ).toBe("function");
   });

@@ -18,7 +18,7 @@ it("loads the actual supplied Bundle asset and preserves output link faults rath
     const links: string[] = [];
     const callback = createCheckCallback(
       contract,
-      projectCheck(() => metadataFixture()),
+      { registry: projectCheck(() => metadataFixture()), root: "project" },
       { assets: true },
     );
     const context = {

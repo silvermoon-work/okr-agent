@@ -111,7 +111,11 @@ export async function execute(
       }
     };
     const abort = () => {
-      terminate(new Error("Tool command cancelled."));
+      const error = new Error("Tool command cancelled.", {
+        cause: signal.reason,
+      });
+      error.name = "AbortError";
+      terminate(error);
     };
     const timer = setTimeout(() => {
       terminate(new Error("Tool command timed out."));

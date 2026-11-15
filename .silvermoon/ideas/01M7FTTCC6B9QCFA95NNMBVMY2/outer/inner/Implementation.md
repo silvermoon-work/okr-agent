@@ -3,7 +3,9 @@
 本轮依据已接受的 [Idea](./ideal/Idea.md)，将准备阶段种子细化为实施前契约。
 身份、协议、迁移边界及公共能力限制见 [Design.md](./Design.md)。
 当前已完成源码调查、实施前协议与验收定义，并由监督会话审阅确认；
-I-S01 记录该项契约工作，尚未实现代码，I-S02/I-S03 与全部 I-AC 保持未勾选。
+随后在同步基线 `55f49f142d7d05743cd31dd3e9ccfb100b87cb65` 上完成实现、
+全部 Inner 验证与候选交付检查。成绩及准确制品见 I-AC03 下的验证记录。
+I-* 勾选仅记录已证明的实施工作，不表示监督会话已接受该 Inner revision。
 旧 DFS 实现与成绩仅为不可变历史基线，不继承其完成状态。
 
 实现代理先交回本契约，由监督会话审核、同步并明确授权后才改运行时。
@@ -142,5 +144,125 @@ lint-package 通过，四项既有覆盖率门限未降。构建准确 SDK 候�
   使用 pnpm 11.28.12；只对所编辑文件选择定向静态/格式命令，不自动升级安装。
   最终根 check 包含未测试源码及四项 90% 门限，适用 build/lint-package 不跳过。
 
-实际命令、退出码、覆盖率和候选身份在完成后写回本节或现有 Inner 证据位置；
-本计划没有新实现执行成绩；除已完成的 I-S01 契约工作外不勾选其他 I-*，不修改 D-*。
+#### 实现与验证记录（2026-11-16，zh-CN）
+
+验证根目录为 `D:\Code\okr-agent.worktrees\target-checker-implementation-dfs`。
+以下路径均相对该根目录。全部 Node 检查均把指定、已校验的 Node 26.13.1
+目录放在 PATH 首位，使用 pnpm 11.28.12。没有提交、暂存、推送、发布或追加
+生命周期事件；HEAD 仍为上面的同步基线，候选保留为未暂存变更。
+
+| 对应场景 | 已实现及实际证明 |
+| --- | --- |
+| G01–G03、G11–G12 | SDK `canonical.ts`、`checker.ts`、`graph.ts`；`canonical.test.ts`、`graph-types.test.ts`、`targets.test.ts`、`graph.test.ts` 通过。包含真实执行的不同属性插入顺序去重、同 target 不同名称不合并、异构 child/root 负类型用例、descriptor/Proxy/原型/循环拒绝、队列中目标和原 registry 修改隔离、跨执行重新调用。 |
+| G04–G08 | 受控 Promise 用例覆盖 queued/running/completed 三状态复访、自环/回边/菱形、重复边折叠、独立父边保留、根/分支失败剪枝、并发槽/FIFO/无整层屏障、反转完成顺序仍得到相同报告、相同 code/brief 的独立节点不被合并。 |
+| G09–G10 | 预取消 root 调用数为零；在途 signal、迟到 children 抑制、真正清理完成前不 settle、多个执行/清理错误保留；节点/边/child 尝试、编码深度/体积、问题数及执行时间预算用例通过。立即完成链会让出事件循环，timer 能实际停止展开。 |
+| G13 | Builder `test/builder.test.ts` 通过真实公共 Builder/Engine 运行 v2 子 Bundle：正常通过/失败、真实 output.cid 下的问题文档、在途取消和兄弟执行故障。检查实际异步操作 started/cleaned 标记，cancelTask 后等待 waitForTaskRelease，确认 Run=stopped 且 reclaimedAt 已出现再结束；没有用预取消代替。SDK `bundle.test.ts` 验证旧协议/任意 JSON/缺 envelope/伪图/非法来源拒绝及嵌套来源保留。 |
+| G14 | 两包真实主入口与 Builder 模板迁移到普通 root 和静态 registry。TypeScript 的项目、配置绑定/归因、维护及节点收集职责位于 `src/checks/`；工具 schema/探测职责位于工具链 `src/checks/`，关系/授权 Host 保持分责。无旧 DFS 执行器或整套旧 DFS 叶包装。 |
+| G14 的并发及业务回归 | `graph-project.test.ts` 强制两个成员配置读操作重叠，观测并发 2 且两个成员的问题/scope 不串扰；共享配置仍在同一配置节点局部归因。`files-unit.test.ts` 验证同路径在途读取复用、并发字节预留，以及读取+关闭双故障保留。既有坏 manifest 剪枝、好成员、CI/交付、缺工具/低版本、配对/管理/registry/nrm 和 Cloudflare 正反例均通过。 |
+
+`runCheck`/`createCheckCallback` 额外用真实公共 Protocol `json(...,65536)`
+约束整个结果体，并保留自身规范编码检查；独立图执行仍使用已定执行预算。
+这避免把独立图的 16 MiB 累计结果预算错误当作 Engine 的 64 KiB 输出准入。
+`createCheckContract` 的 result 和共享 check-problem schema 均为 v2 来源结构，
+实际公共 Bundle schema admission 和 Engine 输出验证已通过，不只验证 mock。
+
+调查及迭代中发现并修复了以下真实边界，没有降低门限或吞掉失败：
+
+- 正常协作 AbortError 最初会被误记为额外清理失败；现在仅在 cause 确认等于
+  本 signal.reason 时作为协作取消处理，真正的其他清理错误仍进入错误集合。
+  工具链取消/Task deadline 的 Run 为 stopped，独立命令超时仍为 failed；
+  无业务输出、停止事实和实际子 PID 回收的原断言保留。
+- 完整门禁暴露兼容性分支先读未完成 Node 事实的竞争；共享 loadNode Promise
+  由 runtime/dependency 读取器显式等待，并增加调用顺序回归。
+  兼容性发现从已通过的 dependency-config 节点展开，坏共享配置仅由所属
+  节点报告一次，不按 code 全局去重，也不伪造前置通过。
+- 子输出文档不能仅从原始 Bundle CAR block port 读取。真实宿主测试组合公共
+  MemoryStore.readContentBlock 与 CAR block port 后交给调用方 IpfsStore，
+  从实际返回的 output.cid 读取；未使用私有 Engine API 或猜测 CID。
+- 初次本地 tarball 发现旧 dist/targets.* 残留，候选作废并删除。
+  SDK 自有 build 现在先清理自身 dist，新增真实构建回归证明删除模块不会泄漏。
+  以下唯一交接 tarball 在清理后打包，43 个文件，不含旧 targets.* 或测试残留。
+  未修改标准资产或固定发布器以达成此修复。
+
+#### 完整门禁与候选包
+
+最后一次完整 `pnpm check` 退出码 **0**；日志保留于
+`dist\graph-validation\root-check.log`。格式检查、依赖顺序 build、typecheck、
+type-aware lint、包括未测试源码的覆盖率、13 项 release 回归、两包 publint
+及 check-scripts 均通过。SDK 87、Builder 52、工具链 116、TypeScript 616 项测试
+通过；另有 core 3、example 1 项。工具链原有 4 项显式 native 场景仍按原设置
+跳过，不将受控 fixture 或旧平台成绩声称为本轮真实全平台支持。
+
+| 包 | statements | branches | functions | lines |
+| --- | ---: | ---: | ---: | ---: |
+| check-task-sdk | 93.56% | 90.90% | 96.42% | 94.36% |
+| check-task-builder | 97.46% | 91.11% | 100% | 98.05% |
+| check.nodejs-toolchain | 95.71% | 92.90% | 100% | 97.29% |
+| check.typescript-project | 93.94% | 90.09% | 98.37% | 94.92% |
+
+四项全局门限仍分别为 90%，没有新增源码排除。
+SDK 仅新增显式运行时依赖 `@silvermoon-work/task-protocol@0.2.0-rc.1`
+（复用既有 catalog），对应 lockfile catalog/importer 一并更新。
+未改消费者 Node 下限、任何发布版本、registry 政策、AGENTS.md、
+Cloudflare 专项两源文件、标准资产或固定发布核心；旧 DFS Idea 与全部 D-* 未改。
+
+最终 SDK：
+
+- 路径：`dist\graph-validation\check-task-sdk-graph-final.tgz`
+- 身份：`@silvermoon-work/check-task-sdk@0.1.0-rc.1`，这是本地未发布源码候选，
+  不是已发布同版本字节或发布授权。
+- SHA256：`39306812d00ff01e8d10dff0be3ad68923c055409032e614bf03e468409e6821`
+- 清理后打包命令：`pnpm --dir packages\check-task-sdk --config.ignore-scripts=true pack --out D:\Code\okr-agent.worktrees\target-checker-implementation-dfs\dist\graph-validation\check-task-sdk-graph-final.tgz`
+- 对该准确 tarball 执行 `pnpm exec publint run dist\graph-validation\check-task-sdk-graph-final.tgz --strict`，
+  退出码 0；tar 读取核验 name/version、依赖转换及无旧模块，之后复核 SHA256 未变。
+  Outer 应复制/安装这同一份文件，不重新 pack 后沿用此摘要。
+
+#### 准确 CAR 与 fixture 交接
+
+三份 CAR 均用公共 `readTaskBundleCar` 再读取核验完整内容身份；不是仅引用构建日志。
+
+| 类别 | 路径 | 根 CID | 字节数 |
+| --- | --- | --- | ---: |
+| 生产工具链 | `packages\check.nodejs-toolchain\dist\nodejs-toolchain.car` | `bafybeidrewa4ommkoogtndb5idog2cfn5xuhjstnsb2hxm4l6nd6tm7taa` | 471251 |
+| 生产 TypeScript | `packages\check.typescript-project\dist\typescript-project.car` | `bafybeiaqow5thznglyi4ufkulzrk5fel5bc5zl77xya6qvnbmt55ujcnci` | 868985 |
+| 确定性 TypeScript 验证 | `packages\check.typescript-project\dist\graph-verification\bundle.car` | `bafybeid6vx2qztpjyp732yqixxwz2yt2p2dpguodrwhoa3d5yjohawalsa` | 869996 |
+
+对应 CAR SHA256 依次为：
+
+1. `d98229bbadc311591ace3d14041341d713d1aebcf60ecd7950aa6dfe5e2cf24f`
+2. `2bda7acb3c901f4ca2547d4d0c8cda42081367013a91d46b5726bf0aec338709`
+3. `40eda472726ede7645623baad889ab666ddff916dc55549917105f7771e8dc0b`
+
+设置 `TYPESCRIPT_CHECK_PERSIST_EVIDENCE=1` 后，通过既有定向命令
+`pnpm --filter @silvermoon-work/check.typescript-project exec vitest run --root . --config ..\..\vitest.config.ts test\car.test.ts`
+生成并验证持久 fixture，退出码 0。
+本轮使用新的 `graph-verification` 目录，不覆盖旧 DFS 的 verification 目录。
+完整结果：`packages\check.typescript-project\dist\graph-verification\engine-fixture-report.json`。
+
+| 目标目录 | 实际结果 |
+| --- | --- |
+| `packages\check.typescript-project\dist\graph-verification\good` | pass=true，文档可读，资产字节一致 |
+| `packages\check.typescript-project\dist\graph-verification\npm` | pass=true，文档可读，资产字节一致 |
+| `packages\check.typescript-project\dist\graph-verification\bad` | pass=false，保留 coverage/gate/document 等发现，文档/资产有效 |
+| `packages\check.typescript-project\dist\graph-verification\member-pruning` | pass=false，恰有 document-mismatch 与 scope-unconfirmed，坏成员被剪枝 |
+| `packages\check.typescript-project\dist\graph-verification\cloudflare` | 既有正例 pass=true |
+| `packages\check.typescript-project\dist\graph-verification\bad-cloudflare` | 既有反例 pass=false，包含 cloudflare-mismatch |
+
+确定性验证 CAR 使用 `check.fixture.build.yaml`/受控 metadata，不冒充生产 CAR
+或当前公共元数据观测。两份生产 CAR 和 SDK 均未上传、pin 或发布。
+当前 Task SDK 仍无 Worker invokeTask 单次取消/output envelope 能力；
+已实现并真实验证的适配仅是已约定的宿主端口，不声称已解除该上游限制。
+独立环境安装、再次读取相同 tarball、真实消费者在途取消和 Outer 验收仍归监督会话。
+
+#### 监督会话复核
+
+监督会话在验收前直接复核 SDK 的规范快照、类型定义、调度停止/收束、
+v2 图完整性和 Bundle 来源转换，以及两包的职责注册、局部收集和事实复用。
+独立重新运行根 `pnpm check`，Node 26.13.1 / pnpm 11.28.12 下退出码 0；
+已检查变更范围，Ideal 与旧 DFS Idea、Cloudflare 专项源码、标准资产及消费者
+最低版本未改变。新增 task-protocol 依赖及 lock importer 对应公共结果预算验证；
+SDK build 清理仅针对自身 dist，避免删除模块残留在新 tarball。
+
+本次批准仅确认上述准确实现与 I-AC01–03；不提前勾选 D-*，不把作者内集成
+测试或先前传输端口校准等同于本轮独立 Outer 验收。后续阶段先同步新的
+验收契约、准确候选身份及独立场景，再执行和记录真实消费证据。

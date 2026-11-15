@@ -82,6 +82,7 @@ export class Files {
   readonly paths: string[] = [];
   readonly links: string[] = [];
   private readonly cache = new Map<string, string>();
+  private readonly pending = new Map<string, Promise<string>>();
   private bytes = 0;
   private count = 0;
   constructor(
@@ -90,6 +91,13 @@ export class Files {
   ) {
     if (!isAbsolute(root)) throw new Error("projectDirectory must be absolute");
     this.root = resolve(root);
+  }
+  withSignal(signal: AbortSignal): Files {
+    if (signal === this.signal) return this;
+    const files = new Files(this.root, signal);
+    files.paths.push(...this.paths);
+    files.links.push(...this.links);
+    return files;
   }
   path(base: string, child: string): string {
     const absolute = resolve(this.root, base, child);
@@ -147,12 +155,33 @@ export class Files {
     return this.paths.includes(path);
   }
   async text(path: string): Promise<string> {
+    this.signal.throwIfAborted();
     const cached = this.cache.get(path);
     if (cached !== undefined) return cached;
-    if (this.cache.size >= 512)
+    const pending = this.pending.get(path);
+    if (pending) return pending;
+    if (this.cache.size + this.pending.size >= 512)
       throw new Unconfirmed("configuration file budget exceeds 512");
+    const reading = this.readText(path)
+      .then((text) => {
+        this.cache.set(path, text);
+        return text;
+      })
+      .finally(() => {
+        this.pending.delete(path);
+      });
+    this.pending.set(path, reading);
+    return reading;
+  }
+  private async readText(path: string): Promise<string> {
     const full = await this.guard(path);
+    this.signal.throwIfAborted();
     const file = await open(full, "r");
+    let reserved = 0;
+    let succeeded = false;
+    let failure: unknown;
+    let failed = false;
+    let text = "";
     try {
       const before = await file.stat();
       if (!before.isFile())
@@ -161,9 +190,12 @@ export class Files {
         throw new Unconfirmed(
           "configuration byte budget exceeded (1MiB/file, 16MiB total)",
         );
+      reserved = before.size;
+      this.bytes += reserved;
       const buffer = Buffer.alloc(before.size + 1);
       let offset = 0;
       while (offset < buffer.length) {
+        this.signal.throwIfAborted();
         const result = await file.read(
           buffer,
           offset,
@@ -179,15 +211,31 @@ export class Files {
       if (before.size !== after.size || before.mtimeMs !== after.mtimeMs)
         throw new Error("configuration changed during read");
       await this.guard(path);
-      this.bytes += offset;
-      const text = new TextDecoder("utf-8", { fatal: true }).decode(
+      this.signal.throwIfAborted();
+      text = new TextDecoder("utf-8", { fatal: true }).decode(
         buffer.subarray(0, offset),
       );
-      this.cache.set(path, text);
-      return text;
+      succeeded = true;
+    } catch (error) {
+      failure = error;
+      failed = true;
     } finally {
-      await file.close();
+      if (!succeeded) this.bytes -= reserved;
+      try {
+        await file.close();
+      } catch (cleanup) {
+        failure = failed
+          ? new AggregateError(
+              [failure, cleanup],
+              "Configuration read and cleanup failed.",
+              { cause: cleanup },
+            )
+          : cleanup;
+        failed = true;
+      }
     }
+    if (failed) throw failure;
+    return text;
   }
   async json(path: string): Promise<Record<string, unknown>> {
     const text = await this.text(path);

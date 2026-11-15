@@ -1,20 +1,13 @@
-import type {
-  CheckContext,
-  ProblemReporter,
-} from "@silvermoon-work/check-task-sdk";
-import type { Input, ProblemCode } from "./contract.js";
-import { inspect } from "./inspect.js";
+import type { CheckContext } from "@silvermoon-work/check-task-sdk";
+import type { Input } from "./contract.js";
+import { projectRegistry } from "./inspect.js";
 import { publicMetadata, type Metadata } from "./metadata.js";
 import { scriptResources } from "./script-profile.js";
 
 export function projectCheck(
   metadata: (signal: AbortSignal) => Metadata = publicMetadata,
 ) {
-  return async (
-    input: Input,
-    context: CheckContext,
-    report: ProblemReporter<ProblemCode>,
-  ) => {
+  return async (context: CheckContext, input: Input) => {
     const resource = async (name: string) => {
       const asset = await context.bundle.root
         .resolve(`resources/assets/${name}`)
@@ -29,7 +22,7 @@ export function projectCheck(
       resource("npm-publish.yaml"),
       resource("npm-ci.yaml"),
     ]);
-    await inspect(input, context.signal, report, {
+    return projectRegistry(input, context.signal, {
       agents,
       publisher,
       publishWorkflow,

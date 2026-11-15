@@ -34,6 +34,15 @@ import {
   transformCheckTree,
 } from "../src/index.js";
 import { runCheckBuilderCli } from "../src/cli.js";
+import { setTimeout as pause } from "node:timers/promises";
+import { Type } from "@sinclair/typebox";
+import {
+  checkerFromBundle,
+  createCheckContract,
+  defineChecker,
+  executeCheck,
+  type CheckExecutionPort,
+} from "@silvermoon-work/check-task-sdk";
 
 const root = resolve("../..");
 const scratch = join(root, ".check-tests");
@@ -99,6 +108,217 @@ function logical(directory: string) {
 }
 
 describe("Check tree transformation", () => {
+  it("composes the v2 leaf adapter with a public Engine port and awaits in-flight cancellation cleanup", async () => {
+    const directory = await project();
+    await writeFile(
+      join(directory, "src", "main.ts"),
+      `
+import { writeFile } from "node:fs/promises";
+import { setTimeout } from "node:timers/promises";
+import { runCheck, defineChecker } from "@silvermoon-work/check-task-sdk";
+import contract, { Input } from "./contract.js";
+runCheck(contract, {root: "text", registry: {
+  text: defineChecker({target: Input, check: async (input, signal) => {
+    if (input.text.startsWith("wait:")) {
+      const marker = input.text.slice(5);
+      try {
+        await writeFile(marker + ".started", "started");
+        await setTimeout(30000, undefined, {signal});
+      } finally { await writeFile(marker + ".cleaned", "cleaned"); }
+    }
+    return input.text === "hello" ? {pass: true, children: []} :
+      {pass: false, problems: [{code: "text-mismatch", brief: "Child finding."}]};
+  }}),
+}});
+`,
+    );
+    const bundle = await buildCheckBundle(
+      await directoryTree(root),
+      logical(directory),
+    );
+    const encoded = await encodeTaskBundleCar(bundle);
+    const car = await readTaskBundleCar(encoded.stream);
+    const store = new MemoryStore();
+    const ipfsStore = IpfsStore.fromClient({
+      block: {
+        get: async (cid) =>
+          store.readContentBlock(cid) ?? (await car.block.get(cid)),
+      },
+    });
+    const engine = createTaskEngine({
+      store,
+      ipfsStore,
+      requestInputEnvelope: true,
+      authorize: () => true,
+    });
+    const caller = { scope: "graph-port", subject: "graph-port" };
+    const tasks: string[] = [];
+    const cancelled: string[] = [];
+    const port: CheckExecutionPort = {
+      async execute({ bundleCid, input, signal }) {
+        signal.throwIfAborted();
+        let submission = await engine.submit(
+          { requestId: newId(), bundle: bundleCid, input, timeoutMs: 40_000 },
+          caller,
+        );
+        while (submission.status === "preparing")
+          submission = await engine.getRequestStatus(
+            submission.requestId,
+            { waitMs: 100 },
+            caller,
+          );
+        if (submission.status !== "accepted")
+          throw new Error("Child submission rejected.");
+        const taskId = submission.taskId;
+        tasks.push(taskId);
+        const errors: unknown[] = [];
+        const cancel = () => {
+          try {
+            engine.cancelTask(taskId, caller);
+            cancelled.push(taskId);
+          } catch (error) {
+            errors.push(error);
+          }
+        };
+        signal.addEventListener("abort", cancel, { once: true });
+        if (signal.aborted) cancel();
+        try {
+          try {
+            await engine.waitForTaskRelease(taskId, caller);
+          } catch (error) {
+            errors.push(error);
+          }
+          if (signal.aborted) errors.unshift(signal.reason);
+          if (errors.length === 1) throw errors[0];
+          if (errors.length)
+            throw new AggregateError(errors, "Child execution/release failed.");
+          const task = engine.getTask(taskId, caller);
+          if (
+            task.stage !== "completed" ||
+            !task.output ||
+            typeof task.output.cid !== "string"
+          )
+            throw new Error("Child did not produce a complete report.");
+          return { cid: task.output.cid, result: task.output.result };
+        } finally {
+          signal.removeEventListener("abort", cancel);
+        }
+      },
+    };
+    const Input = Type.Object(
+      { text: Type.String() },
+      { additionalProperties: false },
+    );
+    const childContract = createCheckContract(
+      Input,
+      Type.Literal("text-mismatch"),
+    );
+    const leaf = checkerFromBundle({
+      bundleCid: car.cid,
+      contract: childContract,
+      port,
+    });
+    const waitStarted = async (path: string) => {
+      const deadline = Date.now() + 15_000;
+      for (;;) {
+        try {
+          return await readFile(`${path}.started`, "utf8");
+        } catch (error) {
+          if (
+            !(error instanceof Error) ||
+            !("code" in error) ||
+            error.code !== "ENOENT"
+          )
+            throw error;
+          if (Date.now() > deadline)
+            throw new Error(
+              "Child did not enter its real asynchronous operation.",
+              { cause: error },
+            );
+          await pause(10);
+        }
+      }
+    };
+    try {
+      await engine.start();
+      for (const text of ["hello", "other"]) {
+        const result = await executeCheck({
+          registry: { leaf },
+          root: { checker: "leaf", target: { text } },
+          signal: new AbortController().signal,
+        });
+        expect(result.pass).toBe(text === "hello");
+        expect(result.nodes).toHaveLength(1);
+        if (!result.pass) {
+          const problem = result.problems[0];
+          expect(problem.code).toBe("text-mismatch");
+          expect(problem.source.kind).toBe("output");
+          if (problem.source.kind !== "output")
+            throw new Error("Missing child provenance.");
+          const node = await ipfsStore.read(
+            `${problem.source.outputCid}/${problem.documentation}`,
+          );
+          if (node.type === "directory")
+            throw new Error("Problem documentation must be a file.");
+          const chunks: Uint8Array[] = [];
+          for await (const chunk of node.content()) chunks.push(chunk);
+          expect(Buffer.concat(chunks).toString()).toContain("Text mismatch");
+        }
+      }
+      for (const mode of ["abort", "sibling-fault"] as const) {
+        const marker = join(directory, mode);
+        const abort = new AbortController();
+        const failure = new Error("Sibling execution failed.");
+        const registry = {
+          leaf,
+          root: defineChecker({
+            target: Input,
+            check: (target) =>
+              Promise.resolve({
+                pass: true,
+                children:
+                  mode === "abort"
+                    ? [{ checker: "leaf" as const, target }]
+                    : [
+                        { checker: "leaf" as const, target },
+                        { checker: "fault" as const, target },
+                      ],
+              } as const),
+          }),
+          fault: defineChecker({
+            target: Input,
+            check: async () => {
+              await waitStarted(marker);
+              throw failure;
+            },
+          }),
+        };
+        const execution = executeCheck({
+          registry,
+          root: { checker: "root", target: { text: `wait:${marker}` } },
+          signal: abort.signal,
+        });
+        const rejected = execution.catch((error: unknown) => error);
+        expect(await waitStarted(marker)).toBe("started");
+        if (mode === "abort") abort.abort(new Error("External cancellation."));
+        expect(await rejected).toBeInstanceOf(Error);
+        expect(await readFile(`${marker}.cleaned`, "utf8")).toBe("cleaned");
+        const task = engine.getTask(tasks.at(-1)!, caller);
+        expect(task.stage, JSON.stringify(task)).toBe("stopped");
+        expect(
+          engine.getRun(task.run!.runId, caller).reclaimedAt,
+        ).toBeDefined();
+      }
+      expect(cancelled).toHaveLength(2);
+    } finally {
+      await engine.close();
+      await ipfsStore.close();
+      store.close();
+      await car.close();
+      await encoded.close();
+    }
+  }, 90_000);
+
   it.each([
     ["null", "must contain an object"],
     ["[]", "must contain an object"],
@@ -389,9 +609,10 @@ describe("CLI and actual published Engine", () => {
       );
       await writeFile(
         join(parentDirectory, "src", "main.ts"),
-        `import { runCheck } from "@silvermoon-work/check-task-sdk";
-import contract from "./contract.js";
-runCheck(contract, async (input, context, reportProblem) => {
+        `import { runCheck, defineChecker } from "@silvermoon-work/check-task-sdk";
+import contract, { Input } from "./contract.js";
+runCheck(contract, {root: "text", registry: (context) => ({
+text: defineChecker({target: Input, check: async (input, signal) => {
   const result = await context.invokeTask({
     key: "text",
     bundle: context.bundle.root.resolve("resources/tasks/child"),
@@ -400,8 +621,11 @@ runCheck(contract, async (input, context, reportProblem) => {
   });
   if (!result || typeof result !== "object" || Array.isArray(result) ||
       typeof result.pass !== "boolean") throw new Error("Invalid child result.");
-  if (!result.pass) reportProblem("text-mismatch", "The child check did not pass.");
-});
+  signal.throwIfAborted();
+  return result.pass
+    ? {pass: true, children: []}
+    : {pass: false, problems: [{code: "text-mismatch", brief: "The child check did not pass."}]};
+}})})});
 `,
       );
       const definition = await transformCheckTree(
@@ -498,18 +722,23 @@ runCheck(contract, async (input, context, reportProblem) => {
           .map((run) => run.output?.result),
       ).toEqual(
         expect.arrayContaining([
-          {
+          expect.objectContaining({
+            protocol: "check-report/v2",
             pass: false,
             documentation: "references/check.md",
             problems: [
-              {
+              expect.objectContaining({
                 code: "text-mismatch",
                 brief: "The child check did not pass.",
                 documentation: "references/problems/text-mismatch.md",
-              },
+              }),
             ],
-          },
-          { pass: true, documentation: "references/check.md" },
+          }),
+          expect.objectContaining({
+            protocol: "check-report/v2",
+            pass: true,
+            documentation: "references/check.md",
+          }),
         ]),
       );
       // Engine only borrows its store; it remains readable after Engine close.

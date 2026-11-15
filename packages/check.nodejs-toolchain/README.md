@@ -61,14 +61,18 @@ Verification。它只复制当前授权宿主的原样 Node/npm 文件到自有�
 
 ## 输入与授权
 
-实际检查使用 SDK TargetChecker 注册表，由 `$root` 携带原有 context/
-requirements，以有序串行 DFS 展开。注册函数均接收完整 `{ type, selector }`，
-而非单独 selector。每个工具的定位、只读版本探测是本 Run 内共享事实；
+实际检查使用 defineChecker 静态 object 注册表，普通根名为 `toolchain`，
+Task input 作为根 target，通过 `{checker,target}`
+children 展开 FIFO 有界并发图，
+输出 `check-report/v2`。工具目标与可用性/版本职责位于 `src/checks/`；
+每个工具的定位、只读版本探测是本次执行内共享事实；
 minimumVersion 为独立叶，版本过低不会剪去可执行的配对或 registry。
 pairing、逐工具 nvm management、active registry 和 nrm 注册项显式取得
 各自必要工具前置，缺失/不可用/版本无法识别的工具按根因报告一次，只阻断
 依赖它的关系探测，其他兄弟继续。原生配置优先级、nrm 身份约束、子进程预算/
-回收与故障边界不变；无全局缓存或隐式兄弟排序依赖。
+回收与故障边界不变；没有跨执行缓存、全局 code 去重或隐式兄弟排序依赖。
+图内故障 signal 也传到 Host.run，在实际清理完成后结束。
+旧 CAR/历史平台实证不自动证明新图模型，须重建并验证准确新 CID。
 
 见 [`src/contract.ts`](./src/contract.ts)、
 [`src/execution-context.ts`](./src/execution-context.ts) 和

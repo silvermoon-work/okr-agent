@@ -80,16 +80,26 @@ export const ProblemCode = Type.Union([Type.Literal("text-mismatch")]);
 export type ProblemCode = Static<typeof ProblemCode>;
 export default createCheckContract(Input, ProblemCode);
 `,
-    "src/main.ts": `import { runCheck } from "@silvermoon-work/check-task-sdk";
-import contract from "./contract.js";
+    "src/main.ts": `import { defineChecker, runCheck, type CheckerResult } from "@silvermoon-work/check-task-sdk";
+import contract, { Input, type ProblemCode } from "./contract.js";
 
-runCheck(contract, async (input, context, reportProblem) => {
-  const node = await context.bundle.root.resolve("resources/expected.txt").read();
-  if (node.kind !== "file") throw new Error("Expected standard must be a file.");
-  const expected = await new Response(node.content).text();
-  if (input.text !== expected.trimEnd()) {
-    reportProblem("text-mismatch", \`Text \${JSON.stringify(input.text)} must equal \${JSON.stringify(expected.trimEnd())}.\`);
-  }
+runCheck(contract, {
+  root: "text",
+  registry: (context) => ({
+    text: defineChecker({
+      target: Input,
+      check: async (input, signal): Promise<CheckerResult<never, ProblemCode>> => {
+        signal.throwIfAborted();
+        const node = await context.bundle.root.resolve("resources/expected.txt").read();
+        if (node.kind !== "file") throw new Error("Expected standard must be a file.");
+        const expected = await new Response(node.content).text();
+        signal.throwIfAborted();
+        return input.text === expected.trimEnd()
+          ? { pass: true, children: [] }
+          : { pass: false, problems: [{ code: "text-mismatch", brief: \`Text \${JSON.stringify(input.text)} must equal \${JSON.stringify(expected.trimEnd())}.\` }] };
+      },
+    }),
+  }),
 });
 `,
     "assets/expected.txt": "hello\n",

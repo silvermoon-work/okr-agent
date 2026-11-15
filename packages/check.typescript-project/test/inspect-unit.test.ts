@@ -10,7 +10,6 @@ import {
 import { Files, Unconfirmed } from "../src/files.js";
 import { inspect } from "../src/inspect.js";
 import type { ProblemCode } from "../src/contract.js";
-import { convention } from "../src/convention.js";
 import {
   catalog,
   lintConfig,
@@ -22,7 +21,22 @@ import {
 } from "./fixture.js";
 import { dataYaml } from "../src/files.js";
 
-vi.mock("../src/convention.js", () => ({ convention: vi.fn() }));
+const maintenance = vi.hoisted(() => ({ check: vi.fn() }));
+vi.mock("../src/checks/maintenance.js", async () => {
+  const { defineChecker } = await import("@silvermoon-work/check-task-sdk");
+  const { Type } = await import("@sinclair/typebox");
+  return {
+    maintenanceRegistry: () => ({
+      "maintenance.root": defineChecker({
+        target: Type.Object({}, { additionalProperties: false }),
+        check: () => {
+          maintenance.check();
+          return Promise.resolve({ pass: true, children: [] } as const);
+        },
+      }),
+    }),
+  };
+});
 vi.mock(import("../src/script-profile.js"), async (importOriginal) => ({
   ...(await importOriginal()),
   scriptProfile: vi.fn(),
@@ -75,7 +89,7 @@ async function check() {
 }
 it("passes a complete static project without invoking its code", async () => {
   expect(await check()).toEqual([]);
-  expect(convention).toHaveBeenCalled();
+  expect(maintenance.check).toHaveBeenCalled();
 });
 it("reports unsupported scans, links and missing root manifests before inspection", async () => {
   scan.mockRejectedValueOnce(new Unconfirmed("enumeration denied"));

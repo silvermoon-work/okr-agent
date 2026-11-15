@@ -808,8 +808,8 @@ it("rejects a modified fixed coverage entry independently of its tool configurat
     vitestConfig.replace("branches: 90", "branches: 101"),
   );
   expect((await check()).map((p) => p.code)).toEqual([
-    "gate-mismatch",
     "coverage-mismatch",
+    "gate-mismatch",
   ]);
 });
 it("keeps independent CI and lint failures when coverage blocks dependent checks", async () => {
@@ -833,9 +833,9 @@ it("keeps independent CI and lint failures when coverage blocks dependent checks
     workflow.replace("--frozen-lockfile", ""),
   );
   expect((await check()).map((p) => p.code)).toEqual([
-    "lint-missing",
-    "coverage-mismatch",
     "ci-mismatch",
+    "coverage-mismatch",
+    "lint-missing",
   ]);
 });
 it("skips coverage diagnostics when test discovery is unconfirmed", async () => {

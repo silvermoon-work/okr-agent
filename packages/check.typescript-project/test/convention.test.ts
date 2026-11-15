@@ -3,11 +3,14 @@ import { mkdir, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { inspect } from "../src/inspect.js";
-import type { InspectionEvidence } from "../src/convention.js";
+import {
+  maintenanceRegistry,
+  type InspectionEvidence,
+} from "../src/convention.js";
 import type { ProblemCode } from "../src/contract.js";
 import { catalog, fixture, manifest, put, testEvidence } from "./fixture.js";
 import { packageFacts } from "./metadata-fixture.js";
-import { dataYaml, record } from "../src/files.js";
+import { dataYaml, Files, record } from "../src/files.js";
 import { stringify } from "yaml";
 
 let root: string;
@@ -502,6 +505,45 @@ it("checks catalog declaration and peer/default Node compatibility of installed 
   );
   expect(mismatch.some((p) => p.brief.includes("engines.node"))).toBe(true);
   expect(mismatch.some((p) => p.brief.includes("peer typescript"))).toBe(true);
+  const files = new Files(root, new AbortController().signal);
+  await files.scan();
+  const registry = maintenanceRegistry(files, evidence, () =>
+    Promise.resolve({
+      projects: [
+        {
+          directory: "",
+          manifest,
+          sources: ["src/index.ts"],
+          tests: ["test/index.test.ts"],
+        },
+      ],
+      quality: null,
+      unavailableMembers: new Set<string>(),
+    }),
+  );
+  await registry["maintenance.root"].check({}, files.signal);
+  // Fact readers do not depend on the caller first executing the node Checker.
+  await registry["maintenance.compatibility"].check({}, files.signal);
+  const dependencies = await registry["maintenance.dependencies"].check(
+    { directory: "" },
+    files.signal,
+  );
+  if (dependencies.pass)
+    throw new Error("Expected the incompatible installed tool.");
+  expect(
+    dependencies.problems.some((problem) =>
+      problem.brief.includes("engines.node"),
+    ),
+  ).toBe(true);
+});
+it("reports a failed shared dependency configuration once at its graph owner", async () => {
+  await put(root, "pnpm-lock.yaml", "{");
+  const failures = (await check()).filter(
+    (problem) =>
+      problem.code === "dependency-unconfirmed" &&
+      problem.brief.includes("YAML"),
+  );
+  expect(failures).toHaveLength(1);
 });
 it("requires catalog references even for single packages and resolves named catalogs with the exact importer", async () => {
   await put(root, "package.json", {

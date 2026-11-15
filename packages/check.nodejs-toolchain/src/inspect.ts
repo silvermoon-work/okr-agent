@@ -11,16 +11,20 @@ import {
   sep,
 } from "node:path";
 import { Value } from "@sinclair/typebox/value";
-import { Type } from "@sinclair/typebox";
 import { isAlias, isScalar, parseDocument } from "yaml";
 import {
-  createTargetCheckers,
+  defineChecker,
+  executeCheck,
+  mergeCheckerRegistries,
   type ProblemReporter,
-  type Target,
-  type TargetProblem,
-  type TargetResult,
+  type Problem as TargetProblem,
 } from "@silvermoon-work/check-task-sdk";
-import { Input, type ProblemCode, type Tool } from "./contract.js";
+import {
+  Input,
+  ProblemCode as ProblemCodeSchema,
+  type ProblemCode,
+  type Tool,
+} from "./contract.js";
 import { errorCode, execute } from "./command.js";
 import {
   absoluteHostPath,
@@ -29,20 +33,9 @@ import {
   validateExecutionEnvironment,
 } from "./execution-context.js";
 export { registryUrl } from "./execution-context.js";
-
-export function compareVersions(actual: string, expected: string): number {
-  if (![actual, expected].every((v) => /^[0-9]+(?:\.[0-9]+)*$/.test(v)))
-    throw new Error("Invalid numeric version.");
-  const a = actual.split(".").map((p) => p.replace(/^0+(?=\d)/, ""));
-  const b = expected.split(".").map((p) => p.replace(/^0+(?=\d)/, ""));
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const x = a[i] ?? "0";
-    const y = b[i] ?? "0";
-    if (x.length !== y.length) return Math.sign(x.length - y.length);
-    if (x !== y) return x > y ? 1 : -1;
-  }
-  return 0;
-}
+export { compareVersions } from "./checks/tools.js";
+import { toolChecks } from "./checks/tools.js";
+import { schemas, type Item, type Result } from "./checks/model.js";
 
 export function validateInput(value: unknown): asserts value is Input {
   if (!Value.Check(Input, value))
@@ -496,112 +489,21 @@ export function nativeHost(env: NodeJS.ProcessEnv): Host {
   return host;
 }
 
-export async function inspect(
+export function toolchainRegistry(
   input: Input,
   signal: AbortSignal,
-  report: ProblemReporter<ProblemCode>,
   suppliedHost?: Host,
-): Promise<void> {
+) {
   validateInput(input);
   const host =
     suppliedHost ??
     nativeHost(executionEnvironment(input.context.executionEnvironment));
   const cwd = input.context.projectDirectory;
   const r = input.requirements;
-  const requested = new Set<Tool>(Object.keys(r.tools ?? {}) as Tool[]);
-  if (r.management) requested.add("nvm");
-  if (r.registries?.nrm) requested.add("nrm");
-  const tool = Type.Object(
-    {
-      name: Type.Union([...requested].map((name) => Type.Literal(name))),
-    },
-    { additionalProperties: false },
-  );
-  const empty = Type.Object({}, { additionalProperties: false });
-  const managedTool = Type.Object(
-    { name: Type.Union([Type.Literal("node"), Type.Literal("npm")]) },
-    { additionalProperties: false },
-  );
-  const registryTool = Type.Object(
-    { name: Type.Union([Type.Literal("npm"), Type.Literal("pnpm")]) },
-    { additionalProperties: false },
-  );
-  const schemas = {
-    $root: Input,
-    tool,
-    minimum: tool,
-    pairing: empty,
-    "pairing-rule": empty,
-    management: managedTool,
-    "management-rule": managedTool,
-    registry: registryTool,
-    "registry-rule": registryTool,
-    nrm: empty,
-    registration: Type.Object(
-      { name: Type.String(), url: Type.String() },
-      { additionalProperties: false },
-    ),
-  };
-  type Result = TargetResult<typeof schemas, ProblemCode>;
-  type Fact =
-    | { pass: true; entry: ToolEntry; version: string }
-    | { pass: false; problems: [TargetProblem<ProblemCode>] };
-  const facts = new Map<Tool, Promise<Fact>>();
-  const inspectTool = async (name: Tool): Promise<Fact> => {
-    signal.throwIfAborted();
-    const entry = await host.locate(name, cwd);
-    if (!entry) {
-      return {
-        pass: false,
-        problems: [
-          {
-            code: "tool-missing",
-            brief: `${name}：当前执行上下文中未找到所需工具。`,
-          },
-        ],
-      };
-    }
-    const output = await host.run(
-      entry,
-      [name === "nvm" && host.platform === "win32" ? "version" : "--version"],
-      cwd,
-      signal,
-    );
-    if (output.code !== 0) {
-      return {
-        pass: false,
-        problems: [
-          {
-            code: "tool-unusable",
-            brief: `${name}：版本命令不可用（退出码 ${String(output.code)}）；未输出可能含秘密的命令内容。`,
-          },
-        ],
-      };
-    }
-    const version = /^v?([0-9]+(?:\.[0-9]+)+)\s*$/.exec(
-      output.stdout.trim(),
-    )?.[1];
-    if (!version) {
-      return {
-        pass: false,
-        problems: [
-          {
-            code: "version-unparseable",
-            brief: `${name}：成功执行版本命令，但无法识别其数字版本。`,
-          },
-        ],
-      };
-    }
-    return { pass: true, entry, version };
-  };
-  const fact = (name: Tool): Promise<Fact> => {
-    let value = facts.get(name);
-    if (!value) {
-      value = inspectTool(name);
-      facts.set(name, value);
-    }
-    return value;
-  };
+  const { requested, fact, registry: tools } = toolChecks(input, host, signal);
+  const empty = schemas.pairing;
+  const managedTool = schemas.management;
+  const registryTool = schemas.registry;
   const prerequisites = async (
     names: Tool[],
   ): Promise<
@@ -641,327 +543,349 @@ export async function inspect(
             ...TargetProblem<ProblemCode>[],
           ],
         }
-      : { pass: true, targets: [] };
+      : { pass: true, children: [] };
   };
   let location: Promise<NpmLocation | undefined> | undefined;
   const npmProvenance = (npm: ToolEntry) =>
     (location ??= host.npmLocation(npm, cwd, signal));
   let registrations: ReadonlyMap<string, string>;
   const managerFacts = new Map<string, Promise<string[]>>();
-  const run = createTargetCheckers<typeof schemas, ProblemCode>(schemas, {
-    $root: async ({ selector: parameters }) => {
-      validateInput(parameters);
-      signal.throwIfAborted();
-      if (!(await stat(cwd)).isDirectory())
-        throw new Error("projectDirectory must exist and be a directory.");
-      if (!["win32", "linux", "darwin"].includes(host.platform))
-        throw new Error("Unsupported execution platform.");
-      const targets: Target<typeof schemas>[] = [...requested].map((name) => ({
-        type: "tool",
-        selector: { name },
-      }));
-      if (r.pairing?.npmWithNode)
-        targets.push({ type: "pairing", selector: {} });
-      for (const name of r.management?.appliesTo ?? [])
-        targets.push({ type: "management", selector: { name } });
-      for (const name of ["npm", "pnpm"] as const)
-        if (r.registries?.active?.[name])
-          targets.push({ type: "registry", selector: { name } });
-      if (r.registries?.nrm) targets.push({ type: "nrm", selector: {} });
-      return { pass: true, targets };
-    },
-    tool: async ({ selector: { name } }) => {
-      const value = await fact(name);
-      return value.pass
-        ? {
-            pass: true,
-            targets: r.tools?.[name]?.minimumVersion
-              ? [{ type: "minimum", selector: { name } }]
-              : [],
-          }
-        : value;
-    },
-    minimum: async ({ selector: { name } }) => {
-      const value = await fact(name);
-      if (!value.pass) return value;
-      const minimum = r.tools?.[name]?.minimumVersion;
-      if (!minimum) throw new Error("Undeclared minimum requirement.");
-      return compareVersions(value.version, minimum) < 0
-        ? {
-            pass: false,
-            problems: [
-              {
-                code: "version-too-low",
-                brief: `${name}：当前 ${value.version}，要求不低于 ${minimum}。`,
-              },
-            ],
-          }
-        : { pass: true, targets: [] };
-    },
-    pairing: async () => {
-      const required = await prerequisites(["node", "npm"]);
-      if (!required.pass) return required;
-      return { pass: true, targets: [{ type: "pairing-rule", selector: {} }] };
-    },
-    "pairing-rule": async () => {
-      const required = await prerequisites(["node", "npm"]);
-      if (!required.pass) return required;
-      const [node, npm] = required.entries as [ToolEntry, ToolEntry];
-      const npmLocation = await npmProvenance(npm);
-      return leaf(async (report) => {
-        if (!node.realPath || !npmLocation) {
-          report(
-            "pairing-unconfirmed",
-            "node/npm：无法确认当前 npm 入口与 Node 安装环境的关系。",
-          );
-        } else {
-          const prefix = dirname(node.realPath);
-          const candidates: string[] = [];
-          for (const candidate of [
-            join(prefix, "node_modules", "npm", "bin", "npm-cli.js"),
-            join(
-              prefix,
-              "..",
-              "lib",
-              "node_modules",
-              "npm",
-              "bin",
-              "npm-cli.js",
-            ),
-          ]) {
-            try {
-              candidates.push(await host.canonical(candidate));
-            } catch (error) {
-              if (!["ENOENT", "ENOTDIR"].includes(errorCode(error) ?? ""))
-                throw error;
+  const registry = {
+    toolchain: defineChecker({
+      target: Input,
+      check: async (parameters): Promise<Result> => {
+        validateInput(parameters);
+        signal.throwIfAborted();
+        if (!(await stat(cwd)).isDirectory())
+          throw new Error("projectDirectory must exist and be a directory.");
+        if (!["win32", "linux", "darwin"].includes(host.platform))
+          throw new Error("Unsupported execution platform.");
+        const children: Item[] = [...requested].map((name) => ({
+          checker: "tool",
+          target: { name },
+        }));
+        return { pass: true, children };
+      },
+    }),
+    pairing: defineChecker({
+      target: empty,
+      check: async (): Promise<Result> => {
+        const required = await prerequisites(["node", "npm"]);
+        if (!required.pass) return required;
+        return {
+          pass: true,
+          children: [{ checker: "pairing-rule", target: {} }],
+        };
+      },
+    }),
+    "pairing-rule": defineChecker({
+      target: empty,
+      check: async (): Promise<Result> => {
+        const required = await prerequisites(["node", "npm"]);
+        if (!required.pass) return required;
+        const [node, npm] = required.entries as [ToolEntry, ToolEntry];
+        const npmLocation = await npmProvenance(npm);
+        return leaf(async (report) => {
+          if (!node.realPath || !npmLocation) {
+            report(
+              "pairing-unconfirmed",
+              "node/npm：无法确认当前 npm 入口与 Node 安装环境的关系。",
+            );
+          } else {
+            const prefix = dirname(node.realPath);
+            const candidates: string[] = [];
+            for (const candidate of [
+              join(prefix, "node_modules", "npm", "bin", "npm-cli.js"),
+              join(
+                prefix,
+                "..",
+                "lib",
+                "node_modules",
+                "npm",
+                "bin",
+                "npm-cli.js",
+              ),
+            ]) {
+              try {
+                candidates.push(await host.canonical(candidate));
+              } catch (error) {
+                if (!["ENOENT", "ENOTDIR"].includes(errorCode(error) ?? ""))
+                  throw error;
+              }
             }
+            if (
+              !candidates.includes(resolve(npmLocation.cli)) ||
+              node.realPath !== npmLocation.node
+            )
+              if (
+                npmLocation.node !== node.realPath ||
+                npmLocation.cli.includes(
+                  `${sep}node_modules${sep}npm${sep}bin${sep}`,
+                )
+              )
+                report(
+                  "pairing-mismatch",
+                  "node/npm：当前 npm 不属于当前 Node 的安装环境；请使两者指向同一环境。",
+                );
+              else
+                report(
+                  "pairing-unconfirmed",
+                  "node/npm：当前 npm 为非标准拆分布局，无法确认与 Node 安装环境的关系。",
+                );
+          }
+        });
+      },
+    }),
+    management: defineChecker({
+      target: managedTool,
+      check: async ({ name }): Promise<Result> => {
+        if (!r.management?.appliesTo.includes(name))
+          throw new Error("Undeclared management requirement.");
+        const required = await prerequisites(["nvm", name]);
+        if (!required.pass) return required;
+        return {
+          pass: true,
+          children: [{ checker: "management-rule", target: { name } }],
+        };
+      },
+    }),
+    "management-rule": defineChecker({
+      target: managedTool,
+      check: async ({ name }): Promise<Result> => {
+        const required = await prerequisites(["nvm", name]);
+        if (!required.pass) return required;
+        const [nvm, entry] = required.entries as [ToolEntry, ToolEntry];
+        const node = name === "node" ? entry : undefined;
+        const npmLocation =
+          name === "npm" ? await npmProvenance(entry) : undefined;
+        let roots = managerFacts.get(
+          host.platform === "win32" ? "win32" : name,
+        );
+        if (!roots) {
+          roots = (async () => {
+            const managedRoots: string[] = [];
+            if (host.platform === "win32") {
+              const root = await host.run(nvm, ["root"], cwd, signal);
+              const installed = await host.run(nvm, ["list"], cwd, signal);
+              const rootPath = /^Current Root:\s*(.+)$/im
+                .exec(root.stdout.trim())?.[1]
+                ?.trim();
+              if (root.code !== 0 || installed.code !== 0)
+                throw new Error("nvm-windows state inspection failed.");
+              if (!rootPath || !absoluteHostPath(rootPath))
+                throw new Error("Unknown nvm-windows root output.");
+              if (
+                !/^No installations recognized\.?$/i.test(
+                  installed.stdout.trim(),
+                )
+              ) {
+                for (const line of installed.stdout
+                  .split(/\r?\n/)
+                  .filter((line) => line.trim())) {
+                  const version =
+                    /^\s*\*?\s*v?(\d+\.\d+\.\d+)(?:\s+\(Currently using (?:32|64)-bit executable\))?\s*$/i.exec(
+                      line,
+                    )?.[1];
+                  if (!version)
+                    throw new Error(
+                      "Unknown nvm-windows installed-version output.",
+                    );
+                  managedRoots.push(
+                    await host.canonical(join(rootPath, `v${version}`)),
+                  );
+                }
+                if (!managedRoots.length)
+                  throw new Error(
+                    "Empty nvm-windows installed-version output.",
+                  );
+              }
+            } else {
+              const home = host.env.NVM_DIR;
+              if (!home || !absoluteHostPath(home))
+                throw new Error("NVM_DIR unavailable.");
+              const base = await host.canonical(join(home, "versions", "node"));
+              for (const toolPath of [
+                node?.realPath,
+                npmLocation?.cli,
+                npmLocation?.node,
+              ]) {
+                if (!toolPath || !within(base, toolPath)) continue;
+                const version = relative(base, toolPath).split(sep)[0];
+                if (!version || !/^v\d+\.\d+\.\d+$/.test(version))
+                  throw new Error("Unknown Unix nvm installation layout.");
+                const root = await host.canonical(join(base, version));
+                if (managedRoots.includes(root)) continue;
+                const which = await host.run(
+                  nvm,
+                  ["which", version],
+                  cwd,
+                  signal,
+                );
+                const path = which.stdout.trim();
+                if (
+                  which.code !== 0 ||
+                  !isAbsolute(path) ||
+                  /[\r\n\0]/.test(path)
+                )
+                  throw new Error("Unknown Unix nvm which output.");
+                const actual = await host.canonical(path);
+                if (!within(root, actual))
+                  throw new Error("Unix nvm provenance is inconsistent.");
+                managedRoots.push(root);
+              }
+            }
+            return managedRoots;
+          })();
+          managerFacts.set(host.platform === "win32" ? "win32" : name, roots);
+        }
+        const managedRoots = await roots;
+        return leaf((report) => {
+          const path = name === "node" ? entry.realPath : npmLocation?.cli;
+          if (!path)
+            report(
+              "management-unconfirmed",
+              `${name}：无法确认当前入口与 nvm 管理环境的关系。`,
+            );
+          else if (
+            !managedRoots.some((root) => within(root, path)) ||
+            (name === "npm" &&
+              npmLocation &&
+              !managedRoots.some((root) => within(root, npmLocation.node)))
+          )
+            report(
+              "management-mismatch",
+              `${name}：当前入口或其运行时不属于 nvm 已确认管理的安装环境。`,
+            );
+        });
+      },
+    }),
+    registry: defineChecker({
+      target: registryTool,
+      check: async ({ name }): Promise<Result> => {
+        if (!r.registries?.active?.[name])
+          throw new Error("Undeclared registry requirement.");
+        const required = await prerequisites([name]);
+        if (!required.pass) return required;
+        return {
+          pass: true,
+          children: [{ checker: "registry-rule", target: { name } }],
+        };
+      },
+    }),
+    "registry-rule": defineChecker({
+      target: registryTool,
+      check: async ({ name }): Promise<Result> => {
+        const requirement = r.registries?.active?.[name];
+        if (!requirement) throw new Error("Undeclared registry requirement.");
+        const required = await prerequisites([name]);
+        if (!required.pass) return required;
+        const entry = required.entries[0]!;
+        return leaf(async (report) => {
+          await host.assertRegistryContext(name, entry, cwd, signal);
+          const result = await host.run(
+            entry,
+            ["config", "get", "registry"],
+            cwd,
+            signal,
+          );
+          if (result.code !== 0) {
+            report(
+              "registry-unusable",
+              `${name}：无法读取项目上下文中的有效默认 registry（退出码 ${String(result.code)}）。`,
+            );
+            return;
+          }
+          let actual: string;
+          try {
+            actual = registryUrl(result.stdout.trim());
+          } catch {
+            // Never echo raw effective configuration: it may contain embedded credentials.
+            throw new Error(
+              `${name}: effective registry is invalid or contains sensitive URL components.`,
+            );
           }
           if (
-            !candidates.includes(resolve(npmLocation.cli)) ||
-            node.realPath !== npmLocation.node
+            !requirement.allowedUrls.some((url) => registryUrl(url) === actual)
           )
-            if (
-              npmLocation.node !== node.realPath ||
-              npmLocation.cli.includes(
-                `${sep}node_modules${sep}npm${sep}bin${sep}`,
-              )
-            )
-              report(
-                "pairing-mismatch",
-                "node/npm：当前 npm 不属于当前 Node 的安装环境；请使两者指向同一环境。",
-              );
-            else
-              report(
-                "pairing-unconfirmed",
-                "node/npm：当前 npm 为非标准拆分布局，无法确认与 Node 安装环境的关系。",
-              );
-        }
-      });
-    },
-    management: async ({ selector: { name } }) => {
-      if (!r.management?.appliesTo.includes(name))
-        throw new Error("Undeclared management requirement.");
-      const required = await prerequisites(["nvm", name]);
-      if (!required.pass) return required;
-      return {
-        pass: true,
-        targets: [{ type: "management-rule", selector: { name } }],
-      };
-    },
-    "management-rule": async ({ selector: { name } }) => {
-      const required = await prerequisites(["nvm", name]);
-      if (!required.pass) return required;
-      const [nvm, entry] = required.entries as [ToolEntry, ToolEntry];
-      const node = name === "node" ? entry : undefined;
-      const npmLocation =
-        name === "npm" ? await npmProvenance(entry) : undefined;
-      let roots = managerFacts.get(host.platform === "win32" ? "win32" : name);
-      if (!roots) {
-        roots = (async () => {
-          const managedRoots: string[] = [];
-          if (host.platform === "win32") {
-            const root = await host.run(nvm, ["root"], cwd, signal);
-            const installed = await host.run(nvm, ["list"], cwd, signal);
-            const rootPath = /^Current Root:\s*(.+)$/im
-              .exec(root.stdout.trim())?.[1]
-              ?.trim();
-            if (root.code !== 0 || installed.code !== 0)
-              throw new Error("nvm-windows state inspection failed.");
-            if (!rootPath || !absoluteHostPath(rootPath))
-              throw new Error("Unknown nvm-windows root output.");
-            if (
-              !/^No installations recognized\.?$/i.test(installed.stdout.trim())
-            ) {
-              for (const line of installed.stdout
-                .split(/\r?\n/)
-                .filter((line) => line.trim())) {
-                const version =
-                  /^\s*\*?\s*v?(\d+\.\d+\.\d+)(?:\s+\(Currently using (?:32|64)-bit executable\))?\s*$/i.exec(
-                    line,
-                  )?.[1];
-                if (!version)
-                  throw new Error(
-                    "Unknown nvm-windows installed-version output.",
-                  );
-                managedRoots.push(
-                  await host.canonical(join(rootPath, `v${version}`)),
-                );
-              }
-              if (!managedRoots.length)
-                throw new Error("Empty nvm-windows installed-version output.");
-            }
-          } else {
-            const home = host.env.NVM_DIR;
-            if (!home || !absoluteHostPath(home))
-              throw new Error("NVM_DIR unavailable.");
-            const base = await host.canonical(join(home, "versions", "node"));
-            for (const toolPath of [
-              node?.realPath,
-              npmLocation?.cli,
-              npmLocation?.node,
-            ]) {
-              if (!toolPath || !within(base, toolPath)) continue;
-              const version = relative(base, toolPath).split(sep)[0];
-              if (!version || !/^v\d+\.\d+\.\d+$/.test(version))
-                throw new Error("Unknown Unix nvm installation layout.");
-              const root = await host.canonical(join(base, version));
-              if (managedRoots.includes(root)) continue;
-              const which = await host.run(
-                nvm,
-                ["which", version],
-                cwd,
-                signal,
-              );
-              const path = which.stdout.trim();
-              if (
-                which.code !== 0 ||
-                !isAbsolute(path) ||
-                /[\r\n\0]/.test(path)
-              )
-                throw new Error("Unknown Unix nvm which output.");
-              const actual = await host.canonical(path);
-              if (!within(root, actual))
-                throw new Error("Unix nvm provenance is inconsistent.");
-              managedRoots.push(root);
-            }
-          }
-          return managedRoots;
-        })();
-        managerFacts.set(host.platform === "win32" ? "win32" : name, roots);
-      }
-      const managedRoots = await roots;
-      return leaf((report) => {
-        const path = name === "node" ? entry.realPath : npmLocation?.cli;
-        if (!path)
-          report(
-            "management-unconfirmed",
-            `${name}：无法确认当前入口与 nvm 管理环境的关系。`,
-          );
-        else if (
-          !managedRoots.some((root) => within(root, path)) ||
-          (name === "npm" &&
-            npmLocation &&
-            !managedRoots.some((root) => within(root, npmLocation.node)))
-        )
-          report(
-            "management-mismatch",
-            `${name}：当前入口或其运行时不属于 nvm 已确认管理的安装环境。`,
-          );
-      });
-    },
-    registry: async ({ selector: { name } }) => {
-      if (!r.registries?.active?.[name])
-        throw new Error("Undeclared registry requirement.");
-      const required = await prerequisites([name]);
-      if (!required.pass) return required;
-      return {
-        pass: true,
-        targets: [{ type: "registry-rule", selector: { name } }],
-      };
-    },
-    "registry-rule": async ({ selector: { name } }) => {
-      const requirement = r.registries?.active?.[name];
-      if (!requirement) throw new Error("Undeclared registry requirement.");
-      const required = await prerequisites([name]);
-      if (!required.pass) return required;
-      const entry = required.entries[0]!;
-      return leaf(async (report) => {
-        await host.assertRegistryContext(name, entry, cwd, signal);
-        const result = await host.run(
-          entry,
-          ["config", "get", "registry"],
+            report(
+              "registry-mismatch",
+              `${name}：有效默认 registry 不在声明的 allowedUrls 中；实际 URL 已隐藏以避免泄露配置。`,
+            );
+        });
+      },
+    }),
+    nrm: defineChecker({
+      target: empty,
+      check: async (): Promise<Result> => {
+        const required = await prerequisites(["nrm"]);
+        if (!required.pass) return required;
+        const output = await host.run(
+          required.entries[0]!,
+          ["ls"],
           cwd,
           signal,
         );
-        if (result.code !== 0) {
-          report(
-            "registry-unusable",
-            `${name}：无法读取项目上下文中的有效默认 registry（退出码 ${String(result.code)}）。`,
-          );
-          return;
-        }
-        let actual: string;
-        try {
-          actual = registryUrl(result.stdout.trim());
-        } catch {
-          // Never echo raw effective configuration: it may contain embedded credentials.
-          throw new Error(
-            `${name}: effective registry is invalid or contains sensitive URL components.`,
-          );
-        }
-        if (!requirement.allowedUrls.some((url) => registryUrl(url) === actual))
-          report(
-            "registry-mismatch",
-            `${name}：有效默认 registry 不在声明的 allowedUrls 中；实际 URL 已隐藏以避免泄露配置。`,
-          );
-      });
-    },
-    nrm: async () => {
-      const required = await prerequisites(["nrm"]);
-      if (!required.pass) return required;
-      const output = await host.run(required.entries[0]!, ["ls"], cwd, signal);
-      if (output.code !== 0) throw new Error("nrm registry inspection failed.");
-      registrations = parseNrm(output.stdout);
-      return {
-        pass: true,
-        targets: (r.registries?.nrm?.required ?? []).map((required) => ({
-          type: "registration" as const,
-          selector: required,
-        })),
-      };
-    },
-    registration: ({ selector: required }) => {
-      const actual = registrations.get(required.name);
-      if (actual === undefined)
+        if (output.code !== 0)
+          throw new Error("nrm registry inspection failed.");
+        registrations = parseNrm(output.stdout);
         return {
-          pass: false,
-          problems: [
-            {
-              code: "nrm-registration-missing",
-              brief: `nrm：缺少注册名称 ${required.name}。`,
-            },
-          ],
+          pass: true,
+          children: (r.registries?.nrm?.required ?? []).map((required) => ({
+            checker: "registration" as const,
+            target: required,
+          })),
         };
-      else if (actual !== registryUrl(required.url))
-        return {
-          pass: false,
-          problems: [
-            {
-              code: "nrm-registration-mismatch",
-              brief: `nrm：注册名称 ${required.name} 的 URL 与要求不符；实际 URL 已隐藏。`,
-            },
-          ],
-        };
-      return { pass: true, targets: [] };
-    },
+      },
+    }),
+    registration: defineChecker({
+      target: schemas.registration,
+      check: async (required): Promise<Result> => {
+        await Promise.resolve();
+        const actual = registrations.get(required.name);
+        if (actual === undefined)
+          return {
+            pass: false,
+            problems: [
+              {
+                code: "nrm-registration-missing",
+                brief: `nrm：缺少注册名称 ${required.name}。`,
+              },
+            ],
+          };
+        else if (actual !== registryUrl(required.url))
+          return {
+            pass: false,
+            problems: [
+              {
+                code: "nrm-registration-mismatch",
+                brief: `nrm：注册名称 ${required.name} 的 URL 与要求不符；实际 URL 已隐藏。`,
+              },
+            ],
+          };
+        return { pass: true, children: [] };
+      },
+    }),
+  };
+  return mergeCheckerRegistries(registry, tools);
+}
+
+export async function inspect(
+  input: Input,
+  signal: AbortSignal,
+  report: ProblemReporter<ProblemCode>,
+  suppliedHost?: Host,
+): Promise<void> {
+  const result = await executeCheck<ReturnType<typeof toolchainRegistry>>({
+    registry: (signal) => toolchainRegistry(input, signal, suppliedHost),
+    root: { checker: "toolchain", target: input },
+    signal,
   });
-  const reported = new Set<string>();
-  await run(input, signal, (code, brief) => {
-    const key = JSON.stringify([code, brief]);
-    if (reported.has(key)) return;
-    reported.add(key);
-    report(code, brief);
-  });
+  if (!result.pass)
+    for (const problem of result.problems) {
+      if (!Value.Check(ProblemCodeSchema, problem.code))
+        throw new Error("Invalid toolchain problem.");
+      report(problem.code, problem.brief);
+    }
 }
 
 export function parseNrm(output: string): ReadonlyMap<string, string> {
