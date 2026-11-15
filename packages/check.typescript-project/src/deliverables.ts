@@ -21,13 +21,17 @@ export async function projectDeliverables(
   files: Files,
   projects: Project[],
   report: Report,
+  unavailableMembers: ReadonlySet<string> = new Set(),
 ): Promise<Deliverable[]> {
-  return (await deliverableDeclaration(files, projects, report)).entries;
+  return (
+    await deliverableDeclaration(files, projects, report, unavailableMembers)
+  ).entries;
 }
 export async function deliverableDeclaration(
   files: Files,
   projects: Project[],
   report: Report,
+  unavailableMembers: ReadonlySet<string> = new Set(),
 ): Promise<DeliverableDeclaration> {
   for (const project of projects) delete project.delivery;
   for (const path of legacyDeliveryPaths)
@@ -45,7 +49,10 @@ export async function deliverableDeclaration(
         (project) => (project.directory || ".") === entry.path,
       );
       if (project) project.delivery = entry.type;
-      else if (entry.type === "npm" || entry.type === "cloudflare")
+      else if (
+        !unavailableMembers.has(entry.path) &&
+        (entry.type === "npm" || entry.type === "cloudflare")
+      )
         report(
           "mismatch",
           `silvermoon.yaml: ${entry.path}: ${entry.type} 交付项必须精确匹配根包或工作区成员`,

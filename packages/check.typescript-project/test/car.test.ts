@@ -12,6 +12,8 @@ import {
   cloudflareFixture,
   put,
   vitestConfig,
+  catalog,
+  strict,
 } from "./fixture.js";
 
 it("builds a real CAR and independently verifies Engine pass/fail plus linked Chinese documents", async () => {
@@ -27,11 +29,31 @@ it("builds a real CAR and independently verifies Engine pass/fail plus linked Ch
     const npm = join(owned, "npm");
     const cloudflare = join(owned, "cloudflare");
     const badCloudflare = join(owned, "bad-cloudflare");
+    const pruned = join(owned, "member-pruning");
     await fixture(good);
     await fixture(bad);
     await npmFixture(npm);
     await cloudflareFixture(cloudflare);
     await cloudflareFixture(badCloudflare);
+    await fixture(pruned);
+    await put(pruned, "pnpm-workspace.yaml", {
+      packages: ["packages/*"],
+      catalog,
+    });
+    await put(pruned, "packages/bad/package.json", "{");
+    await put(pruned, "packages/bad/src/index.ts", "export const bad = 1;");
+    await put(pruned, "packages/bad/tsconfig.json", "{");
+    await put(pruned, "packages/good/package.json", {
+      name: "good",
+      private: true,
+      engines: { node: ">=22" },
+    });
+    await put(pruned, "packages/good/src/index.ts", "export const good = 1;");
+    await put(pruned, "packages/good/tsconfig.json", {
+      compilerOptions: strict,
+      include: ["src/**/*.ts"],
+    });
+    await put(pruned, "README.md", "");
     await put(badCloudflare, "wrangler.jsonc", {
       name: "bad-worker",
       compatibility_date: "2999-01-01",
@@ -76,6 +98,7 @@ it("builds a real CAR and independently verifies Engine pass/fail plus linked Ch
         npm,
         cloudflare,
         badCloudflare,
+        pruned,
       ],
       { cwd: resolve("."), timeout: 90_000 },
     ).catch((error: unknown) => {
@@ -125,6 +148,14 @@ it("builds a real CAR and independently verifies Engine pass/fail plus linked Ch
       documentationReadable: true,
       assetsExact: true,
     });
+    expect(result.results[5]).toMatchObject({
+      pass: false,
+      documentationReadable: true,
+      assetsExact: true,
+    });
+    expect(result.results[5]?.problems?.map((problem) => problem.code)).toEqual(
+      ["scope-unconfirmed", "document-mismatch"],
+    );
     expect(
       result.results[4]?.problems?.map((problem) => problem.code),
     ).toContain("cloudflare-mismatch");

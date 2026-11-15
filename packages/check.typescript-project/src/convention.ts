@@ -7,7 +7,15 @@ import {
   valid,
   validRange,
 } from "semver";
-import type { ProblemReporter } from "@silvermoon-work/check-task-sdk";
+import {
+  createTargetCheckers,
+  type ProblemReporter,
+  type Target,
+  type TargetProblem,
+  type TargetResult,
+  type TargetCheckerRegistry,
+} from "@silvermoon-work/check-task-sdk";
+import { Type } from "@sinclair/typebox";
 import type { ProblemCode } from "./contract.js";
 import { type Project } from "./commands.js";
 import { type Files, dataYaml, glob, record, Unconfirmed } from "./files.js";
@@ -100,23 +108,56 @@ export async function convention(
   evidence: InspectionEvidence,
   report: ProblemReporter<ProblemCode>,
   quality: QualityProfile | null,
+  unavailableMembers: ReadonlySet<string> = new Set(),
 ): Promise<void> {
-  const root = projects[0]!;
+  const root = projects.find((project) => !project.directory);
+  const empty = Type.Object({}, { additionalProperties: false });
+  const member = Type.Object(
+    { directory: Type.String() },
+    { additionalProperties: false },
+  );
+  const schemas = {
+    $root: empty,
+    node: empty,
+    selection: empty,
+    runtime: empty,
+    pnpm: empty,
+    "dependency-config": empty,
+    declarations: member,
+    dependencies: member,
+    peers: member,
+    document: empty,
+    gate: empty,
+    declaration: empty,
+    "delivery-findings": empty,
+    publisher: empty,
+    delivery: member,
+    build: member,
+    release: empty,
+    "private-release": empty,
+    compatibility: empty,
+  };
+  type Result = TargetResult<typeof schemas, ProblemCode>;
+  let problems: TargetProblem<ProblemCode>[] = [];
   const reported = new Set<string>();
   const issue = (domain: Domain, status: Status, message: string) => {
-    const key = JSON.stringify([domain, status, message]);
-    if (reported.has(key)) return;
-    reported.add(key);
-    report(`${domain}-${status}` as ProblemCode, message);
+    problems.push({
+      code: `${domain}-${status}` as ProblemCode,
+      brief: message,
+    });
   };
-  const declaration = await deliverableDeclaration(
-    files,
-    projects,
-    (status, brief) => {
-      issue("delivery", status, brief);
-    },
-  );
-  const section = async (
+  const declarationProblems: TargetProblem<ProblemCode>[] = [];
+  const declaration = projects.length
+    ? await deliverableDeclaration(
+        files,
+        projects,
+        (status, brief) => {
+          declarationProblems.push({ code: `delivery-${status}`, brief });
+        },
+        unavailableMembers,
+      )
+    : { entries: [], blocked: false };
+  const attempt = async (
     domain: Domain,
     action: () => Promise<void> | void,
   ) => {
@@ -126,6 +167,29 @@ export async function convention(
       if (!(error instanceof Unconfirmed)) throw error;
       issue(domain, "unconfirmed", error.message);
     }
+  };
+  const section = async (
+    domain: Domain,
+    action: () => Promise<void> | void,
+  ): Promise<Result> => {
+    problems = [];
+    await attempt(domain, action);
+    return problems.length
+      ? {
+          pass: false,
+          problems: problems as [
+            TargetProblem<ProblemCode>,
+            ...TargetProblem<ProblemCode>[],
+          ],
+        }
+      : { pass: true, targets: [] };
+  };
+  const projectFor = ({ directory }: { directory: string }) => {
+    const project = projects.find(
+      (candidate) => candidate.directory === directory,
+    );
+    if (!project) throw new Error(`Unknown maintenance member: ${directory}`);
+    return project;
   };
   const nonempty = async (path: string, domain: Domain) => {
     if (!files.exists(path)) {
@@ -145,247 +209,10 @@ export async function convention(
     range: string;
     minVersion: string;
   }[] = [];
-  await section("environment", async () => {
-    if (!files.exists(".node-version")) {
-      issue("environment", "missing", "根 .node-version 缺失");
-      return;
-    }
-    const selected = (await files.text(".node-version"))
-      .trim()
-      .replace(/^v/, "");
-    if (!valid(selected) || parse(selected)!.prerelease.length) {
-      issue("environment", "mismatch", ".node-version 必须声明精确稳定版本");
-      return;
-    }
-    node = selected;
-    const observation = await evidence.metadata.node();
-    const facts = verified(observation);
-    const version = parse(selected)!;
-    const lifecycle = facts.schedule[`v${version.major}`];
-    if (
-      !lifecycle ||
-      typeof lifecycle.end !== "string" ||
-      typeof lifecycle.lts !== "string" ||
-      !Number.isFinite(Date.parse(lifecycle.lts)) ||
-      !Number.isFinite(Date.parse(lifecycle.end))
-    )
-      throw new Unconfirmed("官方 Node 生命周期缺项");
-    const release = facts.releases.find(
-      (r) => r.version.replace(/^v/, "") === selected,
-    );
-    if (!release)
-      throw new Unconfirmed(`官方发行列表不能确认 Node ${selected}`);
-    const now = Date.now();
-    const lts: unknown = release.lts;
-    if (typeof lts !== "string" && lts !== false)
-      throw new Unconfirmed("官方 Node 发行 LTS 标记缺项");
-    if (release.lts && Date.parse(lifecycle.lts) > now)
-      throw new Unconfirmed(
-        `${observation.source}: .node-version ${selected} 的发行已标 LTS，但官方 lts=${lifecycle.lts} 尚未开始，来源冲突，不能回退旧版`,
-      );
-    if (
-      !release.lts ||
-      !(Date.parse(lifecycle.lts) <= now && now < Date.parse(lifecycle.end))
-    ) {
-      issue(
-        "environment",
-        "mismatch",
-        `.node-version 观察 ${selected}；该官方发行不是当前受支持 LTS，要求精确采用最高 SemVer 的稳定、已标 LTS 且当前仍受支持的发行；${observation.source}；${new Date(now).toISOString()}`,
-      );
-      return;
-    }
-    const candidates: string[] = [];
-    for (const candidate of facts.releases) {
-      if (!candidate.lts) continue;
-      const parsed = parse(candidate.version.replace(/^v/, ""));
-      if (!parsed || parsed.prerelease.length)
-        throw new Unconfirmed(
-          `${observation.source}: 发行 ${candidate.version} 的稳定版本/LTS 标记冲突`,
-        );
-      const key =
-        parsed.major === 0 ? `v0.${parsed.minor}` : `v${parsed.major}`;
-      const support = facts.schedule[key];
-      if (
-        !support?.lts ||
-        !Number.isFinite(Date.parse(support.lts)) ||
-        !Number.isFinite(Date.parse(support.end)) ||
-        Date.parse(support.lts) >= Date.parse(support.end)
-      )
-        throw new Unconfirmed(
-          `${observation.source}: LTS 发行 ${candidate.version} 对应 ${key} 的官方支持周期缺失或冲突`,
-        );
-      if (Date.parse(support.lts) > now)
-        throw new Unconfirmed(
-          `${observation.source}: ${candidate.version} 已标 LTS，但官方 ${key}.lts=${support.lts} 尚未开始，不能回退旧版`,
-        );
-      if (now < Date.parse(support.end)) candidates.push(parsed.version);
-    }
-    const latest = maxSatisfying(candidates, "*");
-    if (!latest)
-      throw new Unconfirmed(
-        `${observation.source}: 没有可确认的稳定、标记 LTS 且当前仍受支持的官方发行`,
-      );
-    if (selected !== latest)
-      issue(
-        "environment",
-        "mismatch",
-        `.node-version 观察 ${selected}；要求最高 SemVer 的稳定、官方标 LTS 且当前仍受支持的发行 ${latest}；${observation.source}；${new Date(observation.observedAt).toISOString()}`,
-      );
-  });
-  await section("environment", async () => {
-    if (
-      files.exists(".nvmrc") &&
-      (await files.text(".nvmrc")).trim().replace(/^v/, "") !== node
-    )
-      issue("environment", "mismatch", ".nvmrc 与根 .node-version 不一致");
-    if (
-      root.manifest.volta !== undefined &&
-      record(root.manifest.volta).node !== node
-    )
-      issue(
-        "environment",
-        "mismatch",
-        "Volta 默认 Node 与 .node-version 不一致",
-      );
-    for (const project of projects) {
-      const prefix = project.directory || ".";
-      if (project.directory) {
-        const path = files.path(project.directory, ".node-version");
-        if (
-          files.exists(path) &&
-          (await files.text(path)).trim().replace(/^v/, "") !== node
-        )
-          issue("environment", "mismatch", `${path}: 覆盖根默认 Node`);
-        if (
-          project.manifest.packageManager !== undefined &&
-          project.manifest.packageManager !== root.manifest.packageManager
-        )
-          issue(
-            "environment",
-            "mismatch",
-            `${prefix}: packageManager 与根不一致`,
-          );
-        if (project.manifest.volta !== undefined)
-          throw new Unconfirmed(`${prefix}: 成员 Volta 选择无法确认`);
-      }
-    }
-  });
-  // One declaration gap per package, but one finding for the same missing fact.
-  const missingEngines: string[] = [];
-  for (const project of runtimeProjects)
-    await section("environment", () => {
-      const path = files.path(project.directory, "package.json");
-      const engines = project.manifest.engines;
-      if (
-        engines !== undefined &&
-        (!engines || typeof engines !== "object" || Array.isArray(engines))
-      )
-        throw new Unconfirmed(
-          `${path}: engines=${JSON.stringify(engines)}；要求包含 node 范围的静态对象`,
-        );
-      const range = record(engines ?? {}).node;
-      if (range === undefined) missingEngines.push(path);
-      else {
-        if (typeof range !== "string" || !validRange(range))
-          throw new Unconfirmed(
-            `${path}: engines.node=${JSON.stringify(range)} 无法解析最低 SemVer`,
-          );
-        const minimum = minVersion(range);
-        if (!minimum)
-          throw new Unconfirmed(
-            `${path}: engines.node=${JSON.stringify(range)} 无法解析最低 SemVer`,
-          );
-        runtimeMinimums.push({
-          manifest: path,
-          range,
-          minVersion: minimum.version,
-        });
-        if (node && !satisfies(node, range))
-          issue(
-            "environment",
-            "mismatch",
-            `${path}: 根开发 Node ${node} 不满足自身运行范围 ${range}`,
-          );
-      }
-    });
-  if (missingEngines.length)
-    issue(
-      "environment",
-      "missing",
-      `${missingEngines.length} 个适用代码包缺少 engines.node：${missingEngines.join("、")}`,
-    );
-  const uniformRuntimeMinimum =
-    runtimeMinimums.length === runtimeProjects.length &&
-    new Set(runtimeMinimums.map((entry) => entry.minVersion)).size <= 1;
-  if (
-    runtimeMinimums.length === runtimeProjects.length &&
-    !uniformRuntimeMinimum
-  )
-    issue(
-      "environment",
-      "mismatch",
-      `monorepo 所有适用代码包（包括 private）的最低受支持 Node 必须一致；观察 ${JSON.stringify(runtimeMinimums)}；仅比较解析出的最低 SemVer，不要求完整范围相同，不自动提高下限或修改 manifest`,
-    );
-  await section("dependency", async () => {
-    const declared = root.manifest.packageManager;
-    const match =
-      typeof declared === "string" &&
-      /^pnpm@(\d+\.\d+\.\d+)(?:\+sha(?:224|256|384|512)\.[a-f0-9]+)?$/.exec(
-        declared,
-      );
-    // The scope inspection already reports an absent or non-exact declaration.
-    if (!match) return;
-    if (!valid(match[1])) {
-      issue(
-        "dependency",
-        "mismatch",
-        "根 packageManager 必须精确锁定 pnpm 稳定版本",
-      );
-      return;
-    }
-    const observation = await evidence.metadata.package("pnpm", {
-      current: match[1]!,
-      series: stableSeries(match[1]!),
-    });
-    const facts = verified(observation);
-    const versions = facts.releases;
-    const newest = maxSatisfying(facts.versions, stableSeries(match[1]!));
-    if (!newest)
-      throw new Unconfirmed(`${observation.source}: 同 major 稳定版本缺失`);
-    if (!versions[newest] || !versions[match[1]!])
-      throw new Unconfirmed("pnpm 当前/最新精确 manifest 缺失");
-    if (newest !== match[1])
-      issue(
-        "dependency",
-        "mismatch",
-        `packageManager ${match[1]}，同系列最新 ${newest}; ${observation.source}; ${new Date(observation.observedAt).toISOString()}`,
-      );
-    const engine = versions[newest].engines?.node;
-    if (engine && (!node || !validRange(engine)))
-      issue(
-        "dependency",
-        "unconfirmed",
-        `pnpm ${newest} Node 兼容事实/默认版本不完整`,
-      );
-    else if (engine && node && !satisfies(node, engine))
-      issue(
-        "dependency",
-        "mismatch",
-        `最新 pnpm ${newest} 的 Node 要求 ${engine} 与默认 Node ${node} 不兼容`,
-      );
-  });
-  let workspace: Record<string, unknown> = {};
-  let importers: Record<string, unknown> = {};
-  let lock: Record<string, unknown> = {};
-  await section("dependency", async () => {
-    workspace = files.exists("pnpm-workspace.yaml")
-      ? dataYaml(await files.text("pnpm-workspace.yaml"))
-      : {};
-    lock = files.exists("pnpm-lock.yaml")
-      ? dataYaml(await files.text("pnpm-lock.yaml"))
-      : {};
-    importers = record(lock.importers ?? {});
-  });
+  let uniformRuntimeMinimum = false;
+  let workspace: Record<string, unknown>;
+  let importers: Record<string, unknown>;
+  let lock: Record<string, unknown>;
   const known = new Set([
     "typescript",
     "eslint",
@@ -413,400 +240,803 @@ export async function convention(
     importer: string;
   }
   const actual = new Map<string, Map<string, InstalledTool>>();
-  // Members sharing one catalog entry lag behind together: one fix, one finding.
   const lagging = new Map<string, { importers: string[]; brief: string }>();
-  for (const project of projects) {
-    await section("dependency", async () => {
-      const own = record(project.manifest.devDependencies ?? {});
-      const shared = record(root.manifest.devDependencies ?? {});
-      const required = new Set<string>();
-      if (project.sources.length + project.tests.length > 0)
-        for (const name of [
-          "typescript",
-          "eslint",
-          "typescript-eslint",
-          "@eslint/js",
-          "vitest",
-        ])
-          required.add(name);
-      if (!project.directory) required.add("prettier");
-      if (artifact(project)) required.add("publint");
-      if (!project.directory && files.exists("turbo.json"))
-        required.add("turbo");
-      for (const path of files.paths.filter(
-        (p) =>
-          (!project.directory || p.startsWith(`${project.directory}/`)) &&
-          !projects.some((owner) =>
-            p.startsWith(`${files.path(owner.directory, "scripts")}/`),
-          ) &&
-          /(?:eslint|vitest)\.config\.[cm]?[jt]s$/.test(p),
-      )) {
-        const source = await files.text(path);
-        for (const match of source.matchAll(/\bfrom\s+["']([^"']+)["']/g)) {
-          const name = match[1]!
-            .split("/")
-            .slice(0, match[1]!.startsWith("@") ? 2 : 1)
-            .join("/");
-          if (known.has(name)) required.add(name);
-        }
-        if (/vitest\.config/.test(path)) {
-          const provider =
-            /\bprovider\s*:\s*["'](v8|istanbul)["']/.exec(source)?.[1] ?? "v8";
-          required.add(`@vitest/coverage-${provider}`);
-        }
+  const dependencyFacts = new Map<string, Promise<Result>>();
+  let runtimeFacts: Promise<Result> | undefined;
+  let dependencyConfig: Promise<Result> | undefined;
+  const eligible = (
+    project: Project,
+    name: string,
+    raw: unknown,
+  ): raw is string => {
+    const internal = projects.some(
+      (candidate) => candidate.manifest.name === name,
+    );
+    if (
+      !known.has(name) &&
+      !internal &&
+      !(typeof raw === "string" && raw.startsWith("workspace:"))
+    )
+      return false;
+    if (typeof raw !== "string") {
+      issue("dependency", "unconfirmed", `${name}: 依赖声明不是字符串`);
+      return false;
+    }
+    if (raw.startsWith("workspace:")) {
+      if (!internal)
+        issue("dependency", "mismatch", `${name}: workspace 引用无对应成员`);
+      return false;
+    }
+    if (internal) {
+      issue("dependency", "mismatch", `${name}: 内部包必须使用 workspace 协议`);
+      return false;
+    }
+    if (!raw.startsWith("catalog:")) {
+      issue(
+        "dependency",
+        "mismatch",
+        `${project.directory || "."}: ${name} 必须引用根 pnpm-workspace.yaml 的 catalog`,
+      );
+      return false;
+    }
+    return true;
+  };
+  const checkers: TargetCheckerRegistry<typeof schemas, ProblemCode> = {
+    $root: (): Result => ({
+      pass: true,
+      targets: [
+        { type: "document", selector: {} },
+        { type: "node", selector: {} },
+        ...(projects.length
+          ? [{ type: "declaration" as const, selector: {} }]
+          : []),
+        ...(root
+          ? [
+              { type: "gate" as const, selector: {} },
+              { type: "private-release" as const, selector: {} },
+            ]
+          : []),
+      ],
+    }),
+    node: async (): Promise<Result> => {
+      // Selecting a valid developer version is distinct from its current-LTS policy.
+      if (files.exists(".node-version")) {
+        const selected = (await files.text(".node-version"))
+          .trim()
+          .replace(/^v/, "");
+        if (valid(selected) && !parse(selected)!.prerelease.length)
+          node = selected;
       }
-      for (const name of required)
-        if (own[name] === undefined && shared[name] === undefined)
+      return {
+        pass: true,
+        targets: [
+          { type: "selection", selector: {} },
+          ...(projects.length
+            ? ([
+                { type: "runtime", selector: {} },
+                { type: "pnpm", selector: {} },
+                ...projects.map((project) => ({
+                  type: "declarations" as const,
+                  selector: { directory: project.directory },
+                })),
+                { type: "dependency-config", selector: {} },
+              ] satisfies Target<typeof schemas>[])
+            : []),
+        ],
+      };
+    },
+    selection: (): Promise<Result> =>
+      section("environment", async () => {
+        if (!files.exists(".node-version")) {
+          issue("environment", "missing", "根 .node-version 缺失");
+          return;
+        }
+        const selected = (await files.text(".node-version"))
+          .trim()
+          .replace(/^v/, "");
+        if (!valid(selected) || parse(selected)!.prerelease.length) {
           issue(
-            "dependency",
-            "missing",
-            `${project.directory || "."}: ${name} 未在自身/共享根 devDependencies 声明`,
+            "environment",
+            "mismatch",
+            ".node-version 必须声明精确稳定版本",
           );
-      const resolved = new Map<string, InstalledTool>();
-      actual.set(project.directory, resolved);
-      for (const [name, raw] of Object.entries(own)) {
-        const internal = projects.some((p) => p.manifest.name === name);
+          return;
+        }
+        const observation = await evidence.metadata.node();
+        const facts = verified(observation);
+        const version = parse(selected)!;
+        const lifecycle = facts.schedule[`v${version.major}`];
         if (
-          !known.has(name) &&
-          !internal &&
-          !(typeof raw === "string" && raw.startsWith("workspace:"))
+          !lifecycle ||
+          typeof lifecycle.end !== "string" ||
+          typeof lifecycle.lts !== "string" ||
+          !Number.isFinite(Date.parse(lifecycle.lts)) ||
+          !Number.isFinite(Date.parse(lifecycle.end))
         )
-          continue;
-        if (typeof raw !== "string")
-          throw new Unconfirmed(`${name}: 依赖声明不是字符串`);
-        if (raw.startsWith("workspace:")) {
-          if (!projects.some((p) => p.manifest.name === name))
-            issue(
-              "dependency",
-              "mismatch",
-              `${name}: workspace 引用无对应成员`,
-            );
-          continue;
-        }
-        if (internal) {
-          issue(
-            "dependency",
-            "mismatch",
-            `${name}: 内部包必须使用 workspace 协议`,
-          );
-          continue;
-        }
-        if (!raw.startsWith("catalog:")) {
-          issue(
-            "dependency",
-            "mismatch",
-            `${project.directory || "."}: ${name} 必须引用根 pnpm-workspace.yaml 的 catalog`,
-          );
-          continue;
-        }
-        const catalogName = raw.slice(8);
-        const value = catalogName
-          ? record(record(workspace.catalogs ?? {})[catalogName] ?? {})[name]
-          : record(workspace.catalog ?? {})[name];
-        if (typeof value !== "string")
-          throw new Unconfirmed(`${name}: catalog 无对应版本声明`);
-        let range: string;
-        try {
-          range = declarationRange(value);
-        } catch (error) {
-          if (!(error instanceof Unconfirmed)) throw error;
-          issue("dependency", "mismatch", `${name}: ${error.message}`);
-          continue;
-        }
-        const importer = record(importers[project.directory || "."] ?? {});
-        const entry = record(
-          record(importer.devDependencies ?? {})[name] ?? {},
+          throw new Unconfirmed("官方 Node 生命周期缺项");
+        const release = facts.releases.find(
+          (r) => r.version.replace(/^v/, "") === selected,
         );
-        if (entry.specifier !== raw)
+        if (!release)
+          throw new Unconfirmed(`官方发行列表不能确认 Node ${selected}`);
+        const now = Date.now();
+        const lts: unknown = release.lts;
+        if (typeof lts !== "string" && lts !== false)
+          throw new Unconfirmed("官方 Node 发行 LTS 标记缺项");
+        if (release.lts && Date.parse(lifecycle.lts) > now)
+          throw new Unconfirmed(
+            `${observation.source}: .node-version ${selected} 的发行已标 LTS，但官方 lts=${lifecycle.lts} 尚未开始，来源冲突，不能回退旧版`,
+          );
+        if (
+          !release.lts ||
+          !(Date.parse(lifecycle.lts) <= now && now < Date.parse(lifecycle.end))
+        ) {
           issue(
-            "dependency",
+            "environment",
             "mismatch",
-            `${project.directory || "."}: ${name} lockfile importer specifier != ${raw}`,
+            `.node-version 观察 ${selected}；该官方发行不是当前受支持 LTS，要求精确采用最高 SemVer 的稳定、已标 LTS 且当前仍受支持的发行；${observation.source}；${new Date(now).toISOString()}`,
           );
-        const installedReference =
-          typeof entry.version === "string" ? entry.version : undefined;
-        const installed = installedReference?.split("(")[0];
-        if (!installedReference || !installed || !valid(installed)) {
-          issue(
-            "dependency",
-            "unconfirmed",
-            `${name}: 目标 importer 缺少可确认的实际解析版本`,
-          );
-          continue;
+          return;
         }
-        if (!satisfies(installed, range))
+        const candidates: string[] = [];
+        for (const candidate of facts.releases) {
+          if (!candidate.lts) continue;
+          const parsed = parse(candidate.version.replace(/^v/, ""));
+          if (!parsed || parsed.prerelease.length)
+            throw new Unconfirmed(
+              `${observation.source}: 发行 ${candidate.version} 的稳定版本/LTS 标记冲突`,
+            );
+          const key =
+            parsed.major === 0 ? `v0.${parsed.minor}` : `v${parsed.major}`;
+          const support = facts.schedule[key];
+          if (
+            !support?.lts ||
+            !Number.isFinite(Date.parse(support.lts)) ||
+            !Number.isFinite(Date.parse(support.end)) ||
+            Date.parse(support.lts) >= Date.parse(support.end)
+          )
+            throw new Unconfirmed(
+              `${observation.source}: LTS 发行 ${candidate.version} 对应 ${key} 的官方支持周期缺失或冲突`,
+            );
+          if (Date.parse(support.lts) > now)
+            throw new Unconfirmed(
+              `${observation.source}: ${candidate.version} 已标 LTS，但官方 ${key}.lts=${support.lts} 尚未开始，不能回退旧版`,
+            );
+          if (now < Date.parse(support.end)) candidates.push(parsed.version);
+        }
+        const latest = maxSatisfying(candidates, "*");
+        if (!latest)
+          throw new Unconfirmed(
+            `${observation.source}: 没有可确认的稳定、标记 LTS 且当前仍受支持的官方发行`,
+          );
+        if (selected !== latest)
+          issue(
+            "environment",
+            "mismatch",
+            `.node-version 观察 ${selected}；要求最高 SemVer 的稳定、官方标 LTS 且当前仍受支持的发行 ${latest}；${observation.source}；${new Date(observation.observedAt).toISOString()}`,
+          );
+      }),
+    runtime: (): Promise<Result> =>
+      (runtimeFacts ??= section("environment", async () => {
+        await attempt("environment", async () => {
+          if (
+            files.exists(".nvmrc") &&
+            (await files.text(".nvmrc")).trim().replace(/^v/, "") !== node
+          )
+            issue(
+              "environment",
+              "mismatch",
+              ".nvmrc 与根 .node-version 不一致",
+            );
+          if (
+            root?.manifest.volta !== undefined &&
+            record(root.manifest.volta).node !== node
+          )
+            issue(
+              "environment",
+              "mismatch",
+              "Volta 默认 Node 与 .node-version 不一致",
+            );
+          for (const project of projects) {
+            const prefix = project.directory || ".";
+            if (project.directory) {
+              const path = files.path(project.directory, ".node-version");
+              if (
+                files.exists(path) &&
+                (await files.text(path)).trim().replace(/^v/, "") !== node
+              )
+                issue("environment", "mismatch", `${path}: 覆盖根默认 Node`);
+              if (
+                project.manifest.packageManager !== undefined &&
+                root &&
+                project.manifest.packageManager !== root.manifest.packageManager
+              )
+                issue(
+                  "environment",
+                  "mismatch",
+                  `${prefix}: packageManager 与根不一致`,
+                );
+              if (project.manifest.volta !== undefined)
+                throw new Unconfirmed(`${prefix}: 成员 Volta 选择无法确认`);
+            }
+          }
+        });
+        // One declaration gap per package, but one finding for the same missing fact.
+        const missingEngines: string[] = [];
+        for (const project of runtimeProjects)
+          await attempt("environment", () => {
+            const path = files.path(project.directory, "package.json");
+            const engines = project.manifest.engines;
+            if (
+              engines !== undefined &&
+              (!engines ||
+                typeof engines !== "object" ||
+                Array.isArray(engines))
+            )
+              throw new Unconfirmed(
+                `${path}: engines=${JSON.stringify(engines)}；要求包含 node 范围的静态对象`,
+              );
+            const range = record(engines ?? {}).node;
+            if (range === undefined) missingEngines.push(path);
+            else {
+              if (typeof range !== "string" || !validRange(range))
+                throw new Unconfirmed(
+                  `${path}: engines.node=${JSON.stringify(range)} 无法解析最低 SemVer`,
+                );
+              const minimum = minVersion(range);
+              if (!minimum)
+                throw new Unconfirmed(
+                  `${path}: engines.node=${JSON.stringify(range)} 无法解析最低 SemVer`,
+                );
+              runtimeMinimums.push({
+                manifest: path,
+                range,
+                minVersion: minimum.version,
+              });
+              if (node && !satisfies(node, range))
+                issue(
+                  "environment",
+                  "mismatch",
+                  `${path}: 根开发 Node ${node} 不满足自身运行范围 ${range}`,
+                );
+            }
+          });
+        if (missingEngines.length)
+          issue(
+            "environment",
+            "missing",
+            `${missingEngines.length} 个适用代码包缺少 engines.node：${missingEngines.join("、")}`,
+          );
+        uniformRuntimeMinimum =
+          runtimeMinimums.length === runtimeProjects.length &&
+          new Set(runtimeMinimums.map((entry) => entry.minVersion)).size <= 1;
+        if (
+          runtimeMinimums.length === runtimeProjects.length &&
+          !uniformRuntimeMinimum
+        )
+          issue(
+            "environment",
+            "mismatch",
+            `monorepo 所有适用代码包（包括 private）的最低受支持 Node 必须一致；观察 ${JSON.stringify(runtimeMinimums)}；仅比较解析出的最低 SemVer，不要求完整范围相同，不自动提高下限或修改 manifest`,
+          );
+      })),
+    pnpm: (): Promise<Result> =>
+      section("dependency", async () => {
+        if (!root) return;
+        const declared = root.manifest.packageManager;
+        const match =
+          typeof declared === "string" &&
+          /^pnpm@(\d+\.\d+\.\d+)(?:\+sha(?:224|256|384|512)\.[a-f0-9]+)?$/.exec(
+            declared,
+          );
+        // The scope inspection already reports an absent or non-exact declaration.
+        if (!match) return;
+        if (!valid(match[1])) {
           issue(
             "dependency",
             "mismatch",
-            `${project.directory || "."}: ${name} 目标 importer ${installed} 不满足声明 ${range}`,
+            "根 packageManager 必须精确锁定 pnpm 稳定版本",
           );
-        const minimum = minVersion(range)!;
-        const observation = await evidence.metadata.package(name, {
-          current: installed,
-          series: stableSeries(minimum.version),
+          return;
+        }
+        const observation = await evidence.metadata.package("pnpm", {
+          current: match[1]!,
+          series: stableSeries(match[1]!),
         });
         const facts = verified(observation);
         const versions = facts.releases;
-        const newest = maxSatisfying(
-          facts.versions,
-          stableSeries(minimum.version),
-        );
-        if (!newest || !versions[installed] || !versions[newest])
-          throw new Unconfirmed(
-            `${observation.source}: 缺少完整候选/已解析版本证据`,
-          );
-        if (installed !== newest) {
-          const key = `${name}|${raw}|${range}|${installed}|${newest}`;
-          const importer = project.directory || ".";
-          const existing = lagging.get(key);
-          if (existing) existing.importers.push(importer);
-          else
-            lagging.set(key, {
-              importers: [importer],
-              brief: `${name} 声明 ${raw} -> ${range}; importer ${installed}; 系列 ${stableSeries(minimum.version)} 最新 ${newest}; ${observation.source}; ${new Date(observation.observedAt).toISOString()}`,
-            });
-        }
-        const release = versions[installed];
-        const latestEngine = versions[newest].engines?.node;
-        if (latestEngine && (!node || !validRange(latestEngine)))
-          issue(
-            "dependency",
-            "unconfirmed",
-            `${name} 最新 ${newest} 的 Node 兼容范围/默认版本无法确认`,
-          );
-        else if (latestEngine && node && !satisfies(node, latestEngine))
+        const newest = maxSatisfying(facts.versions, stableSeries(match[1]!));
+        if (!newest)
+          throw new Unconfirmed(`${observation.source}: 同 major 稳定版本缺失`);
+        if (!versions[newest] || !versions[match[1]!])
+          throw new Unconfirmed("pnpm 当前/最新精确 manifest 缺失");
+        if (newest !== match[1])
           issue(
             "dependency",
             "mismatch",
-            `${name} 同系列最新 ${newest} 要求 Node ${latestEngine}，与默认 ${node} 冲突；不能回退旧版后宣称最新`,
+            `packageManager ${match[1]}，同系列最新 ${newest}; ${observation.source}; ${new Date(observation.observedAt).toISOString()}`,
           );
-        resolved.set(name, {
-          version: installed,
-          release,
-          reference: installedReference,
-          importer: project.directory || ".",
-        });
-        const engine = release.engines?.node;
+        const engine = versions[newest].engines?.node;
         if (engine && (!node || !validRange(engine)))
           issue(
             "dependency",
             "unconfirmed",
-            `${name}@${installed} 的 Node 兼容范围/默认版本无法确认`,
+            `pnpm ${newest} Node 兼容事实/默认版本不完整`,
           );
         else if (engine && node && !satisfies(node, engine))
           issue(
             "dependency",
             "mismatch",
-            `${name}@${installed} engines.node=${engine} 与默认 Node ${node} 不兼容`,
+            `最新 pnpm ${newest} 的 Node 要求 ${engine} 与默认 Node ${node} 不兼容`,
           );
-      }
-    });
-  }
-  for (const { importers, brief } of lagging.values())
-    issue("dependency", "mismatch", `${importers.join("、")}: ${brief}`);
-  for (const project of projects)
-    await section("dependency", async () => {
-      const resolved = new Map([
-        ...(actual.get("") ?? []),
-        ...(actual.get(project.directory) ?? []),
-      ]);
-      for (const [name, value] of resolved) {
-        for (const [peer, range] of Object.entries(
-          value.release.peerDependencies ?? {},
+      }),
+    "dependency-config": async (): Promise<Result> => {
+      const result = await (dependencyConfig ??= section(
+        "dependency",
+        async () => {
+          workspace = files.exists("pnpm-workspace.yaml")
+            ? dataYaml(await files.text("pnpm-workspace.yaml"))
+            : {};
+          lock = files.exists("pnpm-lock.yaml")
+            ? dataYaml(await files.text("pnpm-lock.yaml"))
+            : {};
+          importers = record(lock.importers ?? {});
+        },
+      ));
+      return result.pass
+        ? {
+            pass: true,
+            targets: projects.flatMap((project) => [
+              {
+                type: "dependencies" as const,
+                selector: { directory: project.directory },
+              },
+              {
+                type: "peers" as const,
+                selector: { directory: project.directory },
+              },
+            ]),
+          }
+        : result;
+    },
+    declarations: ({ selector }): Promise<Result> => {
+      const project = projectFor(selector);
+      return section("dependency", async () => {
+        const own = record(project.manifest.devDependencies ?? {});
+        const shared = record(root?.manifest.devDependencies ?? {});
+        const required = new Set<string>();
+        if (project.sources.length + project.tests.length > 0)
+          for (const name of [
+            "typescript",
+            "eslint",
+            "typescript-eslint",
+            "@eslint/js",
+            "vitest",
+          ])
+            required.add(name);
+        if (!project.directory) required.add("prettier");
+        if (artifact(project)) required.add("publint");
+        if (!project.directory && files.exists("turbo.json"))
+          required.add("turbo");
+        for (const path of files.paths.filter(
+          (p) =>
+            (!project.directory || p.startsWith(`${project.directory}/`)) &&
+            ![...unavailableMembers].some(
+              (directory) => directory !== "." && p.startsWith(`${directory}/`),
+            ) &&
+            !projects.some((owner) =>
+              p.startsWith(`${files.path(owner.directory, "scripts")}/`),
+            ) &&
+            /(?:eslint|vitest)\.config\.[cm]?[jt]s$/.test(p),
         )) {
-          const found = resolvedPeer(
-            lock,
-            value.importer,
-            name,
-            value.reference,
-            peer,
-          );
-          if (!found && value.release.peerDependenciesMeta?.[peer]?.optional)
-            continue;
-          if (!found || !validRange(range)) {
+          const source = await files.text(path);
+          for (const match of source.matchAll(/\bfrom\s+["']([^"']+)["']/g)) {
+            const name = match[1]!
+              .split("/")
+              .slice(0, match[1]!.startsWith("@") ? 2 : 1)
+              .join("/");
+            if (known.has(name)) required.add(name);
+          }
+          if (/vitest\.config/.test(path)) {
+            const provider =
+              /\bprovider\s*:\s*["'](v8|istanbul)["']/.exec(source)?.[1] ??
+              "v8";
+            required.add(`@vitest/coverage-${provider}`);
+          }
+        }
+        for (const name of required)
+          if (root && own[name] === undefined && shared[name] === undefined)
             issue(
               "dependency",
-              "unconfirmed",
-              `${name}@${value.version}: peer ${peer}@${range} 未确认实际解析`,
+              "missing",
+              `${project.directory || "."}: ${name} 未在自身/共享根 devDependencies 声明`,
             );
-          } else if (!satisfies(found.version, range))
+        for (const [name, raw] of Object.entries(own))
+          eligible(project, name, raw);
+      });
+    },
+    dependencies: async ({ selector }): Promise<Result> => {
+      const project = projectFor(selector);
+      const existing = dependencyFacts.get(project.directory);
+      if (existing) return existing;
+      const result = section("dependency", async () => {
+        const own = record(project.manifest.devDependencies ?? {});
+        const resolved = new Map<string, InstalledTool>();
+        actual.set(project.directory, resolved);
+        for (const [name, raw] of Object.entries(own)) {
+          if (!eligible(project, name, raw)) continue;
+          const catalogName = raw.slice(8);
+          const value = catalogName
+            ? record(record(workspace.catalogs ?? {})[catalogName] ?? {})[name]
+            : record(workspace.catalog ?? {})[name];
+          if (typeof value !== "string")
+            throw new Unconfirmed(`${name}: catalog 无对应版本声明`);
+          let range: string;
+          try {
+            range = declarationRange(value);
+          } catch (error) {
+            if (!(error instanceof Unconfirmed)) throw error;
+            issue("dependency", "mismatch", `${name}: ${error.message}`);
+            continue;
+          }
+          const importer = record(importers[project.directory || "."] ?? {});
+          const entry = record(
+            record(importer.devDependencies ?? {})[name] ?? {},
+          );
+          if (entry.specifier !== raw)
             issue(
               "dependency",
               "mismatch",
-              `${name}@${value.version}: peer ${peer}@${found.version} 不满足 ${range}`,
+              `${project.directory || "."}: ${name} lockfile importer specifier != ${raw}`,
             );
-          else {
-            const direct = actual
-              .get(value.importer === "." ? "" : value.importer)
-              ?.get(peer);
-            let release =
-              direct?.version === found.version ? direct.release : undefined;
-            if (!release) {
-              if (!known.has(peer))
-                throw new Unconfirmed(
-                  `${name}: 已解析 peer ${peer} 尚无公开元数据支持，未发送该名称`,
-                );
-              const observed = await evidence.metadata.package(peer, {
-                current: found.version,
-                series: stableSeries(found.version),
+          const installedReference =
+            typeof entry.version === "string" ? entry.version : undefined;
+          const installed = installedReference?.split("(")[0];
+          if (!installedReference || !installed || !valid(installed)) {
+            issue(
+              "dependency",
+              "unconfirmed",
+              `${name}: 目标 importer 缺少可确认的实际解析版本`,
+            );
+            continue;
+          }
+          if (!satisfies(installed, range))
+            issue(
+              "dependency",
+              "mismatch",
+              `${project.directory || "."}: ${name} 目标 importer ${installed} 不满足声明 ${range}`,
+            );
+          const minimum = minVersion(range)!;
+          const observation = await evidence.metadata.package(name, {
+            current: installed,
+            series: stableSeries(minimum.version),
+          });
+          const facts = verified(observation);
+          const versions = facts.releases;
+          const newest = maxSatisfying(
+            facts.versions,
+            stableSeries(minimum.version),
+          );
+          if (!newest || !versions[installed] || !versions[newest])
+            throw new Unconfirmed(
+              `${observation.source}: 缺少完整候选/已解析版本证据`,
+            );
+          if (installed !== newest) {
+            const key = `${name}|${raw}|${range}|${installed}|${newest}`;
+            const importer = project.directory || ".";
+            const existing = lagging.get(key);
+            if (existing) existing.importers.push(importer);
+            else
+              lagging.set(key, {
+                importers: [importer],
+                brief: `${name} 声明 ${raw} -> ${range}; importer ${installed}; 系列 ${stableSeries(minimum.version)} 最新 ${newest}; ${observation.source}; ${new Date(observation.observedAt).toISOString()}`,
               });
-              release = verified(observed).releases[found.version];
-              if (!release)
-                throw new Unconfirmed(
-                  `${name}: 已解析 peer ${peer}@${found.version} 缺少准确 manifest`,
-                );
-            }
-            const engine = release.engines?.node;
-            if (engine && (!node || !validRange(engine)))
+          }
+          const release = versions[installed];
+          const latestEngine = versions[newest].engines?.node;
+          if (latestEngine && (!node || !validRange(latestEngine)))
+            issue(
+              "dependency",
+              "unconfirmed",
+              `${name} 最新 ${newest} 的 Node 兼容范围/默认版本无法确认`,
+            );
+          else if (latestEngine && node && !satisfies(node, latestEngine))
+            issue(
+              "dependency",
+              "mismatch",
+              `${name} 同系列最新 ${newest} 要求 Node ${latestEngine}，与默认 ${node} 冲突；不能回退旧版后宣称最新`,
+            );
+          resolved.set(name, {
+            version: installed,
+            release,
+            reference: installedReference,
+            importer: project.directory || ".",
+          });
+          const engine = release.engines?.node;
+          if (engine && (!node || !validRange(engine)))
+            issue(
+              "dependency",
+              "unconfirmed",
+              `${name}@${installed} 的 Node 兼容范围/默认版本无法确认`,
+            );
+          else if (engine && node && !satisfies(node, engine))
+            issue(
+              "dependency",
+              "mismatch",
+              `${name}@${installed} engines.node=${engine} 与默认 Node ${node} 不兼容`,
+            );
+        }
+      });
+      dependencyFacts.set(project.directory, result);
+      return result;
+    },
+    peers: async ({ selector }): Promise<Result> => {
+      const project = projectFor(selector);
+      // Explicit scoped fact loading, not an assumption about sibling DFS order.
+      if (root)
+        await checkers.dependencies({
+          type: "dependencies",
+          selector: { directory: root.directory },
+        });
+      await checkers.dependencies({ type: "dependencies", selector });
+      return section("dependency", async () => {
+        const resolved = new Map([
+          ...(actual.get("") ?? []),
+          ...(actual.get(project.directory) ?? []),
+        ]);
+        for (const [name, value] of resolved) {
+          for (const [peer, range] of Object.entries(
+            value.release.peerDependencies ?? {},
+          )) {
+            const found = resolvedPeer(
+              lock,
+              value.importer,
+              name,
+              value.reference,
+              peer,
+            );
+            if (!found && value.release.peerDependenciesMeta?.[peer]?.optional)
+              continue;
+            if (!found || !validRange(range)) {
               issue(
                 "dependency",
                 "unconfirmed",
-                `${name}: peer ${peer}@${found.version} 的 Node 兼容范围无法确认`,
+                `${name}@${value.version}: peer ${peer}@${range} 未确认实际解析`,
               );
-            else if (engine && node && !satisfies(node, engine))
+            } else if (!satisfies(found.version, range))
               issue(
                 "dependency",
                 "mismatch",
-                `${name}: peer ${peer}@${found.version} engines.node=${engine} 与默认 Node ${node} 不兼容`,
+                `${name}@${value.version}: peer ${peer}@${found.version} 不满足 ${range}`,
               );
+            else {
+              const direct = actual
+                .get(value.importer === "." ? "" : value.importer)
+                ?.get(peer);
+              let release =
+                direct?.version === found.version ? direct.release : undefined;
+              if (!release) {
+                if (!known.has(peer))
+                  throw new Unconfirmed(
+                    `${name}: 已解析 peer ${peer} 尚无公开元数据支持，未发送该名称`,
+                  );
+                const observed = await evidence.metadata.package(peer, {
+                  current: found.version,
+                  series: stableSeries(found.version),
+                });
+                release = verified(observed).releases[found.version];
+                if (!release)
+                  throw new Unconfirmed(
+                    `${name}: 已解析 peer ${peer}@${found.version} 缺少准确 manifest`,
+                  );
+              }
+              const engine = release.engines?.node;
+              if (engine && (!node || !validRange(engine)))
+                issue(
+                  "dependency",
+                  "unconfirmed",
+                  `${name}: peer ${peer}@${found.version} 的 Node 兼容范围无法确认`,
+                );
+              else if (engine && node && !satisfies(node, engine))
+                issue(
+                  "dependency",
+                  "mismatch",
+                  `${name}: peer ${peer}@${found.version} engines.node=${engine} 与默认 Node ${node} 不兼容`,
+                );
+            }
           }
         }
-      }
-    });
-  await section("document", async () => {
-    for (const path of [
-      "README.md",
-      "CONTRIBUTING.md",
-      "docs/agent-project.md",
-    ])
-      await nonempty(path, "document");
-    const canonical = new TextDecoder("utf-8", { fatal: true }).decode(
-      evidence.agents,
-    );
-    const lf = (text: string) => text.replace(/\r\n?/g, "\n");
-    if (!files.exists("AGENTS.md"))
-      issue(
-        "document",
-        "missing",
-        "AGENTS.md 缺失；标准 assets/AGENTS.md，先保护现有自定义内容到 docs/agent-project.md",
-      );
-    else if (lf(await files.text("AGENTS.md")) !== lf(canonical))
-      issue(
-        "document",
-        "mismatch",
-        "AGENTS.md 与完整标准 assets/AGENTS.md 不匹配；先保留自定义内容到 docs/agent-project.md，不可直接丢弃",
-      );
-    for (const path of files.paths.filter(
-      (p) => p !== "AGENTS.md" && /(?:^|\/)AGENTS\.md$/.test(p),
-    ))
-      await section("document", async () => {
-        const owner = projects
-          .filter((p) => !p.directory || path.startsWith(`${p.directory}/`))
-          .sort((a, b) => b.directory.length - a.directory.length)[0]!;
-        const asset = files.path(owner.directory, "assets/AGENTS.md");
-        const build = files.path(owner.directory, "check.build.yaml");
-        if (
-          path === asset &&
-          files.exists(build) &&
-          lf(await files.text(path)) === lf(canonical)
-        ) {
-          const include = dataYaml(await files.text(build)).include;
-          if (
-            Array.isArray(include) &&
-            include.some((raw: unknown) => {
-              const entry = record(raw);
-              return (
-                entry.from === "assets/**" &&
-                (entry.to === "resources/assets" ||
-                  entry.to === "resources/assets/")
-              );
-            })
-          )
-            return;
+      });
+    },
+    document: (): Promise<Result> =>
+      section("document", async () => {
+        for (const path of [
+          "README.md",
+          "CONTRIBUTING.md",
+          "docs/agent-project.md",
+        ])
+          await nonempty(path, "document");
+        const canonical = new TextDecoder("utf-8", { fatal: true }).decode(
+          evidence.agents,
+        );
+        const lf = (text: string) => text.replace(/\r\n?/g, "\n");
+        if (!files.exists("AGENTS.md"))
+          issue(
+            "document",
+            "missing",
+            "AGENTS.md 缺失；标准 assets/AGENTS.md，先保护现有自定义内容到 docs/agent-project.md",
+          );
+        else if (lf(await files.text("AGENTS.md")) !== lf(canonical))
+          issue(
+            "document",
+            "mismatch",
+            "AGENTS.md 与完整标准 assets/AGENTS.md 不匹配；先保留自定义内容到 docs/agent-project.md，不可直接丢弃",
+          );
+        for (const path of files.paths.filter(
+          (p) => p !== "AGENTS.md" && /(?:^|\/)AGENTS\.md$/.test(p),
+        ))
+          await attempt("document", async () => {
+            const owner = projects
+              .filter((p) => !p.directory || path.startsWith(`${p.directory}/`))
+              .sort((a, b) => b.directory.length - a.directory.length)[0];
+            const asset = files.path(
+              owner?.directory ?? "",
+              "assets/AGENTS.md",
+            );
+            const build = files.path(
+              owner?.directory ?? "",
+              "check.build.yaml",
+            );
+            if (
+              path === asset &&
+              files.exists(build) &&
+              lf(await files.text(path)) === lf(canonical)
+            ) {
+              const include = dataYaml(await files.text(build)).include;
+              if (
+                Array.isArray(include) &&
+                include.some((raw: unknown) => {
+                  const entry = record(raw);
+                  return (
+                    entry.from === "assets/**" &&
+                    (entry.to === "resources/assets" ||
+                      entry.to === "resources/assets/")
+                  );
+                })
+              )
+                return;
+            }
+            issue(
+              "document",
+              "unconfirmed",
+              `${path}: 嵌套 Agent 入口可能覆盖根规则，首版不解释其自由正文`,
+            );
+          });
+        if (!files.exists(".gitignore")) {
+          issue("document", "missing", ".gitignore 缺失");
+          return;
         }
-        issue(
-          "document",
-          "unconfirmed",
-          `${path}: 嵌套 Agent 入口可能覆盖根规则，首版不解释其自由正文`,
+        const patterns = (await files.text(".gitignore"))
+          .split(/\r?\n/)
+          .map((p) => p.trim())
+          .filter((p) => p && !p.startsWith("#"));
+        if (patterns.some((p) => p.startsWith("!") || /[\\[\]{}]/.test(p)))
+          throw new Unconfirmed(".gitignore 的否定/复杂规则不在首版支持范围");
+        const ignored = (path: string) =>
+          patterns.some((raw) => {
+            const pattern = raw.replace(/^\//, "").replace(/\/$/, "");
+            return (
+              glob(pattern, path) ||
+              glob(`${pattern}/**`, path) ||
+              (!pattern.includes("/") &&
+                path.split("/").some((part) => glob(pattern, part)))
+            );
+          });
+        for (const path of [
+          "node_modules/file",
+          "coverage/report",
+          ".turbo/cache",
+          ".env",
+          ".env.local",
+        ])
+          if (!ignored(path))
+            issue("document", "mismatch", `.gitignore 未排除 ${path}`);
+        for (const path of files.paths.filter(
+          (p) =>
+            /\.(?:[cm]?ts|tsx)$/.test(p) ||
+            /(?:^|\/)(?:silvermoon\.yaml|package\.json|pnpm-lock\.yaml|.*config\.[^/]+)$/.test(
+              p,
+            ) ||
+            p.startsWith(".github/workflows/"),
+        ))
+          if (ignored(path))
+            issue("document", "mismatch", `.gitignore 排除了必要文件 ${path}`);
+      }),
+    gate: (): Promise<Result> =>
+      section("gate", () => {
+        const names = [
+          "typecheck",
+          "lint",
+          "format-check",
+          "format",
+          "test",
+          "test-coverage",
+          "check",
+        ];
+        const rootScripts = record(root!.manifest.scripts ?? {});
+        const renamed = new Set(
+          Object.keys(rootScripts).map((name) => name.replaceAll(":", "-")),
         );
-      });
-    if (!files.exists(".gitignore")) {
-      issue("document", "missing", ".gitignore 缺失");
-      return;
-    }
-    const patterns = (await files.text(".gitignore"))
-      .split(/\r?\n/)
-      .map((p) => p.trim())
-      .filter((p) => p && !p.startsWith("#"));
-    if (patterns.some((p) => p.startsWith("!") || /[\\[\]{}]/.test(p)))
-      throw new Unconfirmed(".gitignore 的否定/复杂规则不在首版支持范围");
-    const ignored = (path: string) =>
-      patterns.some((raw) => {
-        const pattern = raw.replace(/^\//, "").replace(/\/$/, "");
-        return (
-          glob(pattern, path) ||
-          glob(`${pattern}/**`, path) ||
-          (!pattern.includes("/") &&
-            path.split("/").some((part) => glob(pattern, part)))
-        );
-      });
-    for (const path of [
-      "node_modules/file",
-      "coverage/report",
-      ".turbo/cache",
-      ".env",
-      ".env.local",
-    ])
-      if (!ignored(path))
-        issue("document", "mismatch", `.gitignore 未排除 ${path}`);
-    for (const path of files.paths.filter(
-      (p) =>
-        /\.(?:[cm]?ts|tsx)$/.test(p) ||
-        /(?:^|\/)(?:silvermoon\.yaml|package\.json|pnpm-lock\.yaml|.*config\.[^/]+)$/.test(
-          p,
-        ) ||
-        p.startsWith(".github/workflows/"),
-    ))
-      if (ignored(path))
-        issue("document", "mismatch", `.gitignore 排除了必要文件 ${path}`);
-  });
-  await section("gate", () => {
-    const names = [
-      "typecheck",
-      "lint",
-      "format-check",
-      "format",
-      "test",
-      "test-coverage",
-      "check",
-    ];
-    const rootScripts = record(root.manifest.scripts ?? {});
-    const renamed = new Set(
-      Object.keys(rootScripts).map((name) => name.replaceAll(":", "-")),
-    );
-    for (const name of names) {
-      // An invalid colon name already carries the required rename.
-      if (rootScripts[name] === undefined && !renamed.has(name)) {
-        issue(
-          "gate",
-          "missing",
-          `package.json scripts[${JSON.stringify(name)}] 未声明；要求 node scripts/${name}.mjs 固定标准入口`,
-        );
+        for (const name of names) {
+          // An invalid colon name already carries the required rename.
+          if (rootScripts[name] === undefined && !renamed.has(name)) {
+            issue(
+              "gate",
+              "missing",
+              `package.json scripts[${JSON.stringify(name)}] 未声明；要求 node scripts/${name}.mjs 固定标准入口`,
+            );
+          }
+        }
+      }),
+    declaration: (): Result => {
+      if (declaration.blocked)
+        return {
+          pass: false,
+          problems: declarationProblems as [
+            TargetProblem<ProblemCode>,
+            ...TargetProblem<ProblemCode>[],
+          ],
+        };
+      const targets: Target<typeof schemas>[] = [
+        { type: "delivery-findings", selector: {} },
+        { type: "release", selector: {} },
+        { type: "compatibility", selector: {} },
+      ];
+      if (root) targets.push({ type: "publisher", selector: {} });
+      for (const project of projects) {
+        if (artifact(project))
+          targets.push({
+            type: "delivery",
+            selector: { directory: project.directory },
+          });
+        if (project.sources.length)
+          targets.push({
+            type: "build",
+            selector: { directory: project.directory },
+          });
       }
-    }
-  });
-  if (!declaration.blocked)
-    await section("release", async () => {
-      await publisherProfile(files, projects, evidence, issue, quality);
-    });
-  const deliveries = projects.filter(artifact);
-  for (const project of projects) {
-    if (deliveries.includes(project))
-      await section("delivery", async () => {
+      return { pass: true, targets };
+    },
+    "delivery-findings": (): Result =>
+      declarationProblems.length
+        ? {
+            pass: false,
+            problems: declarationProblems as [
+              TargetProblem<ProblemCode>,
+              ...TargetProblem<ProblemCode>[],
+            ],
+          }
+        : { pass: true, targets: [] },
+    publisher: (): Promise<Result> =>
+      section("release", async () => {
+        await publisherProfile(
+          files,
+          projects,
+          evidence,
+          issue,
+          quality,
+          unavailableMembers,
+        );
+      }),
+    delivery: ({ selector }): Promise<Result> => {
+      const project = projectFor(selector);
+      return section("delivery", async () => {
         await delivery(files, project, nonempty, issue);
       });
-    if (project.sources.length && !declaration.blocked)
-      await section("delivery", async () => {
+    },
+    build: ({ selector }): Promise<Result> => {
+      const project = projectFor(selector);
+      return section("delivery", async () => {
         const build = record(project.manifest.scripts ?? {}).build;
         if (
           !build &&
@@ -846,34 +1076,62 @@ export async function convention(
           }
         }
       });
-  }
-  if (!declaration.blocked)
-    await section("release", async () => {
-      await release(files, issue);
-    });
-  await section("release", async () => {
-    await privatePublishEvidence(files, projects, (status, brief) => {
-      issue("release", status, brief);
-    });
-  });
-  await section("ci", async () => {
-    const origin = await repository(files);
-    if (!origin.github) return;
-    if (deliveries.length && quality && uniformRuntimeMinimum)
-      await section("ci", () =>
-        compatibilityMatrix(
-          quality,
-          runtimeProjects,
-          evidence.metadata,
-          issue,
-          [...(actual.get("")?.entries() ?? [])].flatMap(([name, value]) =>
-            value.release.engines?.node
-              ? [{ name, range: value.release.engines.node }]
-              : [],
-          ),
-        ),
-      );
-  });
+    },
+    release: (): Promise<Result> =>
+      section("release", async () => {
+        await release(files, issue);
+      }),
+    "private-release": (): Promise<Result> =>
+      section("release", async () => {
+        await privatePublishEvidence(files, projects, (status, brief) => {
+          issue("release", status, brief);
+        });
+      }),
+    compatibility: async (): Promise<Result> => {
+      await checkers.runtime({ type: "runtime", selector: {} });
+      const config = await checkers["dependency-config"]({
+        type: "dependency-config",
+        selector: {},
+      });
+      if (!config.pass) return config;
+      if (root)
+        await checkers.dependencies({
+          type: "dependencies",
+          selector: { directory: root.directory },
+        });
+      return section("ci", async () => {
+        const origin = await repository(files);
+        if (!origin.github) return;
+        if (projects.some(artifact) && quality && uniformRuntimeMinimum)
+          await attempt("ci", () =>
+            compatibilityMatrix(
+              quality,
+              runtimeProjects,
+              evidence.metadata,
+              issue,
+              [...(actual.get("")?.entries() ?? [])].flatMap(([name, value]) =>
+                value.release.engines?.node
+                  ? [{ name, range: value.release.engines.node }]
+                  : [],
+              ),
+            ),
+          );
+      });
+    },
+  };
+  const emit: ProblemReporter<ProblemCode> = (code, brief) => {
+    const key = JSON.stringify([code, brief]);
+    if (reported.has(key)) return;
+    reported.add(key);
+    report(code, brief);
+  };
+  await createTargetCheckers<typeof schemas, ProblemCode>(schemas, checkers)(
+    {},
+    files.signal,
+    emit,
+  );
+  for (const { importers, brief } of lagging.values())
+    emit("dependency-mismatch", `${importers.join("、")}: ${brief}`);
 }
 
 async function delivery(

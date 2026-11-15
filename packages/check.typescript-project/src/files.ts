@@ -86,7 +86,7 @@ export class Files {
   private count = 0;
   constructor(
     root: string,
-    private readonly signal: AbortSignal,
+    readonly signal: AbortSignal,
   ) {
     if (!isAbsolute(root)) throw new Error("projectDirectory must be absolute");
     this.root = resolve(root);

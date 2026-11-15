@@ -13,6 +13,16 @@ import {
 
 export { createCheckContract } from "./contracts.js";
 export type { CheckContract, CheckProblem, CheckResult } from "./contracts.js";
+export { createTargetCheckers } from "./targets.js";
+export type {
+  Target,
+  TargetSchemas,
+  TargetProblem,
+  TargetResult,
+  TargetCheckerRegistry,
+  TargetChecker,
+  RootTargetChecker,
+} from "./targets.js";
 
 export interface CheckContext {
   readonly signal: TaskContext["signal"];

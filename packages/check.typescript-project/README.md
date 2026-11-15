@@ -21,6 +21,20 @@ Engine 执行。检查只读取目标项目，不运行其代码、配置模块�
 规则由 Check 固定，不接受 `context`、`requirements`、`projectScopes`
 或其他额外字段。pnpm workspace 成员根据项目声明发现。
 
+## 内部目标编排
+
+实际入口使用 SDK 的 `$root`/类型注册/串行 DFS。每个注册 checker 接收完整的
+`{ type, selector }`，按 type 推导对应 selector。检测树为：目录安全范围 →
+workspace 拓扑 → 各成员脚本与 TS/ESLint/Vitest 配置；Vitest 可解析才展开测试字段和
+覆盖率兄弟叶。根文档在拓扑失败时仍检查；一个 manifest 无法确认只剪去
+该成员，已确认成员继续。共享配置问题仍合并根因并保留成员及实际 root。
+维护树分别承担 Node/依赖事实、根文档/质量入口、交付声明和 npm 元数据/
+构建/发布职责，不将某个规则叶失败当作“项目不合格”总闸门。
+
+本轮仅迁移通用项目与非 Cloudflare 既有交付职责；Cloudflare 专项的旧实现和
+调用保留，混合 workspace 的通用配置兼容不变。没有新增 Cloudflare 覆盖，
+也没有将 Cloudflare 交付当作 npm。开放类型及 Task Bundle 的原适用边界不变。
+
 ## 检查内容
 
 - **环境**：默认 Node.js 版本、LTS 支持周期、成员运行时要求和 pnpm 版本。monorepo 所有适用代码包（包括 private）解析出的最低 Node 必须一致，纯聚合 manifest 不参与，完整范围可以不同；缺失/非法先各自报告，不自动提高消费者下限。

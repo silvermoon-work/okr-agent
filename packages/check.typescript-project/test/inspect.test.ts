@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { inspect } from "../src/inspect.js";
 import type { Input, ProblemCode } from "../src/contract.js";
 import {
   catalog,
   fixture,
+  npmFixture,
   put,
   manifest,
   vitestConfig,
@@ -16,6 +17,7 @@ import {
 } from "./fixture.js";
 import { javascript, jsonc } from "../src/static.js";
 import { Files } from "../src/files.js";
+import { Scripts } from "../src/commands.js";
 
 let root: string;
 beforeEach(async () => {
@@ -39,6 +41,315 @@ async function check(requirements?: unknown) {
   );
   return problems;
 }
+it("prunes malformed/missing member manifests but invokes valid siblings and root document rules", async () => {
+  await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
+  await put(root, "packages/bad/package.json", "{");
+  await put(root, "packages/bad/src/index.ts", "export const bad = 1;");
+  await put(root, "packages/bad/tsconfig.json", "{");
+  await put(
+    root,
+    "packages/bad/eslint.config.js",
+    "throw new Error('unreachable config');",
+  );
+  await put(
+    root,
+    "packages/bad/vitest.config.ts",
+    "throw new Error('unreachable config');",
+  );
+  await put(root, "packages/missing/src/index.ts", "export const missing = 1;");
+  await put(root, "packages/good/package.json", {
+    name: "good",
+    private: true,
+    engines: { node: ">=22" },
+  });
+  await put(root, "packages/good/src/index.ts", "export const good = 1;");
+  await put(root, "packages/good/tsconfig.json", {
+    compilerOptions: { strict: false },
+    include: ["src/**/*.ts"],
+  });
+  await put(root, "README.md", "");
+  const validate = vi.spyOn(Scripts.prototype, "validate");
+  const read = vi.spyOn(Files.prototype, "text");
+  try {
+    const problems = await check();
+    expect(
+      problems.filter((problem) => problem.code === "scope-unconfirmed"),
+    ).toHaveLength(2);
+    expect(
+      problems.some(
+        (problem) =>
+          problem.code === "document-mismatch" &&
+          problem.brief.includes("README"),
+      ),
+    ).toBe(true);
+    expect(
+      problems.some(
+        (problem) =>
+          problem.code === "typescript-mismatch" &&
+          problem.brief.includes("packages/good"),
+      ),
+    ).toBe(true);
+    expect(validate.mock.calls.map(([project]) => project.directory)).toEqual([
+      "",
+      "packages/good",
+    ]);
+    expect(read.mock.calls.map(([path]) => path)).not.toContain(
+      "packages/bad/tsconfig.json",
+    );
+    expect(read.mock.calls.map(([path]) => path)).not.toContain(
+      "packages/bad/eslint.config.js",
+    );
+    expect(read.mock.calls.map(([path]) => path)).not.toContain(
+      "packages/bad/vitest.config.ts",
+    );
+  } finally {
+    validate.mockRestore();
+    read.mockRestore();
+  }
+});
+it("keeps root documents reachable when workspace topology cannot be established", async () => {
+  await put(root, "pnpm-workspace.yaml", "packages: [");
+  await put(root, "README.md", "");
+  const validate = vi.spyOn(Scripts.prototype, "validate");
+  try {
+    const problems = await check();
+    expect(
+      problems.some((problem) => problem.code === "scope-unconfirmed"),
+    ).toBe(true);
+    expect(
+      problems.some(
+        (problem) =>
+          problem.code === "document-mismatch" &&
+          problem.brief.includes("README"),
+      ),
+    ).toBe(true);
+    expect(validate).not.toHaveBeenCalled();
+  } finally {
+    validate.mockRestore();
+  }
+});
+it("retains independent declaration and configuration findings when lockfile parsing prunes resolution", async () => {
+  const dependencies = { ...manifest.devDependencies };
+  delete (dependencies as Partial<typeof dependencies>).eslint;
+  await put(root, "package.json", {
+    ...manifest,
+    devDependencies: { ...dependencies, typescript: "^6.0.3" },
+  });
+  await put(root, "pnpm-lock.yaml", "importers: [");
+  await put(root, "tsconfig.json", { compilerOptions: { strict: false } });
+  const problems = await check();
+  expect(
+    problems.some(
+      (problem) =>
+        problem.code === "dependency-unconfirmed" &&
+        problem.brief.includes("YAML"),
+    ),
+  ).toBe(true);
+  expect(
+    problems.some(
+      (problem) =>
+        problem.code === "dependency-missing" &&
+        problem.brief.includes("eslint"),
+    ),
+  ).toBe(true);
+  expect(
+    problems.some(
+      (problem) =>
+        problem.code === "dependency-mismatch" &&
+        problem.brief.includes("typescript"),
+    ),
+  ).toBe(true);
+  expect(
+    problems.some((problem) => problem.code === "typescript-mismatch"),
+  ).toBe(true);
+});
+it("continues member and root-file checks after an invalid root manifest without inventing shared declarations", async () => {
+  await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
+  await put(root, "packages/good/package.json", {
+    name: "good",
+    private: true,
+    engines: { node: ">=22" },
+  });
+  await put(root, "packages/good/src/index.ts", "export const good = 1;");
+  await put(root, "packages/good/tsconfig.json", {
+    compilerOptions: { strict: false },
+    include: ["src/**/*.ts"],
+  });
+  await put(root, "package.json", "{");
+  await put(root, "README.md", "");
+  const problems = await check();
+  expect(
+    problems.filter((problem) => problem.code === "scope-unconfirmed"),
+  ).toHaveLength(1);
+  expect(
+    problems.some(
+      (problem) =>
+        problem.code === "typescript-mismatch" &&
+        problem.brief.includes("packages/good"),
+    ),
+  ).toBe(true);
+  expect(
+    problems.some(
+      (problem) =>
+        problem.code === "document-mismatch" &&
+        problem.brief.includes("README"),
+    ),
+  ).toBe(true);
+  expect(
+    problems.filter((problem) => problem.code === "dependency-missing"),
+  ).toEqual([]);
+});
+it("keeps eligible npm checks reachable without repeating an unavailable sibling's mapping cause", async () => {
+  await npmFixture(root);
+  await put(root, "pnpm-workspace.yaml", {
+    packages: ["packages/*"],
+    catalog: { ...catalog, publint: "^0.3.25", semver: "^7.8.5" },
+  });
+  await put(root, "packages/bad/package.json", "{");
+  await put(root, "packages/bad/src/index.ts", "export const bad = 1;");
+  await put(root, "silvermoon.yaml", {
+    deliverables: [
+      { path: ".", type: "npm", packageId: "library" },
+      { path: "packages/bad", type: "npm", packageId: "bad" },
+    ],
+  });
+  const packageManifest = await new Files(
+    root,
+    new AbortController().signal,
+  ).json("package.json");
+  await put(root, "package.json", {
+    ...packageManifest,
+    homepage: "https://example.com",
+  });
+  const problems = await check();
+  expect(
+    problems.filter((problem) => problem.code === "scope-unconfirmed"),
+  ).toHaveLength(1);
+  expect(
+    problems.some(
+      (problem) =>
+        problem.code === "delivery-mismatch" &&
+        problem.brief.includes("homepage"),
+    ),
+  ).toBe(true);
+  expect(
+    problems.some(
+      (problem) =>
+        problem.code === "delivery-mismatch" &&
+        problem.brief.includes("packages/bad"),
+    ),
+  ).toBe(false);
+  expect(
+    problems.some(
+      (problem) =>
+        problem.code === "release-unconfirmed" && problem.brief.includes("bad"),
+    ),
+  ).toBe(false);
+});
+it("prunes invalid Vitest field proofs while retaining sibling lint and other members", async () => {
+  await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
+  for (const name of ["a", "b"]) {
+    await put(root, `packages/${name}/package.json`, {
+      name,
+      private: true,
+      engines: { node: ">=22" },
+    });
+    await put(
+      root,
+      `packages/${name}/src/index.ts`,
+      "export const member = 1;",
+    );
+  }
+  await put(
+    root,
+    "packages/a/vitest.config.ts",
+    "export default runUnknownCode();",
+  );
+  await put(
+    root,
+    "packages/b/vitest.config.ts",
+    vitestConfig.replace("branches: 90", "branches: 101"),
+  );
+  await rm(join(root, "eslint.config.js"));
+  const problems = await check();
+  expect(
+    problems.some(
+      (problem) =>
+        problem.code === "testing-unconfirmed" &&
+        problem.brief.includes("packages/a"),
+    ),
+  ).toBe(true);
+  expect(
+    problems.some(
+      (problem) =>
+        problem.code === "coverage-mismatch" &&
+        problem.brief.includes("packages/b"),
+    ),
+  ).toBe(true);
+  expect(
+    problems
+      .filter((problem) => problem.code.startsWith("coverage-"))
+      .some((problem) => problem.brief.includes("packages/a")),
+  ).toBe(false);
+  expect(problems.some((problem) => problem.code === "lint-missing")).toBe(
+    true,
+  );
+});
+it("uses script-context prerequisites for both member and shared profiles without pruning independent configs", async () => {
+  await put(root, "pnpm-workspace.yaml", { packages: ["packages/*"], catalog });
+  for (const name of ["a", "b"]) {
+    await put(root, `packages/${name}/package.json`, {
+      name,
+      private: true,
+      engines: { node: ">=22" },
+      scripts: { lint: "node scripts/lint.mjs" },
+    });
+    await put(
+      root,
+      `packages/${name}/src/index.ts`,
+      "export const member = 1;",
+    );
+    await put(root, `packages/${name}/tsconfig.json`, {
+      compilerOptions: { strict: false },
+      include: ["src/**/*.ts"],
+    });
+  }
+  await put(root, "packages/a/.npmrc", "script-shell=./unknown-shell");
+  const validate = vi.spyOn(Scripts.prototype, "validate");
+  try {
+    const problems = await check();
+    expect(validate.mock.calls.map(([project]) => project.directory)).toEqual([
+      "",
+      "packages/b",
+    ]);
+    expect(
+      problems.filter((problem) => problem.code === "scope-unconfirmed"),
+    ).toHaveLength(1);
+    expect(
+      problems.some(
+        (problem) =>
+          problem.code === "gate-missing" &&
+          problem.brief.includes("packages/a/scripts"),
+      ),
+    ).toBe(false);
+    expect(
+      problems.some(
+        (problem) =>
+          problem.code === "gate-missing" &&
+          problem.brief.includes("packages/b/scripts"),
+      ),
+    ).toBe(true);
+    expect(
+      problems.some(
+        (problem) =>
+          problem.code === "typescript-mismatch" &&
+          problem.brief.includes("packages/a"),
+      ),
+    ).toBe(true);
+  } finally {
+    validate.mockRestore();
+  }
+});
 it("passes configuration despite deliberately broken types and failing test code", async () => {
   expect(await check()).toEqual([]);
 });

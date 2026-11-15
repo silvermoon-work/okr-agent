@@ -25,12 +25,18 @@ export async function publisherProfile(
   assets: InspectionEvidence,
   report: Report,
   quality?: QualityProfile | null,
+  unavailableMembers: ReadonlySet<string> = new Set(),
 ): Promise<PublisherProfile | undefined> {
   // The delivery domain owns declaration findings; release only depends on them.
   let declarationProblems = 0;
-  const entries = await projectDeliverables(files, projects, () => {
-    declarationProblems++;
-  });
+  const entries = await projectDeliverables(
+    files,
+    projects,
+    () => {
+      declarationProblems++;
+    },
+    unavailableMembers,
+  );
   if (declarationProblems) return undefined;
   const targets = projects.filter((project) => project.delivery === "npm");
   if (!targets.length) return undefined;
@@ -55,7 +61,10 @@ export async function publisherProfile(
         : quality;
     if (!verifiedQuality) return undefined;
     const { nodeVersions } = verifiedQuality;
-    const mappings = npmMappings(entries, projects);
+    const mappings = npmMappings(
+      entries.filter((entry) => !unavailableMembers.has(entry.path)),
+      projects,
+    );
     for (const key of ["id", "name", "directory"] as const)
       if (
         new Set(mappings.map((mapping) => mapping[key])).size !==

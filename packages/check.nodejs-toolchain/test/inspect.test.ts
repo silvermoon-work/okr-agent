@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCheckCallback } from "@silvermoon-work/check-task-sdk";
 import contract, {
   type Input,
@@ -147,6 +147,198 @@ const all: Input["requirements"] = {
 };
 
 describe("composite requirements", () => {
+  it("checks Unix nvm provenance per managed tool without relying on a node sibling", async () => {
+    const home = join(cwd, "unix-nvm");
+    const installation = join(home, "versions", "node", "v22.13.0");
+    const nodePath = join(installation, "bin", "node");
+    const cli = join(
+      installation,
+      "lib",
+      "node_modules",
+      "npm",
+      "bin",
+      "npm-cli.js",
+    );
+    const host = fixture({ platform: "linux", npm: cli, npmNode: nodePath });
+    const originalRun = host.run.bind(host);
+    host.env.NVM_DIR = home;
+    host.locate = (name) =>
+      Promise.resolve({
+        ...entry(name),
+        realPath:
+          name === "node"
+            ? nodePath
+            : name === "npm"
+              ? cli
+              : entry(name).realPath!,
+      });
+    host.run = (tool, args, directory, aborted) =>
+      args[0] === "which"
+        ? Promise.resolve({ code: 0, stdout: nodePath })
+        : originalRun(tool, args, directory, aborted);
+    const run = vi.spyOn(host, "run");
+    expect(
+      await check(
+        {
+          tools: { npm: {} },
+          management: { provider: "nvm", appliesTo: ["npm"] },
+        },
+        host,
+      ),
+    ).toEqual([]);
+    expect(run.mock.calls.some(([, args]) => args[0] === "which")).toBe(true);
+    expect(await check(all, host)).toEqual([]);
+  });
+  it.each([
+    ["invalid-version", "Unknown Unix nvm installation layout."],
+    ["invalid-which", "Unknown Unix nvm which output."],
+    ["outside-root", "Unix nvm provenance is inconsistent."],
+  ])(
+    "keeps Unix management %s evidence failures as execution faults",
+    async (mode, expected) => {
+      const home = join(cwd, "unix-nvm");
+      const version = mode === "invalid-version" ? "unknown" : "v22.13.0";
+      const nodePath = join(home, "versions", "node", version, "bin", "node");
+      const host = fixture({ platform: "darwin" });
+      const originalRun = host.run.bind(host);
+      host.env.NVM_DIR = home;
+      host.locate = (name) =>
+        Promise.resolve({
+          ...entry(name),
+          realPath: name === "node" ? nodePath : entry(name).realPath!,
+        });
+      host.run = (tool, args, directory, aborted) =>
+        args[0] === "which"
+          ? Promise.resolve({
+              code: 0,
+              stdout:
+                mode === "invalid-which"
+                  ? "unknown"
+                  : join(cwd, "outside", "node"),
+            })
+          : originalRun(tool, args, directory, aborted);
+      await expect(
+        check(
+          {
+            tools: { node: {} },
+            management: { provider: "nvm", appliesTo: ["node"] },
+          },
+          host,
+        ),
+      ).rejects.toThrow(expected);
+    },
+  );
+  it("continues npm management after a missing node and reports split pairing layout without pretending it is bundled", async () => {
+    const host = fixture({ missing: ["node"] });
+    expect((await check(all, host)).map((problem) => problem.code)).toEqual([
+      "tool-missing",
+    ]);
+    const split = fixture({ npm: join(cwd, "split", "npm") });
+    split.canonical = () =>
+      Promise.reject(
+        Object.assign(new Error("absent candidate"), { code: "ENOENT" }),
+      );
+    expect(
+      (
+        await check(
+          {
+            tools: { node: {}, npm: {} },
+            pairing: { npmWithNode: true },
+          },
+          split,
+        )
+      ).map((problem) => problem.code),
+    ).toEqual(["pairing-unconfirmed"]);
+  });
+  it("reuses a manager installation observation within one Run but never across Runs", async () => {
+    const host = fixture();
+    const run = vi.spyOn(host, "run");
+    expect(await check(all, host)).toEqual([]);
+    expect(
+      run.mock.calls.filter(([, args]) => args[0] === "root"),
+    ).toHaveLength(1);
+    expect(
+      run.mock.calls.filter(([, args]) => args[0] === "list"),
+    ).toHaveLength(1);
+    expect(await check(all, host)).toEqual([]);
+    expect(
+      run.mock.calls.filter(([, args]) => args[0] === "root"),
+    ).toHaveLength(2);
+  });
+  it("uses scoped tool prerequisites, prunes relationship probes, and continues independent registry/version leaves", async () => {
+    const host = fixture({
+      missing: ["node", "nvm"],
+      output: { "npm:--version": "1.0.0", "pnpm:--version": "1.0.0" },
+    });
+    const run = vi.spyOn(host, "run");
+    const locate = vi.spyOn(host, "locate");
+    const provenance = vi.spyOn(host, "npmLocation");
+    const problems = await check(
+      {
+        ...all,
+        tools: {
+          node: {},
+          npm: { minimumVersion: "99" },
+          pnpm: { minimumVersion: "99" },
+        },
+      },
+      host,
+    );
+    expect(problems.map((problem) => problem.code)).toEqual([
+      "tool-missing",
+      "version-too-low",
+      "version-too-low",
+      "tool-missing",
+    ]);
+    expect(locate.mock.calls.map(([name]) => name)).toEqual([
+      "node",
+      "npm",
+      "pnpm",
+      "nvm",
+      "nrm",
+    ]);
+    expect(provenance).not.toHaveBeenCalled();
+    expect(
+      run.mock.calls.map(
+        ([entry, args]) =>
+          `${entry.executable.slice(cwd.length + 1)}:${args.join(" ")}`,
+      ),
+    ).toEqual([
+      "npm:--version",
+      "pnpm:--version",
+      "nrm:--version",
+      "npm:config get registry",
+      "pnpm:config get registry",
+      "nrm:ls",
+    ]);
+    expect(await check(all)).toEqual([]);
+  });
+  it("does not let a low version prune feasible pairing or registry checks", async () => {
+    const host = fixture({
+      npm: null,
+      output: {
+        "node:--version": "1.0.0",
+        "npm:config get registry": "https://outside.test",
+      },
+    });
+    const provenance = vi.spyOn(host, "npmLocation");
+    const problems = await check(
+      {
+        tools: { node: { minimumVersion: "99" }, npm: {} },
+        pairing: { npmWithNode: true },
+        registries: {
+          active: { npm: { allowedUrls: ["https://example.test"] } },
+        },
+      },
+      host,
+    );
+    expect(problems.map((problem) => problem.code)).toEqual([
+      "version-too-low",
+      "pairing-unconfirmed",
+      "registry-mismatch",
+    ]);
+    expect(provenance).toHaveBeenCalledTimes(1);
+  });
   it("does not require undeclared tools or a manager, and accepts independent empty tool policies", async () => {
     expect(
       await check(

@@ -63,6 +63,56 @@ runCheck(contract, async (input, context, reportProblem) => {
   `references/problems/<code>.md`。不通过必有问题，通过没有 `problems`。
 - 抛错、子任务故障、取消或文档链接失败保持上游执行故障，不转为正常不通过；已报告的问题不改变这一点。回调结束即关闭报告器，结果及问题列表冻结，迟到调用不能修改结果。
 
+## TargetChecker：作者自己的检测树
+
+`createTargetCheckers(schemas, registry)` 绑定按类型注册的函数，返回
+`(parameters, signal, reportProblem) => Promise<void>`。`$root` 的 selector
+就是原始参数；各 selector 由对应 TypeBox schema 推导并在调度前校验。
+注册函数接收完整的 `{ type, selector }` target，而不是 selector 本身；
+映射注册表将各函数的 `type` 字面量与对应 selector 类型绑定。
+函数通过本次 Check 回调的闭包使用受限上下文、读取器和探测器，SDK 不包含领域规则。
+
+```ts
+import { createTargetCheckers } from "@silvermoon-work/check-task-sdk";
+
+const selectors = {
+  $root: Input,
+  text: Type.Object({ text: Type.String() }, { additionalProperties: false }),
+};
+runCheck(contract, async (input, context, report) => {
+  const inspect = createTargetCheckers<typeof selectors, ProblemCode>(
+    selectors,
+    {
+      $root: ({ selector: parameters }) => ({
+        pass: true,
+        targets: [{ type: "text", selector: parameters }],
+      }),
+      text: ({ selector: { text } }) =>
+        text.trim()
+          ? { pass: true, targets: [] }
+          : {
+              pass: false,
+              problems: [{ code: "text-mismatch", brief: "文字不能为空。" }],
+            },
+    },
+  );
+  await inspect(input, context.signal, report);
+});
+```
+
+导出 `Target`、`TargetResult`、`TargetProblem`、`TargetChecker`、
+`RootTargetChecker`、`TargetCheckerRegistry`
+类型。`TargetChecker<Schemas, Code, Kind>`
+接收指定 Kind 的完整 target；省略 Kind 时接收 target 联合类型，
+`RootTargetChecker<Schemas, Code>` 是 `$root` 的别名。允许同步叶结果或 Promise
+结果，编排器统一 await；不改变串行语义。
+成功结果只有 `pass: true, targets`，按数组顺序串行深度优先展开；空数组为叶。
+失败结果只有 `pass: false, problems`，必须非空，只剪去本分支，随后继续兄弟。
+不改变公开 CheckResult、文档/资产链接或上游 Worker 协议。
+未知类型、非对象/不符合 schema 的 selector、非法结果、异常、取消及报告器/
+协议/清理失败均为执行故障，不能当作业务通过。SDK 不去重 target、不缓存事实、
+不调度 DAG 或并行任务；作者须生成有限树，并显式定义局部、共享前置。
+
 ## 固定文档 assets
 
 作者可通过第三参数 `{ assets: true }` 为 `runCheck` 或 `createCheckCallback`
