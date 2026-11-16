@@ -61,6 +61,16 @@ monorepo
 
 ## package 级 deliverable 方向
 
+### Cloudflare 检查承接
+
+用户已决定废弃独立的 `cloudflare-project-check`，其全部检查方向统一由本 Idea
+承接，不再作为独立 Idea 推进。原有[构想](../../../../01M7C4F10CACDE64QM4JZCZPPB/outer/inner/ideal/Idea.md)
+及同目录的[首期范围](../../../../01M7C4F10CACDE64QM4JZCZPPB/outer/inner/ideal/Scope.md)
+保留为历史需求参考；后续在 deliverable 类型专项中逐层确认问题、边界及实现，
+不因合并而宣告旧实现已验收或立即恢复全部旧规则。
+
+### 交付描述
+
 用户更倾向于每个 package 自带 deliverable.yaml，而不是全局清单。
 single repo 与 monorepo 使用同一结构：
 
