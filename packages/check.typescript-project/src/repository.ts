@@ -1,54 +1,170 @@
-import { type Files, Unconfirmed } from "./files.js";
+import { lstat, open, readdir, realpath } from "node:fs/promises";
+import { basename, isAbsolute, join, resolve } from "node:path";
+import { Type } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 
-export async function repository(files: Files): Promise<{
-  github: boolean;
-  primary: string;
-}> {
-  const config = await files.optionalText(".git/config");
-  if (!config)
-    throw new Unconfirmed(
-      "根内 .git/config 不可用，不能确认 Git origin/主分支；不向根外追踪 gitdir",
-    );
-  if (/^\s*(?:\[include|\[includeIf|worktreeConfig\s*=)/im.test(config))
-    throw new Unconfirmed("Git include/worktree 配置不在根内静态支持范围");
-  let section = "";
-  let origin: string | undefined;
-  let primary: string | undefined;
-  for (const raw of config.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || /^[#;]/.test(line)) continue;
-    if (line.startsWith("[")) {
-      section = line;
-      continue;
+const Manifest = Type.Record(Type.String(), Type.Unknown());
+const ignored = new Set([
+  "node_modules",
+  ".git",
+  ".silvermoon",
+  ".turbo",
+  "dist",
+  "coverage",
+]);
+export type RepositoryIdentity =
+  | { readonly kind: "single-repo" | "monorepo" }
+  | { readonly kind: "invalid"; readonly reason: string };
+
+export async function identifyRepository(
+  projectDirectory: string,
+  signal: AbortSignal,
+): Promise<RepositoryIdentity> {
+  if (!isAbsolute(projectDirectory) || /[\0\r\n]/.test(projectDirectory))
+    throw new Error("projectDirectory must be an absolute host directory.");
+  const root = resolve(projectDirectory);
+  const guard = async (path: string) => {
+    signal.throwIfAborted();
+    const info = await lstat(path);
+    if (info.isSymbolicLink() || (await realpath(path)) !== path)
+      throw new Error(`Cannot inspect a linked or redirected path: ${path}`);
+    return info;
+  };
+  if (!(await guard(root)).isDirectory())
+    throw new Error("projectDirectory must be a directory.");
+
+  const paths: string[] = [];
+  let entries = 0;
+  const scan = async (directory: string, depth: number): Promise<void> => {
+    if (depth > 64) throw new Error("Project directory depth exceeds 64.");
+    await guard(directory);
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      signal.throwIfAborted();
+      if (++entries > 16_384)
+        throw new Error("Project enumeration exceeds 16384 entries.");
+      if (ignored.has(entry.name) || entry.isSymbolicLink()) continue;
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) await scan(path, depth + 1);
+      else if (entry.isFile()) paths.push(path);
+      else throw new Error(`Unsupported filesystem entry: ${path}`);
     }
-    const pair = /^([a-zA-Z-]+)\s*=\s*(.*?)\s*$/.exec(line);
-    if (!pair) throw new Unconfirmed("Git 配置语法无法确认");
-    if (section === '[remote "origin"]' && pair[1] === "url") {
-      if (origin) throw new Unconfirmed("多个 origin URL");
-      origin = pair[2];
+  };
+  await scan(root, 0);
+  const rootManifest = join(root, "package.json");
+  if (!paths.includes(rootManifest))
+    return { kind: "invalid", reason: "根目录缺少普通文件 package.json。" };
+
+  let bytes = 0;
+  const manifest = async (path: string) => {
+    await guard(path);
+    const file = await open(path, "r");
+    const failures: unknown[] = [];
+    let text = "";
+    try {
+      const before = await file.stat();
+      if (!before.isFile()) throw new Error(`Not a regular file: ${path}`);
+      if (before.size > 1_048_576 || bytes + before.size > 16_777_216)
+        throw new Error(
+          "Manifest read budget exceeded (1MiB/file, 16MiB total).",
+        );
+      bytes += before.size;
+      const buffer = Buffer.alloc(before.size + 1);
+      let offset = 0;
+      while (offset < buffer.length) {
+        signal.throwIfAborted();
+        const result = await file.read(
+          buffer,
+          offset,
+          buffer.length - offset,
+          offset,
+        );
+        if (!result.bytesRead) break;
+        offset += result.bytesRead;
+      }
+      const after = await file.stat();
+      if (
+        offset !== before.size ||
+        before.size !== after.size ||
+        before.mtimeMs !== after.mtimeMs
+      )
+        throw new Error(`Manifest changed during read: ${path}`);
+      await guard(path);
+      signal.throwIfAborted();
+      text = new TextDecoder("utf-8", { fatal: true }).decode(
+        buffer.subarray(0, offset),
+      );
+    } catch (error) {
+      failures.push(error);
+    } finally {
+      try {
+        await file.close();
+      } catch (error) {
+        failures.push(error);
+      }
     }
-    if (
-      section === '[branch "main"]' &&
-      pair[1] === "merge" &&
-      pair[2] === "refs/heads/main"
-    )
-      primary = "main";
-  }
-  if (!origin) throw new Unconfirmed("Git origin 缺失");
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(
+        failures,
+        `Manifest read and cleanup failed: ${path}`,
+      );
+    let value: unknown;
+    try {
+      value = JSON.parse(text);
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
+      return {
+        valid: false,
+        reason: `${path}: package.json 不是合法 JSON。`,
+      } as const;
+    }
+    if (!Value.Check(Manifest, value))
+      return {
+        valid: false,
+        reason: `${path}: package.json 必须是对象。`,
+      } as const;
+    return { valid: true, value } as const;
+  };
+  const rootPackage = await manifest(rootManifest);
+  if (!rootPackage.valid)
+    return { kind: "invalid", reason: rootPackage.reason };
+  const kind =
+    paths.includes(join(root, "pnpm-workspace.yaml")) ||
+    Object.hasOwn(rootPackage.value, "workspaces")
+      ? "monorepo"
+      : "single-repo";
+  const declaresTypeScript = (value: Record<string, unknown>): boolean =>
+    [
+      "dependencies",
+      "devDependencies",
+      "peerDependencies",
+      "optionalDependencies",
+    ].some((field) => {
+      const dependencies = value[field];
+      return (
+        Value.Check(Manifest, dependencies) &&
+        typeof dependencies.typescript === "string" &&
+        dependencies.typescript.trim().length > 0
+      );
+    });
   if (
-    !/^(?:https:\/\/|git@)[A-Za-z0-9.-]+[:/][A-Za-z0-9._/-]+(?:\.git)?$/.test(
-      origin,
+    declaresTypeScript(rootPackage.value) ||
+    paths.some(
+      (path) =>
+        /^tsconfig(?:\.[^.]+)*\.json$/.test(basename(path)) ||
+        /\.(?:[cm]?ts|tsx)$/.test(path),
     )
   )
-    throw new Unconfirmed("Git origin URL 格式/凭据无法安全确认");
-  const github = /^(?:https:\/\/github\.com\/|git@github\.com:)/.test(origin);
-  if (!primary) {
-    const symbolic = await files.optionalText(".git/refs/remotes/origin/HEAD");
-    const match = /^ref: refs\/remotes\/origin\/([A-Za-z0-9._/-]+)\s*$/.exec(
-      symbolic ?? "",
-    );
-    primary = match?.[1];
-  }
-  if (!primary) throw new Unconfirmed("主分支缺少根内明确声明/remote HEAD");
-  return { github, primary };
+    return { kind };
+  if (kind === "monorepo")
+    for (const path of paths.filter(
+      (path) => path !== rootManifest && basename(path) === "package.json",
+    )) {
+      const member = await manifest(path);
+      if (member.valid && declaresTypeScript(member.value)) return { kind };
+    }
+  return {
+    kind: "invalid",
+    reason: "未发现 TypeScript 依赖声明、tsconfig 配置文件或 TS 源码。",
+  };
 }

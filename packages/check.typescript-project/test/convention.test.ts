@@ -2,15 +2,15 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, expect, it } from "vitest";
-import { inspect } from "../src/inspect.js";
+import { inspect } from "../src-legacy/inspect.js";
 import {
   maintenanceRegistry,
   type InspectionEvidence,
-} from "../src/convention.js";
-import type { ProblemCode } from "../src/contract.js";
+} from "../src-legacy/convention.js";
+import type { ProblemCode } from "../src-legacy/contract.js";
 import { catalog, fixture, manifest, put, testEvidence } from "./fixture.js";
 import { packageFacts } from "./metadata-fixture.js";
-import { dataYaml, Files, record } from "../src/files.js";
+import { dataYaml, Files, record } from "../src-legacy/files.js";
 import { stringify } from "yaml";
 
 let root: string;

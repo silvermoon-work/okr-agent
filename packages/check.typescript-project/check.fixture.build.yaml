@@ -2,9 +2,12 @@ name: TypeScript Project Check deterministic metadata verification
 runtime:
   minVersion: 22.15.0
 source:
+  mode: explicit
   entry: test/worker.ts
-  contract: src/contract.ts
+  contract: src-legacy/contract.ts
 include:
   - from: assets/**
     to: resources/assets/
+  - from: src-legacy/references/**
+    to: resources/references/
 outDirectory: dist/typescript-project-fixture

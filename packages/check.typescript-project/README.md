@@ -1,100 +1,46 @@
 # @silvermoon-work/check.typescript-project
 
-检查 TypeScript 项目是否符合固定的长期维护约定，覆盖开发环境、工具依赖、代码检查配置、Agent 操作接口、工作流以及文档结构。支持单包和 pnpm
-workspace，并对承担 npm ESM 发布职责的项目检查额外的交付配置。
+从零迭代的 TypeScript 项目 Check。当前可运行版本只检查项目身份，
+并分流到 single repo 或 monorepo；两个分支暂时为通过的叶节点。
+不会执行旧实现中的工具、scripts、交付或配置规则。
 
-交付职责只读取根 `silvermoon.yaml` 的显式清单；npm 应用/库登记
-`path`、`type: npm` 和既有
-`packageId`，其他类型不承担 npm 专项。开放类型、缺失语义、安全路径及旧映射迁移见[交付描述](references/deliverables.md)。Cloudflare 在本阶段仅识别意图，不验证平台配置或运行。
+## 当前规则
 
-本包保持 private，通过构建后的 `typescript-project.car` 交给 Task
-Engine 执行。检查只读取目标项目，不运行其代码、配置模块、测试、安装或发布命令，也不会自动修改文件。
+- 根 `package.json` 必须是可解析的 JSON 对象。
+- TypeScript 依赖、tsconfig 或 TS 源码中的任一明确依据即可识别技术栈。
+- 有 workspace 声明就是 monorepo，否则就是 single repo。
+- 身份不成立报告 `typescript-project-invalid`，不展开分支。
 
-## 输入
+详细识别和执行边界见[检查说明](references/check.md)。
+通过只表示当前已实现规则成立，不表示完整工程合规。
 
-提供执行机上的项目绝对目录：
+## 构建与运行
 
-```json
-{ "projectDirectory": "D:\\Projects\\example" }
+在仓库根目录构建本包和依赖：
+
+```powershell
+pnpm exec turbo run build --filter=@silvermoon-work/check.typescript-project...
 ```
 
-规则由 Check 固定，不接受 `context`、`requirements`、`projectScopes`
-或其他额外字段。pnpm workspace 成员根据项目声明发现。
+在本包目录通过本地 Task Engine 运行构建后的 CAR：
 
-## 内部目标编排
+```powershell
+pnpm smoke dist\typescript-project.car D:\Projects\example
+```
 
-实际入口使用 SDK defineChecker 的静态 object 注册表，普通根名为 `project`，
-输入是根 target，子项为 `{checker,target}`，以 FIFO 有界并发图执行。
-目录/成员、配置与维护职责在 `src/checks/` 中组织，非旧 DFS 叶包装。
-展开关系为：目录安全范围 →
-workspace 拓扑 → 各成员脚本与 TS/ESLint/Vitest 配置；Vitest 可解析才展开测试字段和
-覆盖率兄弟叶。根文档在拓扑失败时仍检查；一个 manifest 无法确认只剪去
-该成员，已确认成员继续。共享配置以路径和排序后的适用成员形成同一节点，
-在该节点局部归因并保留成员及实际 root，不以全局 code 去重替代身份。
-维护图分别承担 Node/依赖事实、根文档/质量入口、交付声明和 npm 元数据/
-构建/发布职责，不将某个规则叶失败当作“项目不合格”总闸门。
+命令输出 JSON，包含准确 Bundle CID、检查图、问题及真实 output CID。
+保留输入 `{"projectDirectory":"执行机上的项目绝对目录"}` 和
+`check-report/v2` 报告协议。检查只读、不联网、不执行目标代码。
 
-本轮仅迁移通用项目与非 Cloudflare 既有交付职责；Cloudflare 专项的旧实现和
-调用保留，混合 workspace 的通用配置兼容不变。没有新增 Cloudflare 覆盖，
-也没有将 Cloudflare 交付当作 npm。开放类型及 Task Bundle 的原适用边界不变。
+## 迭代入口与旧实现
 
-## 检查内容
+- [根 checker](src/checks/project.ts)定义根问题与分流。
+- [仓库分支](src/checks/repositories.ts)用于逐步增加 single repo /
+  monorepo 规则。
+- [registry](src/registry.ts)显式组合 checker。
+- [旧源码](src-legacy/)仅作为参考，原回归测试仍指向它。
+- [旧说明](README-legacy.md)记录历史完整规则，不代表当前实现能力。
 
-- **环境**：默认 Node.js 版本、LTS 支持周期、成员运行时要求和 pnpm 版本。monorepo 所有适用代码包（包括 private）解析出的最低 Node 必须一致，纯聚合 manifest 不参与，完整范围可以不同；缺失/非法先各自报告，不自动提高消费者下限。
-- **工具依赖**：只检查已规定的必要开发工具，单包与 monorepo 都要求其 devDependencies 引用根默认/named
-  catalog；检查准确 lockfile
-  importer、版本系列新鲜度及 Node.js/peer 兼容。自由扩展依赖不查询元数据或报不受支持，普通 dependencies 不受新增 catalog 规则约束。
-- **规范与交付**：TypeScript 严格配置、类型感知 lint、格式检查、单次测试、覆盖率门限和适用的 npm
-  ESM 产物配置。四项覆盖率门限由项目明确声明为有限的 0..100 百分比，不设统一最低值；可选 autoAttachSubprocess 只接受 boolean，不证明已启用覆盖率或映射正确。
-- **Agent 接口**：所有 package scripts 必须为
-  `node scripts/<同名>.mjs`（无参数），所有名称禁止冒号；与 scripts 顶层 .mjs 入口严格双向一一对应。共享模块只放
-  `scripts/lib/`。typecheck、lint、format、format-check、test、test-coverage、lint-package、check 及两个发布入口使用随 CAR 交付的固定实现和必要 lib，按准确字节比较（仅归一化换行）；build 和项目扩展入口可自定义。
-- **工作流**：main 更新与既有 PR 入口采用固定质量 CI，执行 pnpm
-  check，全部必需 job/矩阵/聚合成功才合格；release
-  tag 的固定发布 CI 只复用已有相同完整 SHA 的成功 main-push 固定质量 CI，不重复 check、不自动补跑。发布特有保护仍全部执行。
-- **文档与结构**：工作区声明、必要文档、固定 Agent 约定和忽略规则。
-
-根 `AGENTS.md`
-与随 CAR 交付的[标准文档](assets/AGENTS.md)比较；项目自定义指导放在
-`docs/agent-project.md`。README、CONTRIBUTING 与扩展文档仅检查存在、可读及非空，不评审关键词质量。
-
-## 结果
-
-结果采用 `check-report/v2`，包含 `pass`、检查文档路径及完整 root/nodes/edges
-投影；不通过时 problems 列出问题码、说明、文档路径、nodeKey 与 source。
-节点/边及问题按规范键稳定排序，不再依赖 DFS 顺序。
-问题区分明确缺失、不满足和无法确认，不把未知配置或网络失败当作通过。
-旧 CAR 不自动升级，须重建并验证新 CID。
-
-前置问题会抑制依赖它的连带报告，其他成员和独立检查继续执行。检查结果中的文档及标准资产通过 Run
-output 的 `references/` 和 `assets/` 读取，不依赖作者源码目录。
-
-质量 workflow 按 [共享显式谓词](references/npm-publisher-v1.md#ci-与事实边界)
-校验，不与 [npm-ci.yaml](assets/npm-ci.yaml) 全量相等比较；模板只是合规示例。
-workflow 名称、无关 job/metadata/env、无害步骤可扩展，约束之外不一概拒绝未知字段。
-稳定质量/矩阵/聚合及聚合步骤身份用于远端发布成绩绑定；完整 main/PR 触发、固定工具选择、
-无条件冻结安装 → check、失败传播、pnpm
-store 缓存、可选定的 1..360 整数分钟 timeout、
-取消同 PR 过期执行且 main
-run_id 隔离的并发必须满足谓词。只对无法证明的适用动态语义
-报告路径、观察值和缺少的证明；前置不符不追加派生矩阵/发布绑定问题。
-同时声明 native-test 与 smoke 的成员要求独立自动 main/PR 及手动 Ubuntu/Windows 验证。
-
-当前标准采用 `actions/checkout@v7`、`actions/setup-node@v7` 和
-`pnpm/action-setup@v6`，三者自身使用 Node 24 Action
-runtime；项目开发 Node 和消费者兼容矩阵仍独立选择。版本属于随 CAR 交付的标准资产，不由 GitHub
-workflow 语法强制。升级标准后需要重建 CAR，并迁移项目 workflow 与固定发布核心；旧 CAR 不会自动更新。
-
-非法输入、意外 I/O 故障和取消属于执行故障，不会转换为正常的通过或不通过结果。
-
-## 联网与支持边界
-
-Check 查询官方 npm 发行元数据、Node.js 历史发行索引及官方生命周期文件，以确认版本与兼容性；不会读取或修改目标项目的 registry 设置。元数据查询使用固定来源和有界预算，无镜像、旧快照或其他来源回退。
-
-无需 scripts.config.json 或重复声明全部拓扑。固定实现从 pnpm
-workspace 成员、manifest 内部依赖与脚本职责及既有工具配置推导动作，按依赖顺序构建后聚合类型、lint、覆盖率和适用包校验，串行传播失败；共享根配置无需每个成员重复入口。配置来源不等于执行根：共享 Vitest 配置仍分别在各代码成员执行，并显式传入 --root
-. 和 --config。类型配置按配置文件位置解析 include，ESLint 显式 --config 的匹配范围按成员 cwd 解析。无法确定配置职责时阻断，不猜通过。标准字节及必要 lib 不可自由修改，详见[检查参考](references/check.md)。发布支持根/唯一代码包及显式选中一个 workspace 成员，共用一套严格保护核心；根 silvermoon.yaml 是唯一交付来源，旧 release.config.json 与 release-packages 映射必须迁移并移除，CI 矩阵直接读取真实 workflow。
-
-Check 不执行目标代码：固定文件完整性与配置证明受支持的静态机制，不代表本次类型检查、覆盖率成绩、构建产物或线上发布已通过。自定义 build/扩展内部不解释，也不因未知实现报错。brief 包含目标路径、配置项及观察值；通用修复文档仍从 output 读取。开发 Node 必须精确匹配官方索引中最高 SemVer 的稳定、已标 LTS 且当前 schedule 仍支持的发行版；接受 registry、Node 索引和 schedule 官方端点的缓存延迟，不另设缓存年龄上限，按本次响应中的版本事实判定。Date/Age 与缓存状态保留为证据；请求失败或数据不完整、冲突仍无法确认，不回退旧成功。
-
-完整规则、支持语法、网络端点与预算见[检查参考](references/check.md)；npm 发布配置的支持范围见[单包与 workspace npm publisher v1](references/npm-publisher-v1.md)。
+`check.build.yaml` 通过 Check Task Builder 构建新生产入口；
+`check.fixture.build.yaml` 通过上游 Task Builder 构建旧实现的确定性回归，
+源码和参考资源均指向归档目录。每次修改后重建 CAR，不能用旧 CID 代表新实现。

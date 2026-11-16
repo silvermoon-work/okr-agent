@@ -3,9 +3,9 @@ import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { expect, it, vi } from "vitest";
 import { executeCheck } from "@silvermoon-work/check-task-sdk";
-import { Files, Unconfirmed } from "../src/files.js";
-import { FindingGroup, ruleScope } from "../src/checks/rules.js";
-import { projectRegistry } from "../src/inspect.js";
+import { Files, Unconfirmed } from "../src-legacy/files.js";
+import { FindingGroup, ruleScope } from "../src-legacy/checks/rules.js";
+import { projectRegistry } from "../src-legacy/inspect.js";
 import { catalog, fixture, put, strict, testEvidence } from "./fixture.js";
 
 it("keeps attribution local to its configuration owner and preserves unexpected failures", async () => {

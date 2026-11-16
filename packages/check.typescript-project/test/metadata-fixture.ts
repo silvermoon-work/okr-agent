@@ -1,4 +1,8 @@
-import type { Metadata, PackageFacts, Release } from "../src/metadata.js";
+import type {
+  Metadata,
+  PackageFacts,
+  Release,
+} from "../src-legacy/metadata.js";
 
 export function packageFacts(releases: Record<string, Release>): PackageFacts {
   return { versions: Object.keys(releases), releases };

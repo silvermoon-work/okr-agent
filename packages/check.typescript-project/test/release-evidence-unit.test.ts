@@ -1,13 +1,13 @@
 import { resolve } from "node:path";
 import { expect, it, vi } from "vitest";
-import type { Project } from "../src/commands.js";
-import { Files, Unconfirmed } from "../src/files.js";
+import type { Project } from "../src-legacy/commands.js";
+import { Files, Unconfirmed } from "../src-legacy/files.js";
 import {
   ciReuseEvidence,
   mappingEvidence,
   privatePublishEvidence,
   releaseMappings,
-} from "../src/release-evidence.js";
+} from "../src-legacy/release-evidence.js";
 
 function memory(data: Record<string, string> = {}) {
   const files = new Files(resolve("."), new AbortController().signal);

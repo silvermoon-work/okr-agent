@@ -2,15 +2,15 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { beforeEach, afterEach, expect, it } from "vitest";
-import { inspect } from "../src/inspect.js";
-import type { ProblemCode } from "../src/contract.js";
+import { inspect } from "../src-legacy/inspect.js";
+import type { ProblemCode } from "../src-legacy/contract.js";
 import { npmFixture, put, testEvidence, fixture, manifest } from "./fixture.js";
-import { Files, dataYaml, record } from "../src/files.js";
+import { Files, dataYaml, record } from "../src-legacy/files.js";
 import {
   compatibilityMatrix,
   publisherProfile,
-} from "../src/publisher-profile.js";
-import type { Project } from "../src/commands.js";
+} from "../src-legacy/publisher-profile.js";
+import type { Project } from "../src-legacy/commands.js";
 
 let root: string;
 beforeEach(async () => {

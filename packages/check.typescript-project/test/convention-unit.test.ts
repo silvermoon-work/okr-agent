@@ -1,9 +1,9 @@
 import { resolve } from "node:path";
 import { expect, it, vi } from "vitest";
-import type { Project } from "../src/commands.js";
-import { convention, stableSeries } from "../src/convention.js";
-import type { ProblemCode } from "../src/contract.js";
-import { Files } from "../src/files.js";
+import type { Project } from "../src-legacy/commands.js";
+import { convention, stableSeries } from "../src-legacy/convention.js";
+import type { ProblemCode } from "../src-legacy/contract.js";
+import { Files } from "../src-legacy/files.js";
 import { testEvidence } from "./fixture.js";
 
 it("selects stable compatibility series without treating prereleases as stable", () => {

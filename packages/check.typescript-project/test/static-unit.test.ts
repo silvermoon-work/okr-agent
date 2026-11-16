@@ -1,15 +1,15 @@
 import { resolve } from "node:path";
 import { expect, it, vi } from "vitest";
-import { Files, Unconfirmed, glob, stringArray } from "../src/files.js";
-import { Scripts, words } from "../src/commands.js";
+import { Files, Unconfirmed, glob, stringArray } from "../src-legacy/files.js";
+import { Scripts, words } from "../src-legacy/commands.js";
 import {
   compilerConsistency,
   javascript,
   jsonc,
   tsconfig,
   tsIncludes,
-} from "../src/static.js";
-import { repository } from "../src/repository.js";
+} from "../src-legacy/static.js";
+import { repository } from "../src-legacy/repository.js";
 
 it.each([
   "export default /x/;",

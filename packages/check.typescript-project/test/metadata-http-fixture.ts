@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { rcompare } from "semver";
-import type { NodeFacts, Release } from "../src/metadata.js";
+import type { NodeFacts, Release } from "../src-legacy/metadata.js";
 import { metadataFixture, toolVersions } from "./metadata-fixture.js";
 
 export const publicationTime = "2026-01-01T00:00:00.000Z";

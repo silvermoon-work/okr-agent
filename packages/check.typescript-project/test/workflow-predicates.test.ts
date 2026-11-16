@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
 import { parse } from "yaml";
 import { workflowPredicates } from "../assets/workflow-predicates.mjs";
-import { dataYaml, record } from "../src/files.js";
+import { dataYaml, record } from "../src-legacy/files.js";
 import { workflow } from "./fixture.js";
 
 interface Publisher {

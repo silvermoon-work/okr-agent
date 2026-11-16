@@ -160,7 +160,7 @@ cache，
 并发按 workflow/event/PR 分组并取消同 PR 过期运行，main 以 run_id 隔离，
 避免 cancel:false 仍替换同组 pending 主干验证。
 详情见
-[Check 与发布器共享谓词](packages/check.typescript-project/references/npm-publisher-v1.md#ci-与事实边界)。
+[Check 与发布器共享谓词](packages/check.typescript-project/src-legacy/references/npm-publisher-v1.md#ci-与事实边界)。
 
 `toolchain-native.yaml` 现在独立自动覆盖 main push、所有 PR 并支持手动执行，
 在 Ubuntu/Windows 冻结安装后 build → native-test → smoke；无路径过滤以覆盖源码、
@@ -197,7 +197,7 @@ entries are publisher/publint candidates. The current npm entries are
 registered. `task-bundle` classifies the existing private Check authors' local
 Bundle/CAR deliverables without defining IPFS/Pinboard distribution. Open types,
 paths and migration rules are documented in
-[explicit deliverables](packages/check.typescript-project/references/deliverables.md).
+[explicit deliverables](packages/check.typescript-project/src-legacy/references/deliverables.md).
 Cloudflare intent does not certify platform configuration or deployment.
 
 ### Configure a derived repository

@@ -7,9 +7,9 @@ import {
   vi,
   type MockInstance,
 } from "vitest";
-import { Files, Unconfirmed } from "../src/files.js";
-import { inspect } from "../src/inspect.js";
-import type { ProblemCode } from "../src/contract.js";
+import { Files, Unconfirmed } from "../src-legacy/files.js";
+import { inspect } from "../src-legacy/inspect.js";
+import type { ProblemCode } from "../src-legacy/contract.js";
 import {
   catalog,
   lintConfig,
@@ -19,10 +19,10 @@ import {
   vitestConfig,
   workflow as standardWorkflow,
 } from "./fixture.js";
-import { dataYaml } from "../src/files.js";
+import { dataYaml } from "../src-legacy/files.js";
 
 const maintenance = vi.hoisted(() => ({ check: vi.fn() }));
-vi.mock("../src/checks/maintenance.js", async () => {
+vi.mock("../src-legacy/checks/maintenance.js", async () => {
   const { defineChecker } = await import("@silvermoon-work/check-task-sdk");
   const { Type } = await import("@sinclair/typebox");
   return {
@@ -37,7 +37,7 @@ vi.mock("../src/checks/maintenance.js", async () => {
     }),
   };
 });
-vi.mock(import("../src/script-profile.js"), async (importOriginal) => ({
+vi.mock(import("../src-legacy/script-profile.js"), async (importOriginal) => ({
   ...(await importOriginal()),
   scriptProfile: vi.fn(),
 }));

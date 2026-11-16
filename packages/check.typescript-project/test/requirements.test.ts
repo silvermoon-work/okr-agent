@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
-import { Input } from "../src/contract.js";
-import { stableSeries } from "../src/convention.js";
+import { Input } from "../src-legacy/contract.js";
+import { stableSeries } from "../src-legacy/convention.js";
 
 it.each([
   {},

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { resolvedPeer } from "../src/lockfile.js";
+import { resolvedPeer } from "../src-legacy/lockfile.js";
 
 function lock(reference = "1.0.0", dependencies: Record<string, unknown> = {}) {
   return {

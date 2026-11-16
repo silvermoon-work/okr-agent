@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { Files, dataYaml, record } from "../src/files.js";
-import { cloudflare } from "../src/cloudflare.js";
-import { inspect } from "../src/inspect.js";
+import { Files, dataYaml, record } from "../src-legacy/files.js";
+import { cloudflare } from "../src-legacy/cloudflare.js";
+import { inspect } from "../src-legacy/inspect.js";
 import { fixture, put, testEvidence, vitestConfig } from "./fixture.js";
-import { type Project } from "../src/commands.js";
+import { type Project } from "../src-legacy/commands.js";
 import { stringify } from "yaml";
 
 let root: string;

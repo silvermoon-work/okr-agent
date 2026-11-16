@@ -1,9 +1,9 @@
 import { resolve } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { Files, Unconfirmed, dataYaml, record } from "../src/files.js";
-import { nativeWorkflow } from "../src/native-workflow.js";
+import { Files, Unconfirmed, dataYaml, record } from "../src-legacy/files.js";
+import { nativeWorkflow } from "../src-legacy/native-workflow.js";
 import { workflow } from "./fixture.js";
-import type { Project } from "../src/commands.js";
+import type { Project } from "../src-legacy/commands.js";
 
 afterEach(() => vi.restoreAllMocks());
 const project: Project = {

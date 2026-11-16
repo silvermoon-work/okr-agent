@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { expect, it } from "vitest";
-import { Files } from "../src/files.js";
+import { Files } from "../src-legacy/files.js";
 import {
   ciReuseEvidence,
   mappingEvidence,
   releaseMappings,
-} from "../src/release-evidence.js";
+} from "../src-legacy/release-evidence.js";
 import { fixture, manifest, put } from "./fixture.js";
 
 it("reads data-only explicit release mappings and rejects dynamic executable lookalikes", () => {

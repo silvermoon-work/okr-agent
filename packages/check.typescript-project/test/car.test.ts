@@ -5,7 +5,7 @@ import { resolve, join } from "node:path";
 import { promisify } from "node:util";
 import process from "node:process";
 import { expect, it } from "vitest";
-import { runCheckBuilderCli } from "@silvermoon-work/check-task-builder/cli";
+import { runTaskBuilderCli } from "@silvermoon-work/task-builder-cli";
 import {
   fixture,
   npmFixture,
@@ -71,7 +71,7 @@ it("builds a real CAR and independently verifies Engine pass/fail plus linked Ch
       `${await readFile(join(bad, "AGENTS.md"), "utf8")}\nCustom guidance must be protected.\n`,
     );
     let output = "";
-    const code = await runCheckBuilderCli(
+    const code = await runTaskBuilderCli(
       ["build", "check.fixture.build.yaml", "--out-dir", join(owned, "bundle")],
       {
         cwd: resolve("."),

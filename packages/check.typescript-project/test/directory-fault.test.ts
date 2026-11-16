@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { lstatSync } from "node:fs";
 import type * as Fs from "node:fs";
 import { expect, it, vi } from "vitest";
-import { Files } from "../src/files.js";
+import { Files } from "../src-legacy/files.js";
 import {
   DeliverablesError,
   validateDeliveryPaths,

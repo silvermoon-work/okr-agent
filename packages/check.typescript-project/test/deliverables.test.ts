@@ -8,11 +8,11 @@ import {
   npmMappings,
   parseDeliverables,
 } from "../assets/deliverables.mjs";
-import { projectDeliverables } from "../src/deliverables.js";
-import { Files, Unconfirmed } from "../src/files.js";
-import { inspect } from "../src/inspect.js";
+import { projectDeliverables } from "../src-legacy/deliverables.js";
+import { Files, Unconfirmed } from "../src-legacy/files.js";
+import { inspect } from "../src-legacy/inspect.js";
 import { fixture, npmFixture, put, testEvidence } from "./fixture.js";
-import type { Project } from "../src/commands.js";
+import type { Project } from "../src-legacy/commands.js";
 
 let root: string;
 beforeEach(async () => {

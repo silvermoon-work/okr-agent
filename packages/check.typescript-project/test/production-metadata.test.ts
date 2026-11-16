@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { expect, it, vi } from "vitest";
-import { inspect } from "../src/inspect.js";
-import { publicMetadata } from "../src/metadata.js";
-import type { NodeFacts } from "../src/metadata.js";
+import { inspect } from "../src-legacy/inspect.js";
+import { publicMetadata } from "../src-legacy/metadata.js";
+import type { NodeFacts } from "../src-legacy/metadata.js";
 import { fixture, npmFixture, put, testEvidence } from "./fixture.js";
 import { canonicalTransport, requestUrl } from "./metadata-http-fixture.js";
 

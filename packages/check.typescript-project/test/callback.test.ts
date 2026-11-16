@@ -3,11 +3,11 @@ import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { expect, it } from "vitest";
 import { createCheckCallback } from "@silvermoon-work/check-task-sdk";
-import contract from "../src/contract.js";
-import { projectCheck } from "../src/callback.js";
+import contract from "../src-legacy/contract.js";
+import { projectCheck } from "../src-legacy/callback.js";
 import { fixture, testEvidence } from "./fixture.js";
 import { metadataFixture } from "./metadata-fixture.js";
-import { scriptResources } from "../src/script-profile.js";
+import { scriptResources } from "../src-legacy/script-profile.js";
 
 it("loads the actual supplied Bundle asset and preserves output link faults rather than returning success", async () => {
   const directory = resolve("dist", `.callback-${randomUUID()}`);

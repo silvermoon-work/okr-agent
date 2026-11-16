@@ -1,6 +1,9 @@
 import { expect, it } from "vitest";
-import { environmentBindings, workerModule } from "../src/worker-module.js";
-import { Unconfirmed } from "../src/files.js";
+import {
+  environmentBindings,
+  workerModule,
+} from "../src-legacy/worker-module.js";
+import { Unconfirmed } from "../src-legacy/files.js";
 
 it.each([
   "export default {fetch(){ throw new Error('DO NOT EXECUTE'); }};",

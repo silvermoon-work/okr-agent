@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { verified, publicMetadata } from "../src/metadata.js";
+import { verified, publicMetadata } from "../src-legacy/metadata.js";
 import {
   canonicalPackument,
   canonicalTransport,

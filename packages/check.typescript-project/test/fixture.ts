@@ -1,8 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { InspectionEvidence } from "../src/convention.js";
+import type { InspectionEvidence } from "../src-legacy/convention.js";
 import { metadataFixture } from "./metadata-fixture.js";
-import { scriptResources } from "../src/script-profile.js";
+import { scriptResources } from "../src-legacy/script-profile.js";
 
 export async function testEvidence(): Promise<InspectionEvidence> {
   const agents = await readFile(

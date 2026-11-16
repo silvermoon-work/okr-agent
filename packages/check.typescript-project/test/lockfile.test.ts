@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
-import { dataYaml, record } from "../src/files.js";
-import { resolvedPeer } from "../src/lockfile.js";
+import { dataYaml, record } from "../src-legacy/files.js";
+import { resolvedPeer } from "../src-legacy/lockfile.js";
 
 async function actualLock() {
   return dataYaml(

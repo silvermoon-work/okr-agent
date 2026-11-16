@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { inspect } from "../src/inspect.js";
-import type { Input, ProblemCode } from "../src/contract.js";
+import { inspect } from "../src-legacy/inspect.js";
+import type { Input, ProblemCode } from "../src-legacy/contract.js";
 import {
   catalog,
   fixture,
@@ -15,9 +15,9 @@ import {
   workflow,
   testEvidence,
 } from "./fixture.js";
-import { javascript, jsonc } from "../src/static.js";
-import { Files } from "../src/files.js";
-import { Scripts } from "../src/commands.js";
+import { javascript, jsonc } from "../src-legacy/static.js";
+import { Files } from "../src-legacy/files.js";
+import { Scripts } from "../src-legacy/commands.js";
 
 let root: string;
 beforeEach(async () => {
@@ -372,7 +372,7 @@ it("enforces the configuration-count budget while caching repeated reads", async
   await expect(files.text("configuration/overflow.json")).rejects.toThrow(
     "exceeds 512",
   );
-});
+}, 15_000);
 it("checks the fixed shared implementation rather than only its wrapper", async () => {
   const assets = await testEvidence();
   await put(

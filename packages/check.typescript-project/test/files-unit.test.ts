@@ -1,7 +1,7 @@
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { dataYaml, Files, Unconfirmed } from "../src/files.js";
+import { dataYaml, Files, Unconfirmed } from "../src-legacy/files.js";
 
 vi.mock("node:fs/promises", () => ({
   lstat: vi.fn(),
