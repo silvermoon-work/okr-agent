@@ -16,13 +16,14 @@
 - schema 校验成功不等于语义前置条件已经被证明。代码、测试与评审负责验证调用方是否兑现假设。
 - fail 返回问题，不展开任何 children；pass 返回 children，空 children 为叶节点。
 - 本节点 pass 只表示本节点的判断成立，不表示其后代检查全部通过。
+- Spec 的 checker 引用关系必须是有向无环图（DAG）：允许多个父节点共享同一 checker，但禁止自引用和间接回路，包括未从入口引用的定义。该约束不改变运行时检查图的能力，也不描述同一 checker 按不同 parameter 递归展开的设计。
 
 ## 节点与展开关系
 
 节点卡片包括：
 
 1. checker 名称、标题与职责。
-2. parameter schema 与 precondition 假设。
+2. Parameters，包括参数列表、parameter schema 与 precondition 假设；schema 是 parameter 的一部分。
 3. 检查规则与 Problems，包括触发条件，而不仅是问题码列表。
 4. Children，包括展开条件、目标 checker、parameter 构造与可选的按对象展开描述。
 
@@ -40,9 +41,9 @@
 | Rule / Problem | description、code、when | 检查规则、问题码与触发条件 |
 | Child | checker、when、parameter、forEach | 引用、展开条件、参数构造与可选的批量展开 |
 
-checkers 以 registry 名称为键。root 和所有 child 引用必须可解析；同一 checker 可被多处引用。参数 schema 不因可视化而改变现有对象输入约束。
+checkers 以 registry 名称为键。root 和所有 child 引用必须可解析；同一 checker 可被多处引用，但 children 不能形成回路。无环约束由 Spec 校验器检查并显式报告错误，不能仅依赖 JSON Schema 或界面防止无限展开。参数 schema 不因可视化而改变现有对象输入约束。
 
-第一版的条件、参数构造与 forEach 可使用文档文本，不引入可执行表达式或通用 DSL。此时校验只能证明描述结构合法，不能静态证明参数构造符合目标 schema，更不能证明 precondition。
+第一版的条件、参数构造与 forEach 使用文档文本，不引入可执行表达式或通用 DSL。各 section 的说明支持 Markdown；引用 parameter 字段使用行内代码，例如 `projectDirectory` 或 `member.directory`。schema 保留结构化数据身份，以 JSON 代码块展示，不改成 Markdown 字符串。Markdown 渲染不得执行原始 HTML、脚本或危险链接。校验不能静态证明参数构造符合目标 schema，更不能证明 precondition。
 
 ## TypeScript 项目示例
 
@@ -67,12 +68,18 @@ project
 
 组件接收已校验的 Spec，例如 `<CheckBundleViewer spec={spec} />`，宿主 React 容器负责挂载。第一版优先采用可折叠脉络与节点详情双栏：
 
-- 脉络展示 checker、条件分流和按对象展开标记，不把兄弟节点画成固定串行步骤。
-- 详情展示职责、parameter schema、precondition、检查规则与问题、children 条件及参数构造。
-- 共享 checker 支持引用跳转；循环引用有明确标记和展开终止，不无限递归。
+- 桌面使用单行紧凑树与独立滚动的详情面板，树上只保留节点标题、必要的分流短标签、按对象展开与共享标记，不常驻完整条件或重复的 checker ID。
+- 详情依次展示职责、Parameters、检查规则与问题、Children、Parents；不在顶部展示展开来源区或来源下拉框。
+- Parameters 内包含参数列表、可折叠 Schema 和前置假设；各节使用一致的 Markdown 排版，字段引用使用行内代码。
+- Problems 使用问题码、说明、触发条件三列表格，问题码使用行内代码；说明与条件支持 Markdown。窄屏仅表格区域可横向滚动，不撑宽整个页面。
+- children 为空时不渲染 Children 一节，也不显示空状态占位。
+- Parents 是低于 Children 优先级的反向引用，放在其后，用父节点、展开条件、参数构造三列表格展示；父节点可点击跳转，没有父节点时不显示。关系由 children 自动反向生成，不要求作者在 Spec 中重复维护 parents。
+- 共享 checker 支持引用跳转；循环 Spec 作为无效输入报错，不作为正常定义展示。
 - 定义视图不使用运行成功 / 失败状态来暗示已经执行。
 - 校验错误显式展示；文档文本按数据呈现，不执行脚本或表达式。
-- 支持键盘操作、可见焦点与窄屏阅读。
+- 支持键盘操作与可见焦点。mobile 使用可开合的 navigation pane，默认只显示详情；打开侧栏后选择节点会关闭侧栏并回到详情，不将整棵树堆在详情上方。
+
+以上排版已在独立手工 HTML mock 中讨论；该 mock 的 Markdown 为手工排版预览，不是 React 组件已接入完整 Markdown renderer 或全部交互验收通过的证据。
 
 ## 实施时待确认
 
