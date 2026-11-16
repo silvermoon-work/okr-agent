@@ -76,6 +76,7 @@ function Definition({ spec }: { spec: CheckBundleSpec }) {
         });
     };
     media.addEventListener("change", change);
+    if (media.matches !== mobile) change();
     return () => {
       media.removeEventListener("change", change);
       activeDialog?.close();

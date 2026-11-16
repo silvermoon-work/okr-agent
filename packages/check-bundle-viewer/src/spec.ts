@@ -23,6 +23,7 @@ export interface CheckerDefinition {
 }
 
 export interface CheckBundleSpec {
+  $schema?: "urn:ipfsaw:check-bundle:1";
   specVersion: "1.0";
   name: string;
   root: string;
@@ -38,45 +39,49 @@ const object = (
 /** JSON Schema 2020-12 for document shape; reference and DAG checks run separately. */
 export const checkBundleSpecSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
-  ...object({
-    specVersion: { const: "1.0" },
-    name: text,
-    root: text,
-    checkers: {
-      type: "object",
-      minProperties: 1,
-      propertyNames: text,
-      additionalProperties: object({
-        title: text,
-        description: text,
-        parameter: object({
-          schema: {
-            type: "object",
-            required: ["type"],
-            properties: { type: { const: "object" } },
-          },
-          preconditions: { type: "array", items: text, uniqueItems: true },
-        }),
-        rules: {
-          type: "array",
-          items: object({
-            description: text,
-            problems: {
-              type: "array",
-              items: object({ code: text, description: text, when: text }),
+  ...object(
+    {
+      $schema: { const: "urn:ipfsaw:check-bundle:1" },
+      specVersion: { const: "1.0" },
+      name: text,
+      root: text,
+      checkers: {
+        type: "object",
+        minProperties: 1,
+        propertyNames: text,
+        additionalProperties: object({
+          title: text,
+          description: text,
+          parameter: object({
+            schema: {
+              type: "object",
+              required: ["type"],
+              properties: { type: { const: "object" } },
             },
+            preconditions: { type: "array", items: text, uniqueItems: true },
           }),
-        },
-        children: {
-          type: "array",
-          items: object(
-            { checker: text, when: text, parameter: text, forEach: text },
-            ["checker", "when", "parameter"],
-          ),
-        },
-      }),
+          rules: {
+            type: "array",
+            items: object({
+              description: text,
+              problems: {
+                type: "array",
+                items: object({ code: text, description: text, when: text }),
+              },
+            }),
+          },
+          children: {
+            type: "array",
+            items: object(
+              { checker: text, when: text, parameter: text, forEach: text },
+              ["checker", "when", "parameter"],
+            ),
+          },
+        }),
+      },
     },
-  }),
+    ["specVersion", "name", "root", "checkers"],
+  ),
 } as const;
 
 const ajvOptions = {

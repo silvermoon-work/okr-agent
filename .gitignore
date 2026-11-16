@@ -10,3 +10,5 @@ node_modules/
 .DS_Store
 .idea/
 .vscode/
+.ipfsaw-demo/
+.test-work/
