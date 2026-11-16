@@ -2,6 +2,8 @@
 
 本阶段按用户要求在本地启动 Web UI，以 mock Spec 验证视觉效果与交互。用户授权主 Agent 负责 implementation / deployment 门限审批；实现 subagent 不自行审批。
 
+本地使用入口、准确交付版本与浏览器观察见 [BrowserAcceptance](./BrowserAcceptance.md)。不包含 npm 发布、远程部署或 checker 执行。
+
 ## Steps
 
 ### D-S01: 启动本地 mock Web UI
