@@ -32,8 +32,8 @@ build，可涵盖依赖，只对选中目录 pack/校验/publish 一次。其他
 - [release.mjs](../assets/release.mjs) → `scripts/release.mjs`
 - [release-dry-run.mjs](../assets/release-dry-run.mjs) →
   `scripts/release-dry-run.mjs`
-- [npm-publish.yaml](../assets/npm-publish.yaml) →
-  `.github/workflows/npm-publish.yaml`
+- [publish-npm.yaml](../assets/publish-npm.yaml) →
+  `.github/workflows/publish-npm.yaml`
 - [npm-ci.yaml](../assets/npm-ci.yaml) → `.github/workflows/ci.yaml`
 
 门卫完整源字节必须与实际 Bundle

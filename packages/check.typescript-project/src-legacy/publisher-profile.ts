@@ -85,7 +85,7 @@ export async function publisherProfile(
       return undefined;
     }
     let okay = true;
-    for (const path of [".github/workflows/npm-publish.yaml"]) {
+    for (const path of [".github/workflows/publish-npm.yaml"]) {
       if (!files.exists(path)) {
         report("release", "missing", `${path}: 标准 publisher workflow 缺失`);
         okay = false;

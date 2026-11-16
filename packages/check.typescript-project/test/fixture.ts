@@ -14,7 +14,7 @@ export async function testEvidence(): Promise<InspectionEvidence> {
       new URL("../assets/npm-publish.mjs", import.meta.url),
     ),
     publishWorkflow: await readFile(
-      new URL("../assets/npm-publish.yaml", import.meta.url),
+      new URL("../assets/publish-npm.yaml", import.meta.url),
     ),
     ciWorkflow: await readFile(
       new URL("../assets/npm-ci.yaml", import.meta.url),
@@ -283,7 +283,7 @@ export async function npmFixture(root: string): Promise<void> {
   );
   await put(
     root,
-    ".github/workflows/npm-publish.yaml",
+    ".github/workflows/publish-npm.yaml",
     Buffer.from(assets.publishWorkflow).toString("utf8"),
   );
   await put(

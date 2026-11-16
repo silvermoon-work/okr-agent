@@ -1507,7 +1507,7 @@ async function release(
           `${path} jobs[${JSON.stringify(name)}] 发布步骤观察值=${JSON.stringify(unsafe.map((step) => ({ name: step.name, run: step.run })))}；CI 只能通过 pnpm release/release-dry-run 调用固定发布入口，禁止裸 publish 或直接运行内部 Node 发布文件`,
         );
       if (
-        path !== ".github/workflows/npm-publish.yaml" &&
+        path !== ".github/workflows/publish-npm.yaml" &&
         runs.some((run) =>
           /\bpnpm\s+(?:run\s+)?release(?:-dry-run)?(?:\s|$)/.test(run),
         )
@@ -1515,7 +1515,7 @@ async function release(
         issue(
           "release",
           "mismatch",
-          `${path}:${name}: 发布入口只能由固定 npm-publish.yaml 的受保护触发路径调用`,
+          `${path}:${name}: 发布入口只能由固定 publish-npm.yaml 的受保护触发路径调用`,
         );
       if (JSON.stringify(job).match(/NODE_AUTH_TOKEN|NPM_TOKEN/))
         issue("release", "mismatch", `${path}:${name}: 不允许长效 npm token`);

@@ -296,7 +296,7 @@ it("publisher workflow permits benign extensions but protects publication condit
   const w = record(
     parse(
       await readFile(
-        new URL("../assets/npm-publish.yaml", import.meta.url),
+        new URL("../assets/publish-npm.yaml", import.meta.url),
         "utf8",
       ),
     ) as unknown,

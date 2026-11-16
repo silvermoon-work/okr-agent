@@ -241,7 +241,7 @@ Cloudflare intent does not certify platform configuration or deployment.
    `"publishConfig": { "access": "public", "registry": "https://registry.npmjs.org/" }`.
    Include the library's README and license in its directory. Keep apps private.
 3. Configure an `npm` GitHub environment and an npm Trusted Publisher for each
-   package, using the exact owner, repository, `npm-publish.yaml` workflow, and
+   package, using the exact owner, repository, `publish-npm.yaml` workflow, and
    `npm` environment. Do not configure an `NPM_TOKEN`.
 4. Keep each library's `build` script aligned with Turborepo. Publishing builds
    the selected library and its workspace dependencies, then packs only that
@@ -291,7 +291,7 @@ same artifact through npm OIDC.
 After the configured commit's main push CI succeeds:
 
 ```sh
-gh workflow run npm-publish.yaml --ref main -f package=library
+gh workflow run publish-npm.yaml --ref main -f package=library
 ```
 
 Manual runs only perform an npm dry run, never an actual publish or dist-tag

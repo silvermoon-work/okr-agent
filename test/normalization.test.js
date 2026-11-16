@@ -51,7 +51,7 @@ test("the real root gate keeps release regressions and script lint in its execut
 });
 test("the publisher uses exactly one v6 pnpm-store cache without skipping frozen install", () => {
   const workflow = parse(
-    readFileSync(".github/workflows/npm-publish.yaml", "utf8"),
+    readFileSync(".github/workflows/publish-npm.yaml", "utf8"),
   );
   const steps = workflow.jobs.publish.steps;
   const pnpm = steps.findIndex((step) => step.uses === "pnpm/action-setup@v6");

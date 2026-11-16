@@ -481,7 +481,7 @@ it("keeps the fixed release path free of pnpm check while preserving tag derefer
     "utf8",
   );
   const workflow = await readFile(
-    new URL("../assets/npm-publish.yaml", import.meta.url),
+    new URL("../assets/publish-npm.yaml", import.meta.url),
     "utf8",
   );
   expect(workflow).not.toContain("pnpm check");

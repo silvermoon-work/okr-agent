@@ -95,7 +95,7 @@ try {
   const standardAssets = [
     "AGENTS.md",
     "npm-publish.mjs",
-    "npm-publish.yaml",
+    "publish-npm.yaml",
     "npm-ci.yaml",
     "typecheck.mjs",
     "lint.mjs",

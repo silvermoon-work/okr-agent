@@ -38,7 +38,7 @@ it("proves a complete single-package tsc ESM/maps/source + exact standard OIDC p
 });
 it.each([
   [".github/workflows/ci.yaml", "ci-mismatch"],
-  [".github/workflows/npm-publish.yaml", "release-mismatch"],
+  [".github/workflows/publish-npm.yaml", "release-mismatch"],
 ] as const)("rejects retired Action versions in %s", async (path, code) => {
   const workflow = await readFile(join(root, path), "utf8");
   await put(
@@ -293,7 +293,7 @@ it.each([
   ],
   [
     "client OIDC support",
-    ".github/workflows/npm-publish.yaml",
+    ".github/workflows/publish-npm.yaml",
     (text: string) => text.replace("npm@11.21.0", "npm@10.0.0"),
     "release-mismatch",
   ],
@@ -333,7 +333,7 @@ it("reports the observed nonstandard job structure before any derived matrix or 
   };
   delete jobs.compatibility;
   await put(root, ".github/workflows/ci.yaml", workflow);
-  await rm(join(root, ".github", "workflows", "npm-publish.yaml"));
+  await rm(join(root, ".github", "workflows", "publish-npm.yaml"));
   const problems = await check();
   expect(
     problems.some((problem) => problem.brief.includes("jobs.check.strategy")),
@@ -518,7 +518,7 @@ it("does not promote private internal packages based on manifest features or old
     license: undefined,
   });
   await put(root, "silvermoon.yaml", { deliverables: [] });
-  await rm(join(root, ".github", "workflows", "npm-publish.yaml"));
+  await rm(join(root, ".github", "workflows", "publish-npm.yaml"));
   await rm(join(root, "scripts", "lib", "npm-publish.mjs"));
   expect(await check()).toEqual([]);
   await put(root, "tsconfig.build.json", {

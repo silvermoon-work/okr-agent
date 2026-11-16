@@ -101,7 +101,7 @@
   `scripts/lib/legacy-release.mjs` is historical metadata/artifact validation,
   not a publishing entry or the trusted publisher. No workflow invokes it.
 - The only publishing entries are `pnpm release` and `pnpm release-dry-run`,
-  used by `.github/workflows/npm-publish.yaml`. Their shared fixed core reads
+  used by `.github/workflows/publish-npm.yaml`. Their shared fixed core reads
   the root deliverables list; it never batch-publishes.
 - Workflow standards use `actions/checkout@v7`, `actions/setup-node@v7` and
   `pnpm/action-setup@v6`, whose own Action runtime is Node 24. Keep the Check

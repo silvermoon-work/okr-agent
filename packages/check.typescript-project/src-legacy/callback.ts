@@ -22,7 +22,7 @@ export function projectCheck(
     const [agents, publisher, publishWorkflow, ciWorkflow] = await Promise.all([
       resource("AGENTS.md"),
       resource("npm-publish.mjs"),
-      resource("npm-publish.yaml"),
+      resource("publish-npm.yaml"),
       resource("npm-ci.yaml"),
     ]);
     return projectRegistry(input, context.signal, {

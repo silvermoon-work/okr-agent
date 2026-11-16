@@ -46,7 +46,7 @@ it("loads the actual supplied Bundle asset and preserves output link faults rath
               new TextEncoder().encode("Check documentation"),
             "resources/assets/AGENTS.md": evidence.agents,
             "resources/assets/npm-publish.mjs": evidence.publisher,
-            "resources/assets/npm-publish.yaml": evidence.publishWorkflow,
+            "resources/assets/publish-npm.yaml": evidence.publishWorkflow,
             "resources/assets/npm-ci.yaml": evidence.ciWorkflow,
             ...Object.fromEntries(
               scriptResources.map(([name, asset]) => [
