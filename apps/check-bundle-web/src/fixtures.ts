@@ -1,4 +1,7 @@
-import { typescriptProjectSpec } from "@silvermoon-work/check-bundle-viewer";
+import {
+  typescriptProjectSpec,
+  typescriptProjectDesignSpec,
+} from "@silvermoon-work/check-bundle-viewer";
 import type {
   CheckBundleSpec,
   CheckerDefinition,
@@ -262,10 +265,15 @@ const invalidCycleSpec: CheckBundleSpec = {
 };
 
 export const fixtures: { id: string; label: string; spec: unknown }[] = [
+  {
+    id: "typescript-design",
+    label: "TypeScript Project · Monorepo 下一层设计（未实现）",
+    spec: typescriptProjectDesignSpec,
+  },
   { id: "discussion", label: "项目定义讨论 · mock", spec: discussionSpec },
   {
     id: "actual",
-    label: "真实 Check · 当前身份分流",
+    label: "真实 Check · 当前身份分流与 workspace 配置",
     spec: typescriptProjectSpec,
   },
   {

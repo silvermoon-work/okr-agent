@@ -53,7 +53,8 @@ it("switches real and mock examples, with reference/schema failures surfaced to 
   );
   const select = host.querySelector("select")!;
   for (const [value, expected] of [
-    ["actual", "当前身份分流"],
+    ["typescript-design", "Monorepo 下一层设计（未实现）"],
+    ["actual", "当前身份分流与 workspace 配置"],
     ["invalid-cycle", "无法展示此定义"],
     ["invalid", "无法展示此定义"],
     ["discussion", "识别项目"],
@@ -63,6 +64,35 @@ it("switches real and mock examples, with reference/schema failures surfaced to 
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
     expect(host.textContent).toContain(expected);
+    if (value === "typescript-design") {
+      expect(host.querySelector('[aria-label="按对象展开"]')).not.toBeNull();
+      expect(host.textContent).toContain("成员发现 · 设计候选");
+      expect(host.textContent).toContain("单个 package · 职责边界");
+      expect(host.textContent).toContain("全局工程配置 · 职责节点");
+      expect(host.textContent).toContain("根 scripts · 九个衍生脚本");
+      expect(host.textContent).toContain("Turbo · 内容检查待细化");
+      expect(host.textContent).toContain("脚本所需工具 · 设计候选");
+      expect(host.textContent).toContain("test-coverage 脚本");
+      expect(host.textContent).toContain("@vitest/coverage-v8 工具声明");
+    }
+    if (value === "actual") {
+      const workspace = Array.from(host.querySelectorAll("nav button")).find(
+        (item) => item.textContent === "Workspace 配置",
+      );
+      expect(workspace).toBeDefined();
+      act(() => {
+        (workspace as HTMLButtonElement).click();
+      });
+      expect(host.querySelector(".cbv-details h3")?.textContent).toBe(
+        "Workspace 配置",
+      );
+      expect(host.querySelector(".cbv-details")?.textContent).toContain(
+        "workspace-configuration-invalid",
+      );
+      expect(host.querySelector(".cbv-details")?.textContent).toContain(
+        "packages",
+      );
+    }
     if (value === "invalid-cycle") {
       const error = host.querySelector('[role="alert"]');
       expect(error?.textContent).toContain("alpha → beta → alpha");
