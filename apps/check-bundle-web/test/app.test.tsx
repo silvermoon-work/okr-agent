@@ -68,6 +68,12 @@ it("switches real and mock examples, with reference/schema failures surfaced to 
       expect(host.querySelector('[aria-label="按对象展开"]')).not.toBeNull();
       expect(host.textContent).toContain("成员发现 · 设计候选");
       expect(host.textContent).toContain("单个 package · 职责边界");
+      expect(host.textContent).toContain("全局工程配置 · 职责节点");
+      expect(host.textContent).toContain("根 scripts · 九个衍生脚本");
+      expect(host.textContent).toContain("Turbo · 内容检查待细化");
+      expect(host.textContent).toContain("脚本所需工具 · 设计候选");
+      expect(host.textContent).toContain("test-coverage 脚本");
+      expect(host.textContent).toContain("@vitest/coverage-v8 工具声明");
     }
     if (value === "actual") {
       const workspace = Array.from(host.querySelectorAll("nav button")).find(

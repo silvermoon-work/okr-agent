@@ -113,10 +113,46 @@ monorepo 展开 `workspace`，验证必需的 pnpm workspace 文件、YAML 与�
 而非 schema 负责证明语义。此功能没有修改 Check 作者源文件。
 
 `typescriptProjectDesignSpec` 是在真实视图基础上扩展的独立讨论稿：
-`monorepo → workspace → packages → package`。workspace 验证配置后传递
-`{ projectDirectory, patterns }`，成员发现确认范围后逐个传递
-`{ projectDirectory, packageDirectory }`。这是建议的前置门禁关系，
-不是已实现图，也不表示已经决定最终的 workspace 全局领域分组。
+monorepo 直接展开并列的 `workspace`（全局工程配置职责节点）与
+`packages`（成员发现与关系职责节点），后者逐个展开 `package`。
+职责分组不是新协议，也不重复 pnpm workspace 基础校验。
+根节点读取并完成接收方 preconditions 所需的基础校验：single repo 接收
+`{ projectDirectory, packageJson }`，monorepo 接收
+`{ projectDirectory, packageJson, workspace }`。配置基础错误仍为 workspace
+问题，不改报身份问题；该设计中由根节点报告并阻断 children。
+接收方不重读或重复基础校验，但仍须执行自己拥有的领域规则。
+monorepo 直接从已接收事实中向成员发现投影
+`{ projectDirectory, patterns: workspace.packages }`，成员发现确认范围后逐个传递
+`{ projectDirectory, packageDirectory }`。成员发现不依赖并列的全局工程配置
+分支通过；单包检查不作为 monorepo 的第三个并列分支。
+这不是已实现图，也不表示已经决定全局工程配置内的领域细分。
+全局工程配置本轮增加入口发现职责：检查已传入的根 scripts 是否为对象、
+约定命令名是否存在，以及根 `turbo.json` 是否存在且为普通文件。其下
+`workspace-scripts` 和 `workspace-turbo` 接收已发现的入口，具体内容规则待讨论；
+scripts 值和命令内容、Turbo 解析和任务配置不在发现层提前验证。
+入口发现失败会阻断其全部子节点，但不阻断并列的成员发现分支。
+
+scripts 必需名已确认：`build`、`check`、`clean`、`format`、`format-check`、
+`lint`、`test`、`test-coverage`、`typecheck`，
+允许额外命令，不把发布或本仓库专用命令设为通用要求。
+根 `turbo.json` 的必需性与名称已确认，不接受其他名称替代。
+这组新问题码仅为设计稿候选，未加入生产 Check 契约。
+
+scripts 分支分别展开九个同名操作节点，接收原始 command 值，检查固定
+`node scripts/<same-name>.mjs` 接口、同名普通入口与该操作的职责。
+允许本地委托到 scripts/lib/，不以源码全文相等或出现工具名证明真正执行；
+只读分析的具体支持边界尚待实现时定义，不能把未知动态行为静默当作通过。
+check 聚合已有操作，不另引入工具；format 可写、format-check 只读，
+test 与 test-coverage 单次运行并传播失败，后者需实际开启覆盖率。
+类型、lint、测试、格式的配置细节仍由各自领域负责，不被 scripts 分支包办。
+
+独立 `workspace-tools` 分支参考当前项目组合，定义 Turbo、Prettier、ESLint、
+typescript-eslint、Vitest、coverage-v8 与 TypeScript 七个工具节点，
+检查根 devDependencies 声明及 catalog 版本解析，不要求各成员重复声明。
+工具组合和版本细则是设计候选，不因用户确认九个脚本名就自动视为已确认。
+不调用宿主工具、安装或查询本机 registry；实际 Node/pnpm/NRM 环境检查仍独立。
+稳定性与 Node/peer 兼容性需要后续可信元数据契约，不在本轮猜测。
+基础合规只表示满足接收方参数 schema 与语义前置条件，不表示整个项目合规。
 成员发现与单包节点明确标注未实现；空匹配、manifest 缺失、去重、
 名称冲突与根包归属仍待讨论，没有为它们预设问题码或通过结论。
 在宿主中选择「TypeScript Project · Monorepo 下一层设计（未实现）」查看。

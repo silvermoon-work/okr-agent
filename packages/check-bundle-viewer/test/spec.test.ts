@@ -19,9 +19,83 @@ describe("Spec validation", () => {
       true,
     );
     const design = typescriptProjectDesignSpec.checkers;
-    expect(design["workspace"]!.children.map((edge) => edge.checker)).toEqual([
+    expect(design["single-repo"]!.parameter.schema.required).toEqual([
+      "projectDirectory",
+      "packageJson",
+    ]);
+    expect(design["monorepo"]!.parameter.schema.required).toEqual([
+      "projectDirectory",
+      "packageJson",
+      "workspace",
+    ]);
+    expect(design["workspace"]!.parameter.schema).toEqual(
+      design["monorepo"]!.parameter.schema,
+    );
+    expect(
+      design["workspace"]!.rules.flatMap((rule) =>
+        rule.problems.map((problem) => problem.code),
+      ),
+    ).toEqual([
+      "workspace-scripts-missing",
+      "workspace-scripts-invalid",
+      "workspace-script-missing",
+      "workspace-turbo-missing",
+      "workspace-turbo-invalid",
+    ]);
+    expect(
+      design["project"]!.rules.flatMap((rule) =>
+        rule.problems.map((problem) => problem.code),
+      ),
+    ).toContain("workspace-configuration-invalid");
+    expect(design["monorepo"]!.children.map((edge) => edge.checker)).toEqual([
+      "workspace",
       "packages",
     ]);
+    expect(design["workspace"]!.children.map((edge) => edge.checker)).toEqual([
+      "workspace-scripts",
+      "workspace-turbo",
+      "workspace-tools",
+    ]);
+    expect(design["workspace-scripts"]!.parameter.schema.required).toEqual([
+      "projectDirectory",
+      "scripts",
+    ]);
+    expect(design["workspace-turbo"]!.parameter.schema.required).toEqual([
+      "projectDirectory",
+      "configurationPath",
+    ]);
+    expect(typescriptProjectSpec.checkers).not.toHaveProperty(
+      "workspace-scripts",
+    );
+    expect(typescriptProjectSpec.checkers).not.toHaveProperty(
+      "workspace-turbo",
+    );
+    expect(
+      design["workspace-tools"]!.children.map((edge) => edge.checker),
+    ).toContain("tool-@vitest/coverage-v8");
+    const scripts = design["workspace-scripts"]!.children;
+    expect(scripts.map((edge) => edge.checker)).toEqual([
+      "script-build",
+      "script-check",
+      "script-clean",
+      "script-format",
+      "script-format-check",
+      "script-lint",
+      "script-test",
+      "script-test-coverage",
+      "script-typecheck",
+    ]);
+    for (const edge of scripts) {
+      expect(design[edge.checker]!.parameter.schema.required).toEqual([
+        "projectDirectory",
+        "command",
+      ]);
+      expect(design[edge.checker]!.children).toEqual([]);
+      expect(typescriptProjectSpec.checkers).not.toHaveProperty(edge.checker);
+    }
+    expect(design["monorepo"]!.children[1]?.parameter).toContain(
+      "patterns: workspace.packages",
+    );
     expect(design["packages"]!.children[0]?.checker).toBe("package");
     expect(design["packages"]!.children[0]?.forEach).toBeTruthy();
     expect(design["packages"]!.parameter.schema.required).toEqual([
@@ -35,6 +109,9 @@ describe("Spec validation", () => {
     expect(typescriptProjectSpec.checkers["workspace"]!.children).toEqual([]);
     expect(typescriptProjectSpec.checkers).not.toHaveProperty("packages");
     expect(typescriptProjectSpec.checkers).not.toHaveProperty("package");
+    expect(
+      typescriptProjectSpec.checkers["monorepo"]!.parameter.schema.required,
+    ).toEqual(["projectDirectory"]);
   });
 
   it("describes the implemented workspace branch without adding planned member checks", () => {
