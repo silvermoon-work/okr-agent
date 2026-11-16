@@ -1,8 +1,8 @@
 # @silvermoon-work/check.typescript-project
 
-从零迭代的 TypeScript 项目 Check。当前可运行版本只检查项目身份，
-并分流到 single repo 或 monorepo；两个分支暂时为通过的叶节点。
-不会执行旧实现中的工具、scripts、交付或配置规则。
+从零迭代的 TypeScript 项目 Check。当前检查项目身份与仓库分流，
+并在 monorepo 中检查 pnpm workspace 配置。single repo 暂为通过叶节点。
+不会执行旧实现中的工具、scripts 或交付规则。
 
 ## 当前规则
 
@@ -10,6 +10,11 @@
 - TypeScript 依赖、tsconfig 或 TS 源码中的任一明确依据即可识别技术栈。
 - 有 workspace 声明就是 monorepo，否则就是 single repo。
 - 身份不成立报告 `typescript-project-invalid`，不展开分支。
+- monorepo 必须提供合法的 `pnpm-workspace.yaml` 对象，显式包含非空
+  `packages` 字符串数组，每项不得为空白；否则报告
+  `workspace-configuration-invalid`。
+- 成员范围不强制 `apps/`、`packages/` 布局；本轮只验证声明结构，
+  尚不展开成员模式或检查匹配结果、成员 manifest 和名称冲突。
 
 详细识别和执行边界见[检查说明](references/check.md)。
 通过只表示当前已实现规则成立，不表示完整工程合规。

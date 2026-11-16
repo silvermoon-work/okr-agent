@@ -10,3 +10,4 @@ export { createOutline } from "./outline.js";
 export type { OutlineNode } from "./outline.js";
 export { CheckBundleViewer } from "./viewer.js";
 export { typescriptProjectSpec } from "./typescript-project.js";
+export { typescriptProjectDesignSpec } from "./typescript-project-design.js";

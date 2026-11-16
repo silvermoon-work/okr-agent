@@ -115,3 +115,61 @@ Task SDK 按 ContentRefSchema 生成 `{data,cidPaths}`，数组文档使用通�
 下一会话从 monorepo 的 workspace 声明及成员发现开始，逐层讨论问题与边界。
 不要立即恢复旧工具、scripts、交付等全部规则。用户要求每轮完成后 build CAR，
 提供一条可复制命令试跑，再继续讨论。
+
+## 本轮确认的 workspace 规则
+
+- monorepo 必须提供根 pnpm-workspace.yaml；已有 monorepo 依据但缺少该文件
+  时报告 problem，不退回 single repo，也不以 manifest workspaces 替代成员配置。
+- 显式声明非空 packages 字符串数组，每项不得为空白；YAML 或声明结构
+  非法属于 workspace 配置问题，不属于 TypeScript 身份问题。
+- 成员发现遵循 pnpm 的模式语义，不强制 apps/、packages/ 或固定深度。
+- 本轮先实现 workspace 声明结构检查，不展开成员模式。空匹配、缺少成员
+  manifest、名称冲突和根包是否计入成员仍待讨论，不能作为已确认规则实施。
+- 继续采用快速迭代：每轮完成实现与验证、构建新 CAR，提供检查本仓库的命令，
+  由用户观察效果并反馈，不等待全部规则讨论完毕再交付。
+
+## Spec 的事实交接与前置条件
+
+用户确认：识别项目时可读取并完成 single repo / monorepo 接收方
+preconditions 所需的基础校验，将顶层 package.json 与适用的 workspace
+解析事实直接传给分支。这里只代表在接收方 precondition 意义上合规，
+不表示整个项目或后续领域规则合规；子节点不重复读取和基础校验，
+也不把 CheckerResult 当事实缓存。
+
+当前设计稿为 single repo 传递 projectDirectory/packageJson，
+为 monorepo 传递 projectDirectory/packageJson/workspace。
+workspace 基础错误仍使用 workspace 问题，不改报身份无效。
+这些参数交接仅更新可视化设计 spec，真实视图仍反映现有源码；
+尚未修改生产 checker 的参数或问题归属。
+
+用户进一步确认 monorepo 下并列组织“全局工程配置”和“成员发现与关系”
+两个虚拟职责节点，单个 package 位于成员发现下，不是第三个并列分支。
+成员发现直接使用 monorepo 接收的 workspace 事实，不再挂在全局配置检查下，
+也不依赖其通过；虚拟表示职责组织，不引入额外执行协议。
+
+## 全局配置入口发现
+
+用户要求在全局共同配置中补充入口存在性与名称检查，具体配置细节交给下一层。
+scripts 的名称指根 package.json 的 scripts 命令名，不是脚本文件名；
+Turbo 已确认必须提供根 turbo.json。
+
+先参考当前项目建议九个必需命令：build、check、clean、format、
+format-check、lint、test、test-coverage、typecheck。此清单待用户确认，
+允许额外命令，不把发布、包交付或本仓库专用命令自动设为通用要求。
+名称不符按缺少约定名称理解，不猜测额外命令是否为拼写错误。
+
+设计稿中全局配置检查 scripts 容器、约定名称及 turbo.json 普通文件入口，
+再分别向 scripts 内容和 Turbo 内容节点传递已发现事实。前者不重读根 manifest，
+后者负责首次读取 Turbo 内容。入口发现失败阻断其全部内容 children，
+不影响并列的成员发现。内容规则和新问题码仍为设计候选，未修改生产契约。
+
+用户随后明确“确认清单”，九个根 script 名称现已确认，不再标为建议待定。
+按此新增九个衍生脚本设计节点，分别定义命令接口、同名入口和操作职责；
+沿用仓库固定 node scripts/<same-name>.mjs 约定，允许 scripts/lib/ 委托。
+脚本检查只读，不执行目标命令，不以入口存在就证明实际行为正确。
+
+新增独立工具设计分支，参考当前项目将 Turbo、Prettier、ESLint、
+typescript-eslint、Vitest、coverage-v8 与 TypeScript 对应到这些脚本。
+根开发依赖及 catalog 版本声明检查与脚本操作职责分开，避免重复报告。
+工具组合、版本及动态实现的证明边界仍为设计候选；确认脚本清单不等于
+确认全部工具政策，不自动扩展至 Node/pnpm/NRM 宿主环境检查。

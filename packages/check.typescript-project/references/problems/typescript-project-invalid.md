@@ -7,4 +7,5 @@ TypeScript 依赖声明、tsconfig 配置文件或 TS 源码中的至少一种�
 检查才会分流到 single repo 或 monorepo；缺少工具、scripts 或交付配置
 不是本问题的判断依据。
 
-本轮只识别身份与分流，不检查依赖版本、配置内容、成员归属或工程合规。
+本问题只负责身份与分流，不检查依赖版本、配置内容或成员归属。
+monorepo 的 pnpm workspace 配置由后续独立检查负责。

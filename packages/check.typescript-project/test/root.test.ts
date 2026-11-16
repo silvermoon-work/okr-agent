@@ -117,7 +117,7 @@ it.each([
 );
 
 it.each(["pnpm", "manifest"] as const)(
-  "routes %s workspace declaration to monorepo without checking members",
+  "routes %s workspace declaration to monorepo and reports its invalid workspace configuration",
   async (declaration) => {
     await put(
       directory,
@@ -128,16 +128,24 @@ it.each(["pnpm", "manifest"] as const)(
       await put(directory, "pnpm-workspace.yaml", "not valid YAML");
     await put(directory, "packages/a/tsconfig.json", "{}");
     const report = await execute();
-    expect(report.pass).toBe(true);
+    expect(report.pass).toBe(false);
     expect(records.map((node) => node.item.checker).sort()).toEqual([
       "monorepo",
       "project",
+      "workspace",
     ]);
+    if (report.pass)
+      throw new Error("Expected invalid workspace configuration.");
+    expect(report.problems.map((problem) => problem.code)).toEqual([
+      "workspace-configuration-invalid",
+    ]);
+    expect(report.problems[0].nodeKey).toBe(records[2]?.key);
   },
 );
 
 it("recognizes monorepo TypeScript dependencies in a child package", async () => {
   await put(directory, "package.json", { workspaces: ["packages/*"] });
+  await put(directory, "pnpm-workspace.yaml", "packages: ['packages/*']");
   await put(directory, "packages/bad/package.json", "{");
   await put(directory, "packages/empty/package.json", {});
   await put(directory, "packages/typed/package.json", {
@@ -245,7 +253,7 @@ it("preserves both manifest read and cleanup failures", async () => {
 
 it("rejects oversized manifests rather than returning a normal problem", async () => {
   await put(directory, "package.json", " ".repeat(1_048_577));
-  await expect(execute()).rejects.toThrow("Manifest read budget exceeded");
+  await expect(execute()).rejects.toThrow("Project file read budget exceeded");
 });
 
 it("detects manifest changes during a bounded read", async () => {
@@ -260,15 +268,123 @@ it("detects manifest changes during a bounded read", async () => {
     });
     return file;
   });
-  await expect(execute()).rejects.toThrow("Manifest changed during read");
+  await expect(execute()).rejects.toThrow("Project file changed during read");
+});
+
+it.each([
+  ["empty document", ""],
+  ["scalar", "workspace"],
+  ["sequence", "- packages"],
+  ["missing packages", "catalog: {}"],
+  ["empty packages", "packages: []"],
+  ["null packages", "packages: null"],
+  ["string packages", "packages: 'modules/*'"],
+  ["non-string item", "packages: [1]"],
+  ["empty item", "packages: ['']"],
+  ["blank item", "packages: ['  ']"],
+  ["mixed items", "packages: ['modules/*', false]"],
+  ["invalid YAML", "packages: ["],
+  ["duplicate key", "packages: ['a']\npackages: ['b']"],
+  ["unresolved alias", "packages: *absent"],
+] as const)(
+  "reports workspace configuration problem for %s",
+  async (_name, text) => {
+    await put(directory, "package.json", {
+      devDependencies: { typescript: "*" },
+    });
+    await put(directory, "pnpm-workspace.yaml", text);
+    const report = await execute();
+    expect(report).toMatchObject({
+      pass: false,
+      problems: [
+        {
+          code: "workspace-configuration-invalid",
+        },
+      ],
+    });
+    if (report.pass)
+      throw new Error("Expected invalid workspace configuration.");
+    expect(report.problems[0].brief).toContain(
+      join(directory, "pnpm-workspace.yaml"),
+    );
+    expect(records.map((node) => node.item.checker)).toEqual([
+      "project",
+      "monorepo",
+      "workspace",
+    ]);
+  },
+);
+
+it.each([
+  "packages: ['modules/*', '!modules/fixtures', 'nested/**']\ncatalog: {}",
+  "members: &members ['modules/*']\npackages: *members",
+])(
+  "accepts explicit workspace patterns without checking members: %s",
+  async (text) => {
+    await put(directory, "package.json", {
+      devDependencies: { typescript: "*" },
+    });
+    await put(directory, "pnpm-workspace.yaml", text);
+    expect((await execute()).pass).toBe(true);
+  },
+);
+
+it("reports a non-file workspace declaration and rejects linked configuration", async () => {
+  await put(directory, "package.json", {
+    devDependencies: { typescript: "*" },
+    workspaces: [],
+  });
+  const path = join(directory, "pnpm-workspace.yaml");
+  await fs.mkdir(path);
+  const report = await execute();
+  expect(report).toMatchObject({
+    pass: false,
+    problems: [
+      {
+        code: "workspace-configuration-invalid",
+      },
+    ],
+  });
+  if (report.pass) throw new Error("Expected invalid workspace configuration.");
+  expect(report.problems[0].brief).toContain("普通文件");
+  await fs.rm(path, { recursive: true });
+  const outside = join(directory, "dist", "workspace");
+  await fs.mkdir(outside, { recursive: true });
+  await fs.symlink(outside, path, "junction");
+  await expect(execute()).rejects.toThrow("linked or redirected");
+});
+
+it("propagates workspace read errors and enforces the file read budget", async () => {
+  await put(directory, "pnpm-workspace.yaml", " ".repeat(1_048_577));
+  await expect(
+    registry.workspace.invoke(
+      { projectDirectory: directory },
+      new AbortController().signal,
+    ),
+  ).rejects.toThrow("Project file read budget exceeded");
+  await put(directory, "pnpm-workspace.yaml", "packages: ['modules/*']");
+  const failure = new Error("workspace read denied");
+  vi.mocked(fs.open).mockRejectedValueOnce(failure);
+  await expect(
+    registry.workspace.invoke(
+      { projectDirectory: directory },
+      new AbortController().signal,
+    ),
+  ).rejects.toBe(failure);
 });
 
 it("builds the new production CAR and runs single, mono and invalid projects through Engine", async () => {
   const single = join(directory, "single");
   const mono = join(directory, "mono");
   const invalid = join(directory, "invalid");
+  const missingWorkspace = join(directory, "missing-workspace");
   await put(single, "package.json", { devDependencies: { typescript: "^6" } });
   await put(mono, "package.json", { workspaces: ["packages/*"] });
+  await put(mono, "pnpm-workspace.yaml", "packages: ['packages/*']");
+  await put(missingWorkspace, "package.json", {
+    workspaces: ["modules/*"],
+    devDependencies: { typescript: "*" },
+  });
   await put(
     mono,
     "packages/a/src/index.ts",
@@ -296,7 +412,14 @@ it("builds the new production CAR and runs single, mono and invalid projects thr
   expect(code, log).toBe(0);
   const { stdout } = await promisify(execFile)(
     process.execPath,
-    ["scripts/smoke.mjs", `${bundle}.car`, single, mono, invalid],
+    [
+      "scripts/smoke.mjs",
+      `${bundle}.car`,
+      single,
+      mono,
+      invalid,
+      missingWorkspace,
+    ],
     { cwd: resolve("."), timeout: 90_000 },
   );
   const value: unknown = JSON.parse(stdout);
@@ -317,12 +440,16 @@ it("builds the new production CAR and runs single, mono and invalid projects thr
     true,
     true,
     false,
+    false,
   ]);
   for (const result of value.results)
     for (const field of ["protocol", "nodes", "edges", "root"])
       expect(result).not.toHaveProperty(field);
   expect(value.results[2]?.problems?.map((problem) => problem.code)).toEqual([
     "typescript-project-invalid",
+  ]);
+  expect(value.results[3]?.problems?.map((problem) => problem.code)).toEqual([
+    "workspace-configuration-invalid",
   ]);
   expect(value.reclaimed).toBe(true);
 }, 120_000);

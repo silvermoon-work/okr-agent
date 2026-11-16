@@ -97,3 +97,33 @@ task-engine task logs <返回的taskId> --limit 100 | jq '.data.logs[].message |
 
 每轮必须构建 CAR 并给用户试跑命令，不用旧 CAR/CID 代表新代码。
 后续规范讨论和 deliverable 迁移不应与 Task 上游接口变更混成隐式规则。
+
+## 本轮 workspace 配置迭代
+
+在上述基线上新增 monorepo → workspace 检查：必须提供普通文件
+pnpm-workspace.yaml，内容为合法 YAML 对象，显式包含非空 packages 数组，
+每项为非空白字符串。失败报告 workspace-configuration-invalid，问题文档
+随 CAR 交付。不使用根 workspaces 替代 pnpm 配置，不强制目录布局。
+本轮未展开成员模式；空匹配、成员 manifest、名称冲突和根包归属仍待讨论。
+
+新增 read-file.ts 复用身份识别已有的有界读取、重定向防护及读取变化检测。
+读取故障、取消、文件预算和 YAML 别名展开预算耗尽仍为执行故障。
+
+验证：聚焦 root.test.ts 49 项通过；完整 pnpm check 退出 0，
+TypeScript 包共 665 项测试通过且四项全局覆盖率均满足 90%。
+最终 CAR 已在隔离内存 Engine 与现有 CLI Server 中对当前 worktree
+实际执行，均返回 pass:true；未重启共享 Server。
+
+本轮 CAR CID：bafybeidbrjmlmaq2nqzcnfpyo3c2x5iqq2yipwdy734cj6xcllb3tzskte。
+产物仍位于 packages/check.typescript-project/dist/typescript-project.car。
+在当前 worktree 根目录试跑：
+
+```powershell
+'{ "projectDirectory": "D:\\Code\\okr-agent.worktrees\\typescript-monorepo-discussion" }' |
+  task-engine run --car .\packages\check.typescript-project\dist\typescript-project.car --parameters - |
+  jq "."
+```
+
+设备级 Silvermoon 位于既有 Node 24 全局安装目录；本轮通过进程内 PATH
+前置该目录调用，未重新安装或修改全局设置。当前分支已跟踪 origin/main。
+whats-next 确认 Idea 仍为 preparing/unsubmitted；本轮未记录任何生命周期验收。
