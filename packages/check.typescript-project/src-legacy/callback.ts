@@ -9,9 +9,12 @@ export function projectCheck(
 ) {
   return async (context: CheckContext, input: Input) => {
     const resource = async (name: string) => {
-      const asset = await context.bundle.root
-        .resolve(`resources/assets/${name}`)
-        .read();
+      const cid = await context.resolveContent(
+        context.bundle,
+        `resources/assets/${name}`,
+        { signal: context.signal },
+      );
+      const asset = await context.readContent(cid, { signal: context.signal });
       if (asset.kind !== "file")
         throw new Error(`Canonical ${name} asset is not a file`);
       return new Uint8Array(await new Response(asset.content).arrayBuffer());

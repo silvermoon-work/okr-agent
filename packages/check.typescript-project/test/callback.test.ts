@@ -23,49 +23,49 @@ it("loads the actual supplied Bundle asset and preserves output link faults rath
     );
     const context = {
       signal: new AbortController().signal,
-      bundle: {
-        root: {
-          resolve(path: string) {
-            expect(path).toMatch(/^resources\/(?:assets|references)/);
-            return {
-              async read() {
-                const bytes = (
-                  {
-                    "resources/assets/AGENTS.md": evidence.agents,
-                    "resources/assets/npm-publish.mjs": evidence.publisher,
-                    "resources/assets/npm-publish.yaml":
-                      evidence.publishWorkflow,
-                    "resources/assets/npm-ci.yaml": evidence.ciWorkflow,
-                    ...Object.fromEntries(
-                      scriptResources.map(([name, asset]) => [
-                        `resources/assets/${asset}`,
-                        evidence.scripts[name]!,
-                      ]),
-                    ),
-                  } as Record<string, Uint8Array>
-                )[path];
-                expect(bytes).toBeDefined();
-                return await Promise.resolve({
-                  kind: "file",
-                  content: bytes,
-                });
-              },
-            };
-          },
-        },
+      log: () => Promise.resolve({ state: "stored", sequence: 1 }),
+      bundle: "bafybeiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      resolveContent(_bundle: string, path: string) {
+        expect(path).toMatch(/^resources\/(?:assets|references)/);
+        if (path === "resources/assets") {
+          links.push("assets");
+          return Promise.reject(new Error("asset content resolution fault"));
+        }
+        if (path === "resources/references/check.md") {
+          links.push("references");
+          return Promise.resolve(
+            "bafybeiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          );
+        }
+        return Promise.resolve(path);
       },
-      output: {
-        link(path: string) {
-          links.push(path);
-          if (path === "assets")
-            return Promise.reject(new Error("asset output link fault"));
-          return Promise.resolve();
-        },
+      async readContent(path: string) {
+        const bytes = (
+          {
+            bafybeiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:
+              new TextEncoder().encode("Check documentation"),
+            "resources/assets/AGENTS.md": evidence.agents,
+            "resources/assets/npm-publish.mjs": evidence.publisher,
+            "resources/assets/npm-publish.yaml": evidence.publishWorkflow,
+            "resources/assets/npm-ci.yaml": evidence.ciWorkflow,
+            ...Object.fromEntries(
+              scriptResources.map(([name, asset]) => [
+                `resources/assets/${asset}`,
+                evidence.scripts[name]!,
+              ]),
+            ),
+          } as Record<string, Uint8Array>
+        )[path];
+        expect(bytes).toBeDefined();
+        return await Promise.resolve({
+          kind: "file",
+          content: bytes,
+        });
       },
     } as unknown as Parameters<typeof callback>[1];
     await expect(
       callback({ projectDirectory: directory }, context),
-    ).rejects.toThrow("asset output link fault");
+    ).rejects.toThrow("asset content resolution fault");
     expect(links).toEqual(["references", "assets"]);
   } finally {
     await rm(directory, { recursive: true, force: true });

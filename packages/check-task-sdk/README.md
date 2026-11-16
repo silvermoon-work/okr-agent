@@ -1,10 +1,11 @@
 # Check Task SDK
 
-基于 Task SDK/Protocol 0.2.0-rc.1 的检查图组合，不复制 Engine 或 Builder。
+基于 Task SDK/Protocol 0.2.0-rc.2 的检查图组合，不复制 Engine 或 Builder。
 消费者最低 Node 仍为 `>=22.15.0`，开发 Node 独立读取 `.node-version`。
 
-当前源码采用 **`check-report/v2`**。旧 callback/reporter、
-`createTargetCheckers`、`$root`、`{type,selector}` 和无版本 CheckResult
+当前业务结果仅包含 **`pass`、`documentation` 和失败时的 `problems`**。
+检查图不进入结果；过程通过 Task `context.log` 输出。旧 callback/reporter、
+`createTargetCheckers`、`$root` 和 `{type,selector}`
 不再是当前入口；作者须迁移、重建 CAR 并使用准确新 CID。
 这不代表历史 npm RC/旧 CAR 已升级，也不自动发布或远程上传。
 
@@ -60,7 +61,8 @@ runCheck(contract, { registry, root: "text" });
   `createCheckCallback` 同形，返回上游 TaskCallback，不自行启动 Worker。
   root 必须存在，输入必须符合 Task 和根 schema。
 - 独立 `executeCheck({registry,root:{checker,target},signal,limits?})`
-  返回完整 CheckReport，不启动 Worker。一次调用一个执行范围，无跨执行缓存。
+  返回业务 CheckReport，不启动 Worker。可选 `log(node)` 接收节点过程。
+  一次调用一个执行范围，无跨执行缓存。
 - registry 也可为 `(context,input) => registry` 的执行期工厂；
   input 已验证并深冻，context 只有
   `signal/log/progress/bundle/space/invokeTask`，无 output 或完整 TaskContext。
@@ -85,13 +87,21 @@ undefined、函数、bigint、非有限数字和循环。共享引用但非环�
 完整规范字符串为键，实际调用使用同一受保护值，不受原对象后续修改影响。
 身份不含 signal、Run ID 或队列状态。
 
-FIFO 有界并发不设整层屏障。共享节点、自环和回边只调用一次，
-保留不同来源边、折叠重复边。fail 只剪掉本节点新 child；
-边不是全父 join，独立分支继续。最终节点/边按规范键排序，
+FIFO 有界并发不设整层屏障。共享节点、自环和回边只调用一次。
+首次发现决定节点唯一 parent，后续重复发现不改写它；根节点没有 parent。
+这是过程的生成树，不保存完整 edges，也不实现全父 join。
+fail 只剪掉本节点新 child，独立分支继续。
 问题按节点键与局部顺序排列，不按 code/brief 跨节点去重。
 领域共享根因由明确配置/事实节点局部拥有。
 
-默认 limits：concurrency=4、nodes=4096、edges=16384、children=16384、
+节点完成后以 `{key,item,parent?,pass}` 发给 `log`，Task 入口使用
+`context.log({level:"info",message:JSON.stringify(node)})`，确保仅展示日志
+message 的 CLI 也能读取完整生成树节点。日志只描述本节点结论，
+不等于所有后代通过；并发执行时 parent 取首次发现者，不保证日志完成顺序。
+日志调用抛错和取消保持执行故障。宿主日志容量和可用性由 Task 的日志
+receipt/state 表达，不改变业务结论。日志目标与记录冻结，不泄漏可修改的执行状态。
+
+默认 limits：concurrency=4、nodes=4096、children=16384、
 targetBytes=65536、encodingBytes=16 MiB、depth=64、values=16384、
 resultBytes=16 MiB、problems=16384、timeoutMs=60000。
 配置必须为有界正安全整数，并发硬上限 64；重复项仍计入尝试/编码预算。
@@ -104,29 +114,36 @@ Task 集成另检查公共 Protocol 的 **完整结果 65,536 字节**上限，
 不以 Promise.race 早退宣称回收。预算不是任意 JS 的强杀期限；
 不响应 signal 的代码可能阻止调用结束。
 
-## v2 报告与文档
+## 业务结果与文档
 
-`createCheckContract` 生成 `{input,result,message,schemas}`，message 为 Never。
+`createCheckContract` 生成
+`{parameters,result,message,schemas}`，message 为 Never。
 本地问题码仍为有限 TypeBox 字符串字面量/union，使用便携小写文件名片段，
 禁止 Windows 设备名；Builder 检查准确本地问题 Markdown。
 
-报告含 protocol、pass、documentation、root、nodes、edges；
-nodes 是 `{key,item,pass}` 投影。fail 有非空 problems，pass 无 problems。
+独立 `executeCheck` 的本地 documentation 是作者相对路径。
+Task callback 返回 `{pass:true,documentation:ContentRef}`；
+不通过返回 `{pass:false,documentation:ContentRef,problems:[...]}`。
+fail 有非空 problems，pass 无 problems。结果不包含 protocol、root、nodes、
+edges，过程只出现在日志。
 问题含 code、brief、documentation、当前 nodeKey，以及：
 
 - `source:{kind:"local",checker,nodeKey}`：code 必须属于本地契约，
-  文档在本 Run output.cid 的 `references/problems/<code>.md`。
-- `source:{kind:"output",bundleCid,outputCid,checker,nodeKey}`：
-  code 属于原子 Bundle，文档相对其真实 outputCid；
+  文档来自 Bundle 的 `resources/references/problems/<code>.md`，Task
+  返回该文件的直接 ContentRef。
+- `source:{kind:"bundle",bundleCid,checker,nodeKey}`：
+  code 属于原子 Bundle，文档为子结果中的直接内容引用，没有 outputCid；
   source.nodeKey 定位原问题，外层 nodeKey 定位叶适配节点。嵌套适配保留最终来源。
 
-整体文档为 `references/check.md`。正常通过/不通过均把 Bundle 的
-`resources/references` 链接到 output `references`；
-第三参数 `{assets:true}` 额外链接 `resources/assets` 到 `assets`。
-缺资源、链接、取消或清理失败均保持执行故障。图、问题与结果投影被冻结。
+整体文档解析 Bundle 的 `resources/references/check.md`。
+第三参数 `{assets:true}` 在业务结果增加 assets ContentRef，引用 Bundle 的
+`resources/assets` 目录。通过 `resolveContent/readContent` 核验资源存在及类型；
+缺资源、取消或读取故障保持执行故障。不再创建 output space 或复制/链接资源。
 
-`{cid,result}` envelope 仍由 Engine 产生，不伪造本报告自身 CID，
-不新增 result.json；v2 外部问题的 source.outputCid 来自真实子 envelope。
+Engine 的 `output.result` 为 `{data,cidPaths}`，没有 output.cid。
+documentation 与可选 assets 使用 ContentRefSchema，Task SDK 根据 schema
+自动生成 cidPaths；问题文档使用 `$["problems"][*]["documentation"]`，
+不逐个枚举数组下标。不手写 payload 或伪造本报告自身 CID。
 普通非空 UTF-8 Markdown 及相对资源保留，不抓取所有链接。
 读取端口必须覆盖 Engine 输出块，不能只读原始 Bundle CAR：
 公开 MemoryStore.readContentBlock 可与 CAR block port 组合供 IpfsStore 读取。
@@ -143,7 +160,7 @@ interface CheckExecutionPort {
     bundleCid: string;
     input: JsonObject;
     signal: AbortSignal;
-  }): Promise<{ cid: string; result: unknown }>;
+  }): Promise<{ result: unknown }>;
 }
 ```
 
@@ -153,13 +170,16 @@ interface CheckExecutionPort {
 不得丢失执行/取消/释放失败，不关闭调用方共享 Engine/IpfsStore。
 端口负责授权与宿主政策；CID 不是授权。SDK 不依赖完整 Engine。
 
-适配器验证完整 v2 图、身份、可达边、状态/问题归属、来源及非空问题；
+适配器先用明确子契约验证真实 result payload 及 cidPaths，再验证业务结果、
+问题身份、来源、文档 CID 及非空问题；
 子 pass 变为空 children，子 fail 保留问题及文档来源。
 **不导入/再次执行子图，不支持跨 Bundle children**。
-旧无版本结果、任意 Task JSON、缺 envelope 或伪本地 code 明确拒绝。
+带图字段的旧 check-report/v2、任意 Task JSON、缺 envelope 或伪本地 code
+明确拒绝。适配必须提供明确子契约和真实 output envelope；仅有 pass
+不能证明来源可信。当前制品须重建，历史 CAR 不自动升级。
 
-Task SDK 0.2.0-rc.1 的 invokeTask 只返回业务 JSON，参数无单次 signal/cancel，
+Task SDK 0.2.0-rc.2 的 invokeTask 只返回解码业务值，参数无单次 signal/cancel，
 无法满足图内兄弟故障取消和 output 来源。因此 **没有 Worker 自动绑定**；
-raw CheckContext 在类型和运行时都不是端口。原始 SpaceRef 调用仍能用于普通
-Task 编排，但不等于本适配器、不自动合并子问题。
+raw CheckContext 在类型和运行时都不是端口。普通子 Task 调用使用
+`{key,bundle,path?,parameters,timeoutMs}`，不等于本适配器、不自动合并子问题。
 真实宿主取消、释放和来源读取由 Builder 集成测试覆盖。

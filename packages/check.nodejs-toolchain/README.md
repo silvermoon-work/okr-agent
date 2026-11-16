@@ -64,7 +64,11 @@ Verification。它只复制当前授权宿主的原样 Node/npm 文件到自有�
 实际检查使用 defineChecker 静态 object 注册表，普通根名为 `toolchain`，
 Task input 作为根 target，通过 `{checker,target}`
 children 展开 FIFO 有界并发图，
-输出 `check-report/v2`。工具目标与可用性/版本职责位于 `src/checks/`；
+输出 `pass`、`documentation` 和失败时的 `problems`，图不进入业务结果。
+Task 输出使用 `{data,cidPaths}`，documentation 是直接文档 CID，不再有 output
+space。
+过程节点通过 Task 日志记录，仅保留首次发现的 parent。
+工具目标与可用性/版本职责位于 `src/checks/`；
 每个工具的定位、只读版本探测是本次执行内共享事实；
 minimumVersion 为独立叶，版本过低不会剪去可执行的配对或 registry。
 pairing、逐工具 nvm management、active registry 和 nrm 注册项显式取得

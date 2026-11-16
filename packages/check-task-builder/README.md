@@ -1,7 +1,7 @@
 # Check Task Builder
 
 把 Check 项目只读文件树转换为标准 Task Builder 输入，再复用
-`@silvermoon-work/task-builder@0.2.0-rc.2`
+`@silvermoon-work/task-builder@0.2.0-rc.4`
 编译、绑定、校验和编码 CAR。不复制上游编译器，不生成编辑器类型文件，不保留完整中间项目。
 
 ## CLI
@@ -23,7 +23,7 @@ check-task-builder build [build-file] [--out-dir <directory>] [--no-car]
 `init` 创建实际读取 `assets/expected.txt` 并判断输入文本的可编辑项目。输入
 `{"text":"hello"}` 通过，`{"text":"other"}`
 正常不通过。目标目录必须不存在且父目录存在；不交互、不安装、不覆盖。模板固定本包/SDK版本，并显式声明
-`task-builder-cli@0.2.0-rc.2` 开发依赖； `pnpm car` 调用上游 CLI，本 CLI
+`task-builder-cli@0.2.0-rc.4` 开发依赖； `pnpm car` 调用上游 CLI，本 CLI
 **没有** `car` 命令。
 
 ```yaml
@@ -42,7 +42,9 @@ outDirectory: dist/text-check
 ```
 
 生成入口使用 `defineChecker` 和 `runCheck(contract,{registry,root})`，
-输出 `check-report/v2`，不再生成 reporter callback 或旧 DFS。
+输出 `pass`、`documentation` 和失败时的 `problems`，不再生成
+reporter callback 或旧 DFS。遍历过程进入 Task 日志，不进入业务结果；
+节点只有首次发现的 parent，没有单独 root 或 edges。
 这是当前源码模板；消费尚未发布的候选时须使用同一验证 SDK tarball，
 不能假定历史 registry 版本已具有新 API。
 
@@ -72,9 +74,12 @@ CLI 显式解析 IPFS Store 公共配置，并支持上述 `--content-*`
 graft 原节点，不以重新导入的相似文件树替代原 DAG。`--no-car`
 仍交付该 sidecar，旧 CAR 不更新。
 
-父 Check 通过 `context.bundle.root.resolve("resources/tasks/child")`
-调用子 Task。旧 `{cid,path}` 调用必须迁移到
-`bundle: SpaceRef`，随后重建子包和父包并更新 CID。已有制品不会原地升级；旧 Engine 数据域也不自动兼容。
+父 Check 通过
+`context.invokeTask({key,bundle:context.bundle,path:"resources/tasks/child",parameters,timeoutMs})`
+调用子 Task。Bundle 是准确根 CID，不是 SpaceRef；内容读取使用
+resolveContent/readContent。旧 Space
+API 调用须迁移，随后重建子包和父包并更新 CID。
+已有制品不会原地升级；旧 Engine 数据域也不自动兼容。
 
 ## 参考标准和资源
 
@@ -152,12 +157,12 @@ try {
 
 开发验证：`pnpm check`。`scripts/smoke.mjs`
 可复制到独立安装目录，使用已发布 Task Engine 0.2.0-rc.2 执行 Bundle，通过
-`run.output.result` 验证 pass/fail，通过 `run.output.cid`
-读取真实输出文档，并验证资源回收；第三参数 `fault`
+`run.output.result.data` 验证 pass/fail，校验 schema 生成的 cidPaths，
+按 documentation 直接 CID 读取文档，并验证资源回收；第三参数 `fault`
 验证抛错制品。若 Bundle 包含参考附属资源（例如
 `references/assets/standard.txt`），还会验证输出资源的字节与 Bundle 一致。需要显式安装
-`@silvermoon-work/task-engine@0.2.0-rc.2`、`@silvermoon-work/task-builder@0.2.0-rc.2`、
-`@silvermoon-work/task-builder-cli@0.2.0-rc.2`、`@silvermoon-work/ipfs-store@0.1.0-rc.1`
+`@silvermoon-work/task-engine@0.2.0-rc.4`、`@silvermoon-work/task-builder@0.2.0-rc.4`、
+`@silvermoon-work/task-builder-cli@0.2.0-rc.4`、`@silvermoon-work/ipfs-store@0.1.0-rc.3`
 和 `ipfs-unixfs-exporter@16.2.3`。
 
 ```sh

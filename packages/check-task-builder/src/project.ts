@@ -46,7 +46,7 @@ export async function createCheckProject(options: CheckProjectOptions = {}) {
         devDependencies: {
           ...manifest.devDependencies,
           "@silvermoon-work/check-task-builder": release,
-          "@silvermoon-work/task-builder-cli": "0.2.0-rc.2",
+          "@silvermoon-work/task-builder-cli": "0.2.0-rc.4",
         },
         scripts: {
           typecheck: "tsc --project tsconfig.json",
@@ -90,7 +90,8 @@ runCheck(contract, {
       target: Input,
       check: async (input, signal): Promise<CheckerResult<never, ProblemCode>> => {
         signal.throwIfAborted();
-        const node = await context.bundle.root.resolve("resources/expected.txt").read();
+        const cid = await context.resolveContent(context.bundle, "resources/expected.txt", { signal });
+        const node = await context.readContent(cid, { signal });
         if (node.kind !== "file") throw new Error("Expected standard must be a file.");
         const expected = await new Response(node.content).text();
         signal.throwIfAborted();

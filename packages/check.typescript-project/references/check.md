@@ -29,6 +29,15 @@ TypeScript 依赖提供身份依据。
 本轮身份与分流规则成立，不证明 scripts、tools、packages、deliverable、
 文件结构或其他工程标准合规。后续按讨论逐步增加分支规则。
 
+通过业务结果为
+`{pass:true,documentation:"文档 CID",assets:"标准资产目录 CID"}`，不通过时
+增加非空 `problems`，保留问题说明、修复文档和来源。业务结果没有 protocol、
+nodes、edges 或 root。过程通过 Task `context.log` 输出
+`{key,item,parent?,pass}`；根没有 parent，共享节点只记录首次发现的 parent。
+Task SDK 按 ContentRefSchema 生成 `{data,cidPaths}`，数组文档路径使用通配符。
+文档直接按 CID 读取，不再拼接 output
+space 路径；独立执行器的本地文档仍为作者路径。
+
 ## 执行边界
 
 不跟随符号链接；根目录或读取路径发生重定向时执行失败。扫描跳过

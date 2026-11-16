@@ -1,4 +1,5 @@
 import { Kind, Type, type Static, type TSchema } from "@sinclair/typebox";
+import { ContentRefSchema } from "@silvermoon-work/ipfs-payload/typebox";
 
 /** A finite TypeBox literal or union of literals; codes are portable file stems. */
 export function problemCodes(schema: TSchema): readonly string[] {
@@ -32,7 +33,7 @@ export function createCheckContract<
     {
       code,
       brief: Type.String({ minLength: 1, pattern: "\\S" }),
-      documentation: Type.String({ minLength: 1 }),
+      documentation: ContentRefSchema(),
     },
     { additionalProperties: false },
   );
@@ -46,59 +47,25 @@ export function createCheckContract<
   );
   const externalSource = Type.Object(
     {
-      kind: Type.Literal("output"),
+      kind: Type.Literal("bundle"),
       bundleCid: Type.String(),
-      outputCid: Type.String(),
       checker: Type.String(),
       nodeKey: Type.String(),
     },
     { additionalProperties: false },
   );
-  const reportProblem = Type.Union([
-    Type.Object(
-      {
-        ...problem.properties,
-        nodeKey: Type.String(),
-        source: localSource,
-      },
-      { additionalProperties: false },
-    ),
-    Type.Object(
-      {
-        ...problem.properties,
-        code: Type.String(),
-        nodeKey: Type.String(),
-        source: externalSource,
-      },
-      { additionalProperties: false },
-    ),
-  ]);
+  const reportProblem = Type.Object(
+    {
+      ...problem.properties,
+      code: Type.String(),
+      nodeKey: Type.String(),
+      source: Type.Union([localSource, externalSource]),
+    },
+    { additionalProperties: false },
+  );
   const body = {
-    protocol: Type.Literal("check-report/v2"),
-    documentation: Type.String({ minLength: 1 }),
-    root: Type.String(),
-    nodes: Type.Array(
-      Type.Object(
-        {
-          key: Type.String(),
-          pass: Type.Boolean(),
-          item: Type.Object(
-            {
-              checker: Type.String(),
-              target: Type.Object({}, { additionalProperties: true }),
-            },
-            { additionalProperties: false },
-          ),
-        },
-        { additionalProperties: false },
-      ),
-    ),
-    edges: Type.Array(
-      Type.Object(
-        { from: Type.String(), to: Type.String() },
-        { additionalProperties: false },
-      ),
-    ),
+    documentation: ContentRefSchema(),
+    assets: Type.Optional(ContentRefSchema()),
   };
   const result = Type.Union([
     Type.Object(
@@ -118,7 +85,7 @@ export function createCheckContract<
     ),
   ]);
   return {
-    input,
+    parameters: input,
     result,
     message: Type.Never(),
     schemas: { "check-problem-code": code, "check-problem": reportProblem },
@@ -129,6 +96,7 @@ export type CheckContract<
   Input extends TSchema = TSchema,
   Code extends TSchema = TSchema,
 > = {
-  readonly input: Input;
+  readonly parameters: Input;
+  readonly result: TSchema;
   readonly schemas: { readonly "check-problem-code": Code };
 };

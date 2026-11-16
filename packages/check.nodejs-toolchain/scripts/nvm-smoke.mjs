@@ -93,7 +93,6 @@ const ipfsStore = IpfsStore.fromClient({ block: car.block });
 const engine = createTaskEngine({
   store,
   ipfsStore,
-  requestInputEnvelope: true,
   authorize: () => true,
   limits: { stopGraceMs: 5000, forceExitWaitMs: 5000 },
 });
@@ -223,9 +222,12 @@ try {
       taskId: await accepted({
         requestId: newId(),
         bundle: car.cid,
-        input: {
-          context: sample.context,
-          requirements: sample.requirements ?? requirements,
+        parameters: {
+          data: {
+            context: sample.context,
+            requirements: sample.requirements ?? requirements,
+          },
+          cidPaths: [],
         },
         timeoutMs: 30_000,
       }),
@@ -249,7 +251,7 @@ try {
     assert.ok(run.reclaimedAt);
     assert.equal(run.exit.forced, false);
     assert.ok(run.output);
-    const result = run.output.result;
+    const result = run.output.result.data;
     assert.equal(
       result.pass,
       sample.codes.length === 0,
@@ -266,7 +268,7 @@ try {
       ...(result.problems ?? []).map((problem) => problem.documentation),
     ];
     for (const path of new Set(documents)) {
-      const file = await exporter(`${run.output.cid}/${path}`, {
+      const file = await exporter(path, {
         async *get(cid) {
           yield (
             store.readContentBlock(cid.toString()) ??
@@ -280,7 +282,15 @@ try {
       const actual = Buffer.concat(chunks);
       assert.deepEqual(
         actual,
-        Buffer.from(await readBytes(car.tree, `resources/${path}`, 262144)),
+        Buffer.from(
+          await readBytes(
+            car.tree,
+            path === result.documentation
+              ? "resources/references/check.md"
+              : `resources/references/problems/${result.problems.find((problem) => problem.documentation === path).code}.md`,
+            262144,
+          ),
+        ),
       );
       assert.match(actual.toString("utf8"), /[\u4e00-\u9fff]/);
     }
@@ -289,7 +299,7 @@ try {
       pass: result.pass,
       codes: sample.codes,
       briefs: result.problems?.map((problem) => problem.brief) ?? [],
-      outputCid: run.output.cid,
+      cidPaths: run.output.result.cidPaths,
       documents: [...new Set(documents)],
       reclaimed: true,
     });

@@ -4,6 +4,7 @@ import {
   defineChecker,
   executeCheck,
   type CheckerResult,
+  type ReportNode,
 } from "../src/index.js";
 import { canonicalSnapshot } from "../src/canonical.js";
 import { executeCheckInput } from "../src/graph.js";
@@ -58,19 +59,28 @@ it("deduplicates insertion-order variants but not different names, with zero cal
     }),
   ).rejects.toThrow("pre-cancelled");
   expect(root).not.toHaveBeenCalled();
+  const records: ReportNode[] = [];
   const report = await executeCheck({
     registry,
     root: { checker: "root", target: {} },
     signal: controller().signal,
+    log: (node) => {
+      records.push(node);
+    },
   });
   expect(root).toHaveBeenCalledTimes(1);
   expect(first).toHaveBeenCalledTimes(1);
   expect(second).toHaveBeenCalledTimes(1);
-  expect(report.nodes).toHaveLength(3);
-  expect(report.edges).toHaveLength(2);
+  expect(report).toEqual({ pass: true, documentation: "references/check.md" });
+  expect(records).toHaveLength(3);
+  expect(records.filter((node) => node.parent === undefined)).toHaveLength(1);
+  expect(
+    records.slice(1).every((node) => node.parent === records[0]?.key),
+  ).toBe(true);
 });
-it("deduplicates shared nodes and cycles, preserving all edges and independent problems", async () => {
+it("deduplicates shared nodes and cycles, logging one discovery parent and independent problems", async () => {
   const calls: string[] = [];
+  const records: ReportNode[] = [];
   const registry = {
     ordinary: defineChecker({
       target,
@@ -108,9 +118,18 @@ it("deduplicates shared nodes and cycles, preserving all edges and independent p
     registry,
     root: { checker: "ordinary", target: { id: "root" } },
     signal: controller().signal,
+    log: (node) => {
+      records.push(node);
+    },
   });
   expect(calls).toEqual(["root", "a", "b", "shared"]);
-  expect(report.edges).toHaveLength(6);
+  expect(records).toHaveLength(4);
+  expect(records.find((node) => node.item.target.id === "shared")?.parent).toBe(
+    records.find((node) => node.item.target.id === "a")?.key,
+  );
+  expect(
+    records.find((node) => node.item.target.id === "root"),
+  ).not.toHaveProperty("parent");
   expect(report.pass).toBe(false);
   if (!report.pass) expect(report.problems).toHaveLength(1);
 });
@@ -215,6 +234,7 @@ it("deduplicates children while queued, running and completed", async () => {
   const release = deferred();
   const done = deferred();
   const count = vi.fn();
+  const records: ReportNode[] = [];
   const registry = {
     graph: defineChecker({
       target,
@@ -254,12 +274,17 @@ it("deduplicates children while queued, running and completed", async () => {
     registry,
     root: { checker: "graph", target: { id: "root" } },
     signal: controller().signal,
+    log: (node) => {
+      records.push(node);
+    },
   });
   await entered.promise;
   release.resolve();
   const report = await pending;
   expect(count).toHaveBeenCalledTimes(1);
-  expect(report.edges).toHaveLength(8);
+  expect(
+    records.filter((node) => node.item.target.id === "shared"),
+  ).toHaveLength(1);
   if (report.pass) throw new Error("Expected shared failure.");
   expect(report.problems).toHaveLength(1);
 });
@@ -269,6 +294,7 @@ it("isolates target and registry mutation after registration", async () => {
   const release = deferred();
   const raw = { id: "queued" };
   const observed: string[] = [];
+  const records: ReportNode[] = [];
   const registry = {
     root: defineChecker({
       target,
@@ -298,6 +324,9 @@ it("isolates target and registry mutation after registration", async () => {
     root: { checker: "root", target: { id: "root" } },
     signal: controller().signal,
     limits: { concurrency: 1 },
+    log: (node) => {
+      records.push(node);
+    },
   });
   await waiting.promise;
   raw.id = "changed";
@@ -312,9 +341,7 @@ it("isolates target and registry mutation after registration", async () => {
   const report = await pending;
   expect(observed).toEqual(["block", "queued"]);
   expect(Object.isFrozen(report)).toBe(true);
-  expect(report.nodes.some((node) => node.item.target.id === "queued")).toBe(
-    true,
-  );
+  expect(records.some((node) => node.item.target.id === "queued")).toBe(true);
 });
 
 it("returns identical stable reports for reversed completion order without code dedup", async () => {
@@ -428,7 +455,6 @@ it("collects real cleanup failures and waits before propagating the initiating f
 it.each([
   ["nodes", 1],
   ["children", 1],
-  ["edges", 1],
   ["encodingBytes", 5],
   ["targetBytes", 3],
   ["depth", 1],

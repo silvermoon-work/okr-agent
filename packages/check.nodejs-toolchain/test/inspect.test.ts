@@ -544,7 +544,7 @@ describe("composite requirements", () => {
         root: "toolchain",
         registry: {
           toolchain: defineChecker({
-            target: contract.input,
+            target: contract.parameters,
             check: () => Promise.resolve({ pass: true, children: [] } as const),
           }),
         },

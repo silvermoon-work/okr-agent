@@ -1,18 +1,36 @@
 import { runTask, type TaskCallback } from "@silvermoon-work/task-sdk";
 import type { Static, TObject, TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { json } from "@silvermoon-work/task-protocol";
+import {
+  ContentRef,
+  compileJsonSchema,
+  encodeChannel,
+} from "@silvermoon-work/task-protocol";
 import { canonicalSnapshot } from "./canonical.js";
 import { problemCodes, type CheckContract } from "./contracts.js";
 import type { CheckedRegistry, CheckerRegistry } from "./checker.js";
 import { executeCheckInput, type CheckLimits } from "./graph.js";
-import type { CheckReport } from "./report.js";
+import type { ReportProblem } from "./report.js";
 import type { CheckContext, CheckOutputOptions } from "./index.js";
 
 type Factory<Input> = (
   context: CheckContext,
   input: Input,
 ) => CheckerRegistry | Promise<CheckerRegistry>;
+export type CheckTaskResult =
+  | {
+      readonly pass: true;
+      readonly documentation: ContentRef;
+      readonly assets?: ContentRef;
+    }
+  | {
+      readonly pass: false;
+      readonly documentation: ContentRef;
+      readonly assets?: ContentRef;
+      readonly problems: readonly (Omit<ReportProblem, "documentation"> & {
+        readonly documentation: ContentRef;
+      })[];
+    };
 type Related<Input, R extends CheckerRegistry, K extends keyof R> = [
   R,
 ] extends [CheckedRegistry<R>]
@@ -48,7 +66,7 @@ function bind<Input extends TObject, Code extends TSchema>(
   contract: CheckContract<Input, Code>,
   options: Binding<Static<Input>>,
   output: CheckOutputOptions,
-): TaskCallback<Static<Input>, CheckReport> {
+): TaskCallback<Static<Input>, CheckTaskResult> {
   const supplied: unknown = options.registry;
   if (
     typeof options.root !== "string" ||
@@ -60,10 +78,13 @@ function bind<Input extends TObject, Code extends TSchema>(
   if (typeof assets !== "boolean")
     throw new Error("Check output assets option must be a boolean.");
   const codes = problemCodes(contract.schemas["check-problem-code"]);
+  const resultSchema = compileJsonSchema(
+    JSON.parse(JSON.stringify(contract.result)) as unknown,
+  ).schema;
   return async (input, context) => {
     context.signal.throwIfAborted();
     const snapshot = canonicalSnapshot(input).value;
-    if (!Value.Check(contract.input, snapshot))
+    if (!Value.Check(contract.parameters, snapshot))
       throw new Error("Invalid Check Task input.");
     const registry = options.registry;
     const report = await executeCheckInput({
@@ -73,7 +94,11 @@ function bind<Input extends TObject, Code extends TSchema>(
           log: (value) => context.log(value),
           progress: (value) => context.progress(value),
           bundle: context.bundle,
-          space: (cid) => context.space(cid),
+          readContent: (cid, options) => context.readContent(cid, options),
+          resolveContent: (cid, path, options) =>
+            context.resolveContent(cid, path, options),
+          putContent: (content, options) =>
+            context.putContent(content, options),
           invokeTask: (request) => context.invokeTask(request),
         });
         return typeof registry === "function"
@@ -83,25 +108,52 @@ function bind<Input extends TObject, Code extends TSchema>(
       root: { checker: options.root, target: snapshot },
       signal: context.signal,
       problemCodes: codes,
+      log: async (node) => {
+        await context.log({
+          level: "info",
+          message: JSON.stringify(node),
+        });
+      },
       ...(options.limits ? { limits: options.limits } : {}),
     });
     context.signal.throwIfAborted();
-    // Public Task Protocol 0.2.0-rc.1 admits at most 64 KiB of result JSON.
-    canonicalSnapshot(report, { bytes: 65_536, depth: 72, values: 262_144 });
-    json(report, 65_536);
-    await context.output.link(
-      "references",
-      context.bundle.root.resolve("resources/references"),
+    const reference = async (path: string, file: boolean) => {
+      const cid = await context.resolveContent(context.bundle, path, {
+        signal: context.signal,
+      });
+      const node = await context.readContent(cid, { signal: context.signal });
+      if (file && node.kind !== "file")
+        throw new Error(`Check documentation is not a file: ${path}`);
+      if (!file && node.kind !== "directory")
+        throw new Error(`Check assets are not a directory: ${path}`);
+      return ContentRef.fromCID(cid);
+    };
+    const documentation = await reference(
+      `resources/${report.documentation}`,
+      true,
     );
-    if (assets) {
-      context.signal.throwIfAborted();
-      await context.output.link(
-        "assets",
-        context.bundle.root.resolve("resources/assets"),
-      );
-    }
+    const resources = assets
+      ? { assets: await reference("resources/assets", false) }
+      : {};
+    const result: CheckTaskResult = report.pass
+      ? { pass: true, documentation, ...resources }
+      : {
+          pass: false,
+          documentation,
+          ...resources,
+          problems: await Promise.all(
+            report.problems.map(async (problem) => ({
+              ...problem,
+              documentation:
+                problem.source.kind === "local"
+                  ? await reference(`resources/${problem.documentation}`, true)
+                  : ContentRef.fromCID(problem.documentation),
+            })),
+          ),
+        };
     context.signal.throwIfAborted();
-    return report;
+    encodeChannel(resultSchema, result);
+    return result;
   };
 }
 
@@ -114,7 +166,7 @@ export function createCheckCallback<
   contract: CheckContract<Input, Code>,
   options: FactoryOptions<Static<Input>, F, K>,
   output?: CheckOutputOptions,
-): TaskCallback<Static<Input>, CheckReport>;
+): TaskCallback<Static<Input>, CheckTaskResult>;
 export function createCheckCallback<
   Input extends TObject,
   Code extends TSchema,
@@ -124,7 +176,7 @@ export function createCheckCallback<
   contract: CheckContract<Input, Code>,
   options: RegistryOptions<Static<Input>, R, K>,
   output?: CheckOutputOptions,
-): TaskCallback<Static<Input>, CheckReport>;
+): TaskCallback<Static<Input>, CheckTaskResult>;
 export function createCheckCallback<
   Input extends TObject,
   Code extends TSchema,
@@ -132,7 +184,7 @@ export function createCheckCallback<
   contract: CheckContract<Input, Code>,
   options: Binding<Static<Input>>,
   output: CheckOutputOptions = {},
-): TaskCallback<Static<Input>, CheckReport> {
+): TaskCallback<Static<Input>, CheckTaskResult> {
   return bind(contract, options, output);
 }
 

@@ -28,9 +28,14 @@ pnpm exec turbo run build --filter=@silvermoon-work/check.typescript-project...
 pnpm smoke dist\typescript-project.car D:\Projects\example
 ```
 
-命令输出 JSON，包含准确 Bundle CID、检查图、问题及真实 output CID。
+命令输出 JSON，包含准确 Bundle CID、业务结论、问题及 cidPaths。
 保留输入 `{"projectDirectory":"执行机上的项目绝对目录"}` 和
-`check-report/v2` 报告协议。检查只读、不联网、不执行目标代码。
+通过/不通过的业务结构。通过包含 `pass:true` 与 documentation 直接 CID，
+本包还交付 assets 目录 CID；失败增加
+`problems`；不输出 protocol、nodes、edges 或 root。过程节点及其唯一 parent
+通过 Task `context.log` 记录。检查只读、不联网、不执行目标代码。
+Task 输出为 `output.result = {data,cidPaths}`，不再有 output
+space 或 output.cid。
 
 ## 迭代入口与旧实现
 

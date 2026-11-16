@@ -33,7 +33,6 @@ const ipfsStore = IpfsStore.fromClient({ block: car.block });
 const engine = createTaskEngine({
   store,
   ipfsStore,
-  requestInputEnvelope: true,
   authorize: () => true,
   limits: { stopGraceMs: 5000, forceExitWaitMs: 5000 },
 });
@@ -375,7 +374,7 @@ try {
     {
       requestId: newId(),
       bundle: car.cid,
-      input: probeInput,
+      parameters: { data: probeInput, cidPaths: [] },
       timeoutMs: 30_000,
     },
     caller,
@@ -393,7 +392,7 @@ try {
   const observed = await until(async () => {
     const task = engine.getTask(probe.taskId, caller);
     if (task.stage === "failed") assert.fail(JSON.stringify(task));
-    return task.stage === "completed" ? task.output.result : undefined;
+    return task.stage === "completed" ? task.output.result.data : undefined;
   });
   assert.equal(observed.pass, false);
   assert.equal(observed.problems[0].code, "version-too-low");
@@ -424,7 +423,7 @@ try {
       {
         requestId: newId(),
         bundle: car.cid,
-        input: sample.input,
+        parameters: { data: sample.input, cidPaths: [] },
         timeoutMs: sample.timeoutMs ?? 30_000,
       },
       caller,
@@ -494,15 +493,25 @@ try {
     assert.equal(run.stage, "completed", JSON.stringify(run));
     const output = run.output;
     assert.ok(output);
-    const result = output.result;
-    assert.equal(result.protocol, "check-report/v2");
+    const result = output.result.data;
+    assert.deepEqual(
+      Object.keys(result).sort(),
+      sample.pass
+        ? ["documentation", "pass"]
+        : ["documentation", "pass", "problems"],
+    );
     assert.equal(
       result.pass,
       sample.pass,
       JSON.stringify({ sample: sample.name, result }),
     );
     assert.equal("problems" in result, !sample.pass);
-    assert.equal(result.documentation, "references/check.md");
+    assert.deepEqual(
+      output.result.cidPaths,
+      sample.pass
+        ? ['$["documentation"]']
+        : ['$["documentation"]', '$["problems"][*]["documentation"]'],
+    );
     if (!sample.pass) {
       if (sample.codes)
         assert.deepEqual(
@@ -525,17 +534,12 @@ try {
       ]);
       assert.equal(problem.source.kind, "local");
       assert.equal(problem.source.nodeKey, problem.nodeKey);
-      assert.ok(
-        result.nodes.some(
-          (node) =>
-            node.key === problem.nodeKey &&
-            node.item.checker === problem.source.checker &&
-            node.pass === false,
-        ),
-      );
+      const [checker, target] = JSON.parse(problem.nodeKey);
+      assert.equal(checker, problem.source.checker);
+      assert.equal(typeof target, "object");
     }
     for (const path of new Set(paths)) {
-      const file = await exporter(`${output.cid}/${path}`, {
+      const file = await exporter(path, {
         async *get(cid) {
           yield (
             store.readContentBlock(cid.toString()) ??
@@ -549,7 +553,15 @@ try {
       const bytes = Buffer.concat(chunks);
       assert.deepEqual(
         bytes,
-        Buffer.from(await readBytes(car.tree, `resources/${path}`, 262144)),
+        Buffer.from(
+          await readBytes(
+            car.tree,
+            path === result.documentation
+              ? "resources/references/check.md"
+              : `resources/references/problems/${result.problems.find((problem) => problem.documentation === path).code}.md`,
+            262144,
+          ),
+        ),
       );
       assert.match(bytes.toString("utf8"), /[\u4e00-\u9fff]/);
     }
@@ -559,7 +571,7 @@ try {
       pass: result.pass,
       problems: result.problems?.map((p) => p.code) ?? [],
       documents: [...new Set(paths)],
-      outputCid: output.cid,
+      cidPaths: output.result.cidPaths,
       reclaimed: true,
     });
   }

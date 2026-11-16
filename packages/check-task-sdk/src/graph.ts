@@ -1,5 +1,6 @@
 import { setTimeout as yieldLoop } from "node:timers/promises";
 import { types } from "node:util";
+import { exactCid } from "./report.js";
 import {
   canonicalSnapshot,
   compare,
@@ -18,7 +19,6 @@ import {
   documentPath,
   outputSource,
   portableCode,
-  reportProtocol,
   freezeReport,
   type CheckReport,
   type ReportNode,
@@ -28,7 +28,6 @@ import {
 export interface CheckLimits {
   readonly concurrency: number;
   readonly nodes: number;
-  readonly edges: number;
   readonly children: number;
   readonly targetBytes: number;
   readonly encodingBytes: number;
@@ -41,7 +40,6 @@ export interface CheckLimits {
 const defaults: CheckLimits = {
   concurrency: 4,
   nodes: 4096,
-  edges: 16_384,
   children: 16_384,
   targetBytes: 65_536,
   encodingBytes: 16_777_216,
@@ -54,7 +52,6 @@ const defaults: CheckLimits = {
 const maximum: CheckLimits = {
   concurrency: 64,
   nodes: 16_384,
-  edges: 65_536,
   children: 65_536,
   targetBytes: 1_048_576,
   encodingBytes: 67_108_864,
@@ -67,6 +64,7 @@ const maximum: CheckLimits = {
 interface Node {
   readonly key: string;
   readonly item: { readonly checker: string; readonly target: JsonObject };
+  readonly parent?: string;
   pass?: boolean;
   readonly problems: ReportProblem[];
 }
@@ -80,6 +78,7 @@ export interface CheckOptions<R extends CheckerRegistry> {
   readonly signal: AbortSignal;
   readonly limits?: Partial<CheckLimits>;
   readonly problemCodes?: readonly string[];
+  readonly log?: (node: ReportNode) => void | Promise<void>;
 }
 
 export async function executeCheck<const R extends CheckerRegistry>(
@@ -96,6 +95,7 @@ export async function executeCheckInput(options: {
   readonly signal: AbortSignal;
   readonly limits?: Partial<CheckLimits>;
   readonly problemCodes?: readonly string[];
+  readonly log?: (node: ReportNode) => void | Promise<void>;
 }): Promise<CheckReport> {
   const limits = { ...defaults, ...options.limits };
   for (const key of Object.keys(limits) as (keyof CheckLimits)[])
@@ -136,7 +136,6 @@ export async function executeCheckInput(options: {
     stop(new Error("Check execution time budget exceeded."));
   }, limits.timeoutMs);
   const nodes = new Map<string, Node>();
-  const edges = new Map<string, { from: string; to: string }>();
   const queue: Node[] = [];
   const running = new Set<Promise<void>>();
   const codes = options.problemCodes
@@ -205,22 +204,15 @@ export async function executeCheckInput(options: {
         node = {
           key,
           item: { checker: item.checker, target: item.target },
+          ...(parent ? { parent: parent.key } : {}),
           problems: [],
         };
         nodes.set(key, node);
         queue.push(node);
       }
-      if (parent) {
-        const edgeKey = JSON.stringify([parent.key, key]);
-        if (!edges.has(edgeKey)) {
-          if (edges.size === limits.edges)
-            throw new Error("Check edge budget exceeded.");
-          edges.set(edgeKey, { from: parent.key, to: key });
-        }
-      }
       return node;
     };
-    const root = register(options.root);
+    register(options.root);
     const execute = async (node: Node) => {
       const raw: unknown = await registry
         .get(node.item.checker)!
@@ -269,6 +261,7 @@ export async function executeCheckInput(options: {
             )
               throw new Error("Invalid external Checker problem.");
             source = outputSource(problem.source);
+            exactCid(problem.documentation);
             documentation = problem.documentation;
           } else {
             if (
@@ -295,6 +288,16 @@ export async function executeCheckInput(options: {
         }
         node.pass = false;
       } else throw new Error("Invalid Checker result.");
+      if (options.log) {
+        const record: ReportNode = Object.freeze({
+          key: node.key,
+          item: Object.freeze(node.item),
+          ...(node.parent ? { parent: node.parent } : {}),
+          pass: node.pass,
+        });
+        await options.log(record);
+        signal.throwIfAborted();
+      }
     };
     while (!isStopping() && (cursor < queue.length || running.size)) {
       if (completed >= 64) {
@@ -321,18 +324,8 @@ export async function executeCheckInput(options: {
     if (isStopping()) throw errors[0];
     const ordered = [...nodes.values()].sort((a, b) => compare(a.key, b.key));
     const problems = ordered.flatMap((node) => node.problems);
-    const records: ReportNode[] = ordered.map((node) => {
-      if (node.pass === undefined) throw new Error("Incomplete Check node.");
-      return { key: node.key, item: node.item, pass: node.pass };
-    });
     const base = {
-      protocol: reportProtocol as typeof reportProtocol,
       documentation: "references/check.md",
-      root: root.key,
-      nodes: records,
-      edges: [...edges.values()].sort(
-        (a, b) => compare(a.from, b.from) || compare(a.to, b.to),
-      ),
     };
     const [first, ...rest] = problems;
     const report: CheckReport = first

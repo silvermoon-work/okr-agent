@@ -4,11 +4,10 @@ import * as fs from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { executeCheck } from "@silvermoon-work/check-task-sdk";
+import { executeCheck, type ReportNode } from "@silvermoon-work/check-task-sdk";
 import { runCheckBuilderCli } from "@silvermoon-work/check-task-builder/cli";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { Input } from "../src/contract.js";
 import { registry } from "../src/registry.js";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -17,7 +16,9 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 
 let directory: string;
+let records: ReportNode[];
 beforeEach(async () => {
+  records = [];
   directory = resolve("dist", `.project-root-${randomUUID()}`);
   await fs.mkdir(directory, { recursive: true });
 });
@@ -34,12 +35,17 @@ async function put(root: string, path: string, value: string | object) {
     typeof value === "string" ? value : JSON.stringify(value),
   );
 }
-const execute = (signal = new AbortController().signal) =>
-  executeCheck({
+const execute = (signal = new AbortController().signal) => {
+  records = [];
+  return executeCheck({
     registry,
     root: { checker: "project", target: { projectDirectory: directory } },
     signal,
+    log: (node) => {
+      records.push(node);
+    },
   });
+};
 
 it.each([
   ["dependencies", { dependencies: { typescript: "^6.0.0" } }, undefined],
@@ -67,17 +73,16 @@ it.each([
     if (evidence) await put(directory, evidence, "not yet configured");
     const report = await execute();
     expect(report.pass).toBe(true);
-    expect(report.nodes.map((node) => node.item.checker).sort()).toEqual([
+    expect(report).toEqual({
+      pass: true,
+      documentation: "references/check.md",
+    });
+    expect(records.map((node) => node.item.checker).sort()).toEqual([
       "project",
       "single-repo",
     ]);
-    expect(report.edges).toEqual([
-      {
-        from: report.root,
-        to: report.nodes.find((node) => node.item.checker === "single-repo")
-          ?.key,
-      },
-    ]);
+    expect(records[0]).not.toHaveProperty("parent");
+    expect(records[1]?.parent).toBe(records[0]?.key);
   },
 );
 
@@ -97,13 +102,17 @@ it.each([
     if (manifest !== undefined) await put(directory, "package.json", manifest);
     const report = await execute();
     expect(report.pass).toBe(false);
-    expect(report.nodes).toHaveLength(1);
-    expect(report.edges).toEqual([]);
+    expect(records).toHaveLength(1);
+    expect(Object.keys(report).sort()).toEqual([
+      "documentation",
+      "pass",
+      "problems",
+    ]);
     if (report.pass) throw new Error("Expected an invalid project.");
     expect(report.problems).toHaveLength(1);
     expect(report.problems[0].code).toBe("typescript-project-invalid");
     expect(report.problems[0].brief).toContain(directory);
-    expect(report.problems[0].nodeKey).toBe(report.root);
+    expect(report.problems[0].nodeKey).toBe(records[0]?.key);
   },
 );
 
@@ -120,7 +129,7 @@ it.each(["pnpm", "manifest"] as const)(
     await put(directory, "packages/a/tsconfig.json", "{}");
     const report = await execute();
     expect(report.pass).toBe(true);
-    expect(report.nodes.map((node) => node.item.checker).sort()).toEqual([
+    expect(records.map((node) => node.item.checker).sort()).toEqual([
       "monorepo",
       "project",
     ]);
@@ -153,9 +162,11 @@ it("does not infer monorepo from nested packages or let dependency/output files 
     await put(directory, `${ignored}/index.ts`, "export {};");
   expect((await execute()).pass).toBe(false);
   await put(directory, "packages/a/src/index.ts", "export {};");
-  expect(
-    (await execute()).nodes.map((node) => node.item.checker).sort(),
-  ).toEqual(["project", "single-repo"]);
+  await execute();
+  expect(records.map((node) => node.item.checker).sort()).toEqual([
+    "project",
+    "single-repo",
+  ]);
 });
 
 it("requires TypeScript evidence even when workspace is declared", async () => {
@@ -293,11 +304,6 @@ it("builds the new production CAR and runs single, mono and invalid projects thr
     results: Type.Array(
       Type.Object({
         pass: Type.Boolean(),
-        nodes: Type.Array(
-          Type.Object({
-            item: Type.Object({ checker: Type.String(), target: Input }),
-          }),
-        ),
         problems: Type.Optional(
           Type.Array(Type.Object({ code: Type.String() })),
         ),
@@ -312,12 +318,9 @@ it("builds the new production CAR and runs single, mono and invalid projects thr
     true,
     false,
   ]);
-  expect(
-    value.results[0]?.nodes.map((node) => node.item.checker).sort(),
-  ).toEqual(["project", "single-repo"]);
-  expect(
-    value.results[1]?.nodes.map((node) => node.item.checker).sort(),
-  ).toEqual(["monorepo", "project"]);
+  for (const result of value.results)
+    for (const field of ["protocol", "nodes", "edges", "root"])
+      expect(result).not.toHaveProperty(field);
   expect(value.results[2]?.problems?.map((problem) => problem.code)).toEqual([
     "typescript-project-invalid",
   ]);

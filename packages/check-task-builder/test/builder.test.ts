@@ -148,7 +148,6 @@ runCheck(contract, {root: "text", registry: {
     const engine = createTaskEngine({
       store,
       ipfsStore,
-      requestInputEnvelope: true,
       authorize: () => true,
     });
     const caller = { scope: "graph-port", subject: "graph-port" };
@@ -158,7 +157,12 @@ runCheck(contract, {root: "text", registry: {
       async execute({ bundleCid, input, signal }) {
         signal.throwIfAborted();
         let submission = await engine.submit(
-          { requestId: newId(), bundle: bundleCid, input, timeoutMs: 40_000 },
+          {
+            requestId: newId(),
+            bundle: bundleCid,
+            parameters: { data: input, cidPaths: [] },
+            timeoutMs: 40_000,
+          },
           caller,
         );
         while (submission.status === "preparing")
@@ -193,13 +197,9 @@ runCheck(contract, {root: "text", registry: {
           if (errors.length)
             throw new AggregateError(errors, "Child execution/release failed.");
           const task = engine.getTask(taskId, caller);
-          if (
-            task.stage !== "completed" ||
-            !task.output ||
-            typeof task.output.cid !== "string"
-          )
+          if (task.stage !== "completed" || !task.output)
             throw new Error("Child did not produce a complete report.");
-          return { cid: task.output.cid, result: task.output.result };
+          return { result: task.output.result };
         } finally {
           signal.removeEventListener("abort", cancel);
         }
@@ -248,16 +248,18 @@ runCheck(contract, {root: "text", registry: {
           signal: new AbortController().signal,
         });
         expect(result.pass).toBe(text === "hello");
-        expect(result.nodes).toHaveLength(1);
+        expect(Object.keys(result).sort()).toEqual(
+          result.pass
+            ? ["documentation", "pass"]
+            : ["documentation", "pass", "problems"],
+        );
         if (!result.pass) {
           const problem = result.problems[0];
           expect(problem.code).toBe("text-mismatch");
-          expect(problem.source.kind).toBe("output");
-          if (problem.source.kind !== "output")
+          expect(problem.source.kind).toBe("bundle");
+          if (problem.source.kind !== "bundle")
             throw new Error("Missing child provenance.");
-          const node = await ipfsStore.read(
-            `${problem.source.outputCid}/${problem.documentation}`,
-          );
+          const node = await ipfsStore.read(problem.documentation);
           if (node.type === "directory")
             throw new Error("Problem documentation must be a file.");
           const chunks: Uint8Array[] = [];
@@ -615,8 +617,9 @@ runCheck(contract, {root: "text", registry: (context) => ({
 text: defineChecker({target: Input, check: async (input, signal) => {
   const result = await context.invokeTask({
     key: "text",
-    bundle: context.bundle.root.resolve("resources/tasks/child"),
-    input,
+    bundle: context.bundle,
+    path: "resources/tasks/child",
+    parameters: input,
     timeoutMs: 10000,
   });
   if (!result || typeof result !== "object" || Array.isArray(result) ||
@@ -673,7 +676,6 @@ text: defineChecker({target: Input, check: async (input, signal) => {
     const engine = createTaskEngine({
       store,
       ipfsStore,
-      requestInputEnvelope: true,
       authorize: () => true,
     });
     try {
@@ -691,7 +693,7 @@ text: defineChecker({target: Input, check: async (input, signal) => {
           {
             requestId: newId(),
             bundle: parentCar.cid,
-            input: { text },
+            parameters: { data: { text }, cidPaths: [] },
             timeoutMs: 20_000,
           },
           { scope: "imports-test", subject: "imports-test" },
@@ -719,25 +721,30 @@ text: defineChecker({target: Input, check: async (input, signal) => {
                 ? run.bundle
                 : run.bundle?.cid) === parentCar.cid,
           )
-          .map((run) => run.output?.result),
+          .map((run) => {
+            const result = run.output?.result;
+            return result &&
+              typeof result === "object" &&
+              !Array.isArray(result)
+              ? result.data
+              : undefined;
+          }),
       ).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            protocol: "check-report/v2",
             pass: false,
-            documentation: "references/check.md",
+            documentation: expect.any(String) as unknown,
             problems: [
               expect.objectContaining({
                 code: "text-mismatch",
                 brief: "The child check did not pass.",
-                documentation: "references/problems/text-mismatch.md",
+                documentation: expect.any(String) as unknown,
               }),
             ],
           }),
           expect.objectContaining({
-            protocol: "check-report/v2",
             pass: true,
-            documentation: "references/check.md",
+            documentation: expect.any(String) as unknown,
           }),
         ]),
       );
@@ -782,7 +789,7 @@ text: defineChecker({target: Input, check: async (input, signal) => {
       "0.1.0-rc.1",
     );
     expect(manifest.devDependencies["@silvermoon-work/task-builder-cli"]).toBe(
-      "0.2.0-rc.2",
+      "0.2.0-rc.4",
     );
     expect(manifest.scripts.car).toContain("dist/example-text-check/task.yaml");
     expect(await readdir(join(scratch, "example"))).not.toContain(
@@ -828,8 +835,10 @@ text: defineChecker({target: Input, check: async (input, signal) => {
         reclaimed: boolean;
         resources: string[];
         output: {
-          cid: string;
-          result: { pass: boolean; documentation: string };
+          result: {
+            data: { pass: boolean; documentation: string };
+            cidPaths: string[];
+          };
         };
       }[];
     };
@@ -840,11 +849,10 @@ text: defineChecker({target: Input, check: async (input, signal) => {
     ]);
     expect(smoke.results.every((result) => result.reclaimed)).toBe(true);
     for (const result of smoke.results) {
-      expect(result.output.cid).toMatch(/^b[a-z2-7]+$/u);
+      expect(result.output.result.data.documentation).toMatch(/^b[a-z2-7]+$/u);
       expect(result.output).toMatchObject({
         result: {
-          pass: result.pass,
-          documentation: "references/check.md",
+          data: { pass: result.pass },
         },
       });
     }

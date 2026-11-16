@@ -4,9 +4,8 @@ import { types } from "node:util";
 import { checkerName } from "./report.js";
 
 export interface ProblemSource {
-  readonly kind: "output";
+  readonly kind: "bundle";
   readonly bundleCid: string;
-  readonly outputCid: string;
   readonly checker: string;
   readonly nodeKey: string;
 }

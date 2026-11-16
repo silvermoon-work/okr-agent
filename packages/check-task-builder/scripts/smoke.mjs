@@ -47,7 +47,6 @@ const caller = { scope: "check-smoke", subject: "check-smoke" };
 const engine = createTaskEngine({
   store,
   ipfsStore,
-  requestInputEnvelope: true,
   authorize: () => true,
 });
 try {
@@ -57,7 +56,7 @@ try {
       {
         requestId: newId(),
         bundle: cid,
-        input: { text },
+        parameters: { data: { text }, cidPaths: [] },
         timeoutMs: 15_000,
       },
       caller,
@@ -77,11 +76,14 @@ try {
     }
     assert.equal(run.stage, "completed", JSON.stringify(run));
     assert.ok(run.output);
-    const result = run.output.result;
-    const outputCid = run.output.cid;
-    assert.ok(outputCid);
+    const result = run.output.result.data;
     assert.equal(typeof result.pass, "boolean");
-    assert.equal(result.documentation, "references/check.md");
+    assert.deepEqual(
+      run.output.result.cidPaths,
+      result.pass
+        ? ['$["documentation"]']
+        : ['$["documentation"]', '$["problems"][*]["documentation"]'],
+    );
     assert.equal("outputCid" in result, false);
     assert.equal("problems" in result, !result.pass);
     const paths = [
@@ -90,8 +92,16 @@ try {
         ? []
         : result.problems.map((problem) => problem.documentation)),
     ];
-    for (const path of new Set([...paths, ...ancillary])) {
-      const node = await exporter(`${outputCid}/${path}`, {
+    const references = [
+      [result.documentation, "references/check.md"],
+      ...(result.problems ?? []).map((problem) => [
+        problem.documentation,
+        `references/problems/${problem.code}.md`,
+      ]),
+      ...ancillary.map((path) => [`${cid}/resources/${path}`, path]),
+    ];
+    for (const [reference, path] of references) {
+      const node = await exporter(reference, {
         async *get(cid) {
           yield (
             store.readContentBlock(cid.toString()) ??

@@ -26,7 +26,6 @@ const ipfsStore = IpfsStore.fromClient({ block: car.block });
 const engine = createTaskEngine({
   store,
   ipfsStore,
-  requestInputEnvelope: true,
   authorize: () => true,
 });
 const caller = {
@@ -43,8 +42,8 @@ async function until(action) {
   }
   throw new Error("Engine smoke timed out");
 }
-async function document(output, path) {
-  const entry = await exporter(`${output.cid}/${path}`, {
+async function document(cid, path) {
+  const entry = await exporter(path ? `${cid}/${path}` : cid, {
     async *get(cid) {
       yield (
         store.readContentBlock(cid.toString()) ??
@@ -62,7 +61,7 @@ async function submit(input) {
     {
       requestId: newId(),
       bundle: car.cid,
-      input,
+      parameters: { data: input, cidPaths: [] },
       timeoutMs: 120_000,
     },
     caller,
@@ -116,40 +115,59 @@ try {
     assert.equal(request.status, "accepted", JSON.stringify(request));
     const task = await terminal(request.taskId);
     assert.equal(task.stage, "completed", JSON.stringify(task));
-    const result = task.output.result;
-    assert.match(
-      (await document(task.output, result.documentation)).toString("utf8"),
-      /TypeScript 项目/,
+    const payload = task.output.result;
+    const result = payload.data;
+    assert.deepEqual(
+      Object.keys(result).sort(),
+      result.pass
+        ? ["assets", "documentation", "pass"]
+        : ["assets", "documentation", "pass", "problems"],
     );
     assert.deepEqual(
-      await document(task.output, "assets/AGENTS.md"),
-      canonical,
+      payload.cidPaths,
+      result.pass
+        ? ['$["assets"]', '$["documentation"]']
+        : [
+            '$["assets"]',
+            '$["documentation"]',
+            '$["problems"][*]["documentation"]',
+          ],
     );
+    assert.match(
+      (await document(result.documentation)).toString("utf8"),
+      /TypeScript 项目/,
+    );
+    assert.deepEqual(await document(result.assets, "AGENTS.md"), canonical);
     for (const name of standardAssets)
       assert.deepEqual(
-        await document(task.output, `assets/${name}`),
+        await document(result.assets, name),
         Buffer.from(
           await readBytes(car.tree, `resources/assets/${name}`, 262_144),
         ),
       );
     for (const problem of result.problems ?? []) {
-      assert.equal(
-        problem.documentation,
-        `references/problems/${problem.code}.md`,
-      );
-      const text = (
-        await document(task.output, problem.documentation)
-      ).toString("utf8");
+      const text = (await document(problem.documentation)).toString("utf8");
       assert.ok(text.trim());
+      assert.deepEqual(
+        await document(problem.documentation),
+        Buffer.from(
+          await readBytes(
+            car.tree,
+            `resources/references/problems/${problem.code}.md`,
+            262_144,
+          ),
+        ),
+      );
       if (problem.code.startsWith("document-")) {
         assert.match(text, /\.\.\/\.\.\/assets\/AGENTS\.md/);
         const path = posix.normalize(
           posix.join(
-            posix.dirname(problem.documentation),
+            posix.dirname(`references/problems/${problem.code}.md`),
             "../../assets/AGENTS.md",
           ),
         );
-        assert.deepEqual(await document(task.output, path), canonical);
+        assert.equal(path, "assets/AGENTS.md");
+        assert.deepEqual(await document(result.assets, "AGENTS.md"), canonical);
       }
     }
     results.push({
@@ -157,7 +175,7 @@ try {
       ...result,
       documentationReadable: true,
       assetsExact: true,
-      outputCid: task.output.cid,
+      cidPaths: payload.cidPaths,
     });
   }
   const invalid = [];

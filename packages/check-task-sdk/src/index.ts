@@ -20,13 +20,16 @@ export type { CheckReport, ReportNode, ReportProblem } from "./report.js";
 export { checkerFromBundle } from "./bundle.js";
 export type { CheckExecutionPort } from "./bundle.js";
 export { createCheckCallback, runCheck } from "./task.js";
+export type { CheckTaskResult } from "./task.js";
 
 export interface CheckContext {
   readonly signal: TaskContext["signal"];
   readonly log: TaskContext["log"];
   readonly progress: TaskContext["progress"];
   readonly bundle: TaskContext["bundle"];
-  readonly space: TaskContext["space"];
+  readonly readContent: TaskContext["readContent"];
+  readonly resolveContent: TaskContext["resolveContent"];
+  readonly putContent: TaskContext["putContent"];
   readonly invokeTask: TaskContext["invokeTask"];
 }
 export type ProblemReporter<Code extends string> = (

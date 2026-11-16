@@ -1,4 +1,8 @@
 import { Value } from "@sinclair/typebox/value";
+import {
+  acceptPayload,
+  compileJsonSchema,
+} from "@silvermoon-work/task-protocol";
 import type { TObject, TSchema } from "@sinclair/typebox";
 import { canonicalSnapshot, jsonObject, type JsonObject } from "./canonical.js";
 import { defineChecker, type CheckerResult, type Problem } from "./checker.js";
@@ -11,7 +15,7 @@ export interface CheckExecutionPort {
     readonly bundleCid: string;
     readonly input: JsonObject;
     readonly signal: AbortSignal;
-  }): Promise<{ readonly cid: string; readonly result: unknown }>;
+  }): Promise<{ readonly result: unknown }>;
 }
 
 export function checkerFromBundle<
@@ -37,11 +41,17 @@ export function checkerFromBundle<
   const codes = new Set(
     problemCodes(options.contract.schemas["check-problem-code"]),
   );
+  const resultSchema = compileJsonSchema(
+    JSON.parse(JSON.stringify(options.contract.result)) as unknown,
+  ).schema;
   return defineChecker({
-    target: options.contract.input,
+    target: options.contract.parameters,
     check: async (target, signal): Promise<CheckerResult<never>> => {
       const input = canonicalSnapshot(target).value;
-      if (!jsonObject(input) || !Value.Check(options.contract.input, input))
+      if (
+        !jsonObject(input) ||
+        !Value.Check(options.contract.parameters, input)
+      )
         throw new Error("Invalid Bundle Checker input.");
       signal.throwIfAborted();
       const raw: unknown = await execute({ bundleCid, input, signal });
@@ -53,14 +63,14 @@ export function checkerFromBundle<
       }).value;
       if (
         !jsonObject(output) ||
-        !Object.hasOwn(output, "cid") ||
-        !Object.hasOwn(output, "result")
+        !Object.hasOwn(output, "result") ||
+        Object.keys(output).length !== 1
       )
         throw new Error(
           "Bundle Checker requires an authentic output envelope.",
         );
-      const outputCid = exactCid(output.cid);
-      const report = validateCheckReport(output.result);
+      const payload = acceptPayload(output.result, resultSchema);
+      const report = validateCheckReport(payload.data, 65_536, true);
       if (report.pass) return { pass: true, children: [] };
       const problems = report.problems.map((problem): Problem => {
         if (problem.source.kind === "local" && !codes.has(problem.code))
@@ -72,12 +82,11 @@ export function checkerFromBundle<
           brief: problem.brief,
           documentation: problem.documentation,
           source:
-            problem.source.kind === "output"
+            problem.source.kind === "bundle"
               ? problem.source
               : {
-                  kind: "output",
+                  kind: "bundle",
                   bundleCid,
-                  outputCid,
                   checker: problem.source.checker,
                   nodeKey: problem.source.nodeKey,
                 },
