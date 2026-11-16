@@ -218,11 +218,21 @@ runCheck(contract, {root: "text", registry: {
       contract: childContract,
       port,
     });
-    const waitStarted = async (path: string) => {
+    // A marker file becomes visible before its bytes are written, so wait for
+    // the marker content itself rather than for the path to exist.
+    const waitMarker = async (
+      path: string,
+      expected: "started" | "cleaned",
+    ) => {
       const deadline = Date.now() + 15_000;
       for (;;) {
         try {
-          return await readFile(`${path}.started`, "utf8");
+          const content = await readFile(`${path}.${expected}`, "utf8");
+          if (content === expected) return content;
+          if (Date.now() > deadline)
+            throw new Error(
+              `Marker did not contain ${expected}: ${JSON.stringify(content)}.`,
+            );
         } catch (error) {
           if (
             !(error instanceof Error) ||
@@ -235,8 +245,8 @@ runCheck(contract, {root: "text", registry: {
               "Child did not enter its real asynchronous operation.",
               { cause: error },
             );
-          await pause(10);
         }
+        await pause(10);
       }
     };
     try {
@@ -290,7 +300,7 @@ runCheck(contract, {root: "text", registry: {
           fault: defineChecker({
             target: Input,
             check: async () => {
-              await waitStarted(marker);
+              await waitMarker(marker, "started");
               throw failure;
             },
           }),
@@ -301,10 +311,10 @@ runCheck(contract, {root: "text", registry: {
           signal: abort.signal,
         });
         const rejected = execution.catch((error: unknown) => error);
-        expect(await waitStarted(marker)).toBe("started");
+        expect(await waitMarker(marker, "started")).toBe("started");
         if (mode === "abort") abort.abort(new Error("External cancellation."));
         expect(await rejected).toBeInstanceOf(Error);
-        expect(await readFile(`${marker}.cleaned`, "utf8")).toBe("cleaned");
+        expect(await waitMarker(marker, "cleaned")).toBe("cleaned");
         const task = engine.getTask(tasks.at(-1)!, caller);
         expect(task.stage, JSON.stringify(task)).toBe("stopped");
         expect(
