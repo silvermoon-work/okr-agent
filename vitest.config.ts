@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     coverage: {
       autoAttachSubprocess: true,
-      include: ["src/**/*.ts"],
+      include: ["src/**/*.{ts,tsx}"],
       provider: "v8",
       reporter: ["text", "json", "html"],
       thresholds: {
@@ -14,6 +14,6 @@ export default defineConfig({
         statements: 90,
       },
     },
-    include: ["test/**/*.test.ts"],
+    include: ["test/**/*.test.{ts,tsx}"],
   },
 });

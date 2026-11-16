@@ -2,6 +2,8 @@
 
 准备阶段的轻量初版；具体字段与组件位置在实施时确定。按用户授权由 subagent 实现，主 Agent 基于校验与审查证据负责 implementation 门限审批。
 
+候选实现及独立验证记录见 [Verification](./Verification.md)；记录测试结果不代表生命周期 gate 已通过。
+
 ## Steps
 
 ### I-S01: 定义 Spec 与真实样例

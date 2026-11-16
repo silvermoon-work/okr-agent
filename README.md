@@ -59,6 +59,25 @@ pnpm check
 `@silvermoon-work/*` 命名，内部依赖使用
 `workspace:*`，共享第三方依赖版本集中在 pnpm catalog。
 
+### Check Bundle 定义工作台（本地 mock）
+
+[`@silvermoon-work/check-bundle-viewer`](packages/check-bundle-viewer/README.md)
+提供版本化声明式 Spec 校验与可嵌入 React 的折叠脉络 / 契约详情。
+私有宿主含当前 TypeScript Check 的真实身份分流子图，以及更丰富的项目定义 mock。
+桌面为紧凑单行脉络树与独立滚动详情；移动端使用模态导航侧栏。
+说明支持安全 Markdown，Parameters 从 Schema 的直接字段生成列表，
+Problems 使用表格，Parents 从 children 逐边反向推导。
+定义图采用 DAG：允许共享引用，禁止循环。
+
+```sh
+pnpm --filter @silvermoon-work/check-bundle-viewer build
+pnpm --filter @silvermoon-work/check-bundle-web dev
+```
+
+访问
+<http://127.0.0.1:4173/>，Ctrl+C 停止。只展示定义、不执行 checker 或说明表达式；
+Schema 合法不等于语义前置条件成立。无需发布、后端或远程部署。
+
 ## Silvermoon
 
 项目已接入 Silvermoon v2，默认内容语言为简体中文（`zh-CN`），主分支为
