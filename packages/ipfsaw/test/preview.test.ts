@@ -456,7 +456,14 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
     const path = join(directory.directory, "doc.json");
     const content = (schema: string) =>
       JSON.stringify({ $schema: schema, title: "controlled" });
-    const write = (schema: string) => writeFile(path, content(schema));
+    // Saves are atomic replacements. An in-place truncate+write can be observed
+    // mid-write by the poller as a transient identity with final content, which
+    // is a different input than the stable unchanged one this test verifies.
+    const staged = join(directory.directory, "staged.json");
+    const write = async (schema: string) => {
+      await writeFile(staged, content(schema));
+      await rename(staged, path);
+    };
     await write("urn:one:1");
     const abort = new AbortController();
     const diagnostic = vi.fn<(message: string) => void>();
