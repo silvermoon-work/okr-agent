@@ -155,6 +155,33 @@ describe("generic immutable renderer directories", () => {
     files.set("assets/style.css", Buffer.from("body{color:navy}"));
     expect(validateFiles(files).styles).toEqual(["assets/style.css"]);
   });
+  it.each([
+    "__proto__",
+    "constructor",
+    "toString",
+    "valueOf",
+    "hasOwnProperty",
+  ])(
+    "rejects inherited MIME table property %s before packing or loading assets",
+    async (extension) => {
+      const path = `payload.${extension}`;
+      expect(() => mime(path)).toThrow("unsupported MIME extension");
+      const files = rendererFiles();
+      files.set(path, Buffer.from("not a supported asset"));
+      expect(() => validateFiles(files)).toThrow("unsupported MIME extension");
+      await expect(packRenderer(files)).rejects.toThrow(
+        "unsupported MIME extension",
+      );
+      const fixture = await rawDirectory(files);
+      try {
+        await expect(loadRenderer(fixture.store, fixture.cid)).rejects.toThrow(
+          "unsupported MIME extension",
+        );
+      } finally {
+        await fixture.store.close();
+      }
+    },
+  );
   it("enforces manifest, logical bytes and file count at the threshold and +1", () => {
     const files = rendererFiles();
     const manifest = files.get("ipfsaw.renderer.json")!;

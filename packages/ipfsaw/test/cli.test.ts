@@ -401,6 +401,119 @@ describe("public main(argv) interface", () => {
     child.emit("close", null, "SIGTERM");
     await rejected;
   });
+  it.each(["timeout", "abort"] as const)(
+    "escalates an opener ignoring TERM after %s, then awaits close and removes owned resources",
+    async (reason) => {
+      vi.useFakeTimers();
+      const abort = new AbortController();
+      const kill = vi.fn<(signal: NodeJS.Signals) => boolean>(() => true);
+      const child = Object.assign(new EventEmitter(), { kill });
+      mocks.spawn.mockImplementation(
+        (
+          _command: unknown,
+          _args: unknown,
+          options: { timeout: number; signal?: AbortSignal },
+        ) => {
+          // Model Node's native timeout/AbortSignal behavior without a Unix process.
+          const timeout = setTimeout(() => kill("SIGTERM"), options.timeout);
+          const onAbort = () => {
+            kill("SIGTERM");
+            child.emit("error", new Error("Controlled cancellation"));
+          };
+          options.signal?.addEventListener("abort", onAbort, { once: true });
+          child.once("close", () => {
+            clearTimeout(timeout);
+            options.signal?.removeEventListener("abort", onAbort);
+          });
+          return child;
+        },
+      );
+      let completed = false;
+      const opening = openBrowser("http://127.0.0.1", abort.signal).then(
+        () => {
+          completed = true;
+          return "success";
+        },
+        () => {
+          completed = true;
+          return "failure";
+        },
+      );
+      try {
+        if (reason === "timeout") await vi.advanceTimersByTimeAsync(10000);
+        else abort.abort();
+        expect(kill).toHaveBeenCalledExactlyOnceWith("SIGTERM");
+        await vi.advanceTimersByTimeAsync(999);
+        expect(kill).toHaveBeenCalledTimes(1);
+        expect(completed).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(kill).toHaveBeenLastCalledWith("SIGKILL");
+        expect(completed).toBe(false);
+        child.emit("close", null, "SIGKILL");
+        expect(await opening).toBe("failure");
+        expect(child.listenerCount("error")).toBe(0);
+        expect(child.listenerCount("close")).toBe(0);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        child.emit("close", null, "SIGKILL");
+        await opening;
+        vi.useRealTimers();
+      }
+    },
+  );
+  it("escalates an already-aborted opener and retains its error handler until close", async () => {
+    vi.useFakeTimers();
+    const abort = new AbortController();
+    abort.abort();
+    const child = Object.assign(new EventEmitter(), { kill: vi.fn() });
+    mocks.spawn.mockReturnValue(child);
+    const opening = openBrowser("http://127.0.0.1", abort.signal).then(
+      () => "success",
+      () => "failure",
+    );
+    try {
+      child.emit("error", new Error("Controlled cancellation"));
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(child.kill).toHaveBeenCalledExactlyOnceWith("SIGKILL");
+      child.emit("error", new Error("Controlled kill failure"));
+      child.emit("close", null, "SIGKILL");
+      expect(await opening).toBe("failure");
+      expect(child.listenerCount("error")).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      child.emit("close", null, "SIGKILL");
+      await opening;
+      vi.useRealTimers();
+    }
+  });
+  it("cancels escalation and abort listeners when the opener closes normally or during its grace period", async () => {
+    vi.useFakeTimers();
+    try {
+      for (const cancelled of [false, true]) {
+        const abort = new AbortController();
+        const child = Object.assign(new EventEmitter(), { kill: vi.fn() });
+        mocks.spawn.mockReturnValue(child);
+        const opening = openBrowser("http://127.0.0.1", abort.signal).then(
+          () => "success",
+          () => "failure",
+        );
+        if (cancelled) {
+          abort.abort();
+          child.emit("error", new Error("Controlled cancellation"));
+        }
+        child.emit("close", cancelled ? null : 0, cancelled ? "SIGTERM" : null);
+        expect(await opening).toBe(cancelled ? "failure" : "success");
+        abort.abort();
+        await vi.advanceTimersByTimeAsync(20000);
+        expect(child.kill).not.toHaveBeenCalled();
+        expect(child.listenerCount("error")).toBe(0);
+        expect(child.listenerCount("close")).toBe(0);
+        expect(vi.getTimerCount()).toBe(0);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("reports cleanup failure after listening without writing a second business envelope", async () => {
     const fixture = await fixtureDirectory();
     mocks.content.mockResolvedValue({ close: () => Promise.resolve() });

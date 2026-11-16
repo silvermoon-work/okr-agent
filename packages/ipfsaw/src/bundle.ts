@@ -51,10 +51,10 @@ export function assetPath(path: string): string {
   return path;
 }
 export function mime(path: string): string {
-  const type = mimes[path.split(".").at(-1)!];
-  if (!type)
+  const extension = path.split(".").at(-1)!;
+  if (!Object.hasOwn(mimes, extension))
     throw new Error("Renderer asset has an unsupported MIME extension.");
-  return type;
+  return mimes[extension]!;
 }
 export function validateFiles(
   files: ReadonlyMap<string, Uint8Array>,

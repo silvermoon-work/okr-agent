@@ -4,13 +4,11 @@
 
 ## 当前交接状态
 
-用户要求先将源码提交到 origin/main，再由本地继续处理。主包 CLI / registry、通用 renderer 内容读取与本地持续预览、Check 适配及四项回归修复已实现；主 Agent 独立通过 74 项 ipfsaw 与 38 项 viewer 覆盖率测试。subagent 报告完整 `pnpm check` 通过，提交整合后的根检查结果以实际输出为准。
+2026-11-16 已保留本地与远端历史，用普通 merge 同步到主干。主包 CLI / registry、通用 renderer、持续预览与 Check 适配已实现；接手独立审查又修复 MIME 继承属性绕过，以及浏览器启动器忽略普通终止时无法结束的问题。
 
-交接时已保留并合入 origin/main 的并发 TypeScript 项目规格与检查更新。主 Agent 随后独立执行整合后的 `pnpm check`，退出码 0；其中 ipfsaw 74 项、viewer 40 项及 TypeScript 项目 665 项测试通过，覆盖率门限未修改。该源码验证不等于受限候选制品或修复版浏览器验收。
+当前源码的根 `pnpm check` 退出码 0：ipfsaw 83 项、viewer 40 项及 TypeScript 项目 665 项测试通过，四项覆盖率门限未修改。当前私有 scoped 主包的新准确 tarball 已隔离安装，40 个源码 / 构建文件逐字节一致，并用其真实 CLI 在原生 Chrome 贯通保存、语法错误、原子替换、移动导航、不同 Schema、renderer 故障与关闭。准确身份、失败过程与验证边界见 [Verification](./Verification.md)。旧会话的内容排除属于旧交接记录；本次没有访问或复用那些候选目录。
 
-候选制品及消费测试目录被工具明确判为组织内容排除。未绕过访问、复制或另处重打包；修复版制品运行、源码制品一致性和原生浏览器验收仍未完成，因此本次源码提交不表示 Implementation / Deployment 门限接受。Ledger 保持未完成；alias 仓库后续提交发布由用户另开的 session 接管。
-
-后续顺序：在组织允许的条件下完成制品及真实浏览器验收，确认准确版本与提交并通过主干准确 SHA CI 后，先发布 scoped 主包 RC，再由用户通知 alias 仓更新依赖并发版。当前包保持 private，本次不发布 npm 或 release tag。
+本机 `D:\Code\ipfsaw` 不存在，独立 alias 远端也没有可达 HEAD/main，因此 I-S03 / I-AC03 仍未完成；未提交 submitInner、未接受 Implementation / Deployment。alias 仍由用户另开的 session 接管。后续先取得 alias 准确提交与 tarball，在本次准确 scoped tarball 上完成双仓联调及 alias 质量门禁，再推进生命周期；npm、release tag 与远端制品发布始终另需明确授权。当前主包保持 private。
 
 ## Steps
 

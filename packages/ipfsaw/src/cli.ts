@@ -49,13 +49,35 @@ export async function openBrowser(
       ...(signal ? { signal } : {}),
     });
     let failed = false;
-    child.once("error", () => {
+    let escalation: ReturnType<typeof setTimeout> | undefined;
+    const terminate = () => {
       failed = true;
-    });
-    child.once("close", (code, signal) => {
-      if (!failed && code === 0 && !signal) resolve();
+      // Native timeout/AbortSignal sends TERM, which Unix openers may ignore.
+      // Keep ownership until close, but do not wait indefinitely to escalate.
+      escalation ??= setTimeout(() => {
+        child.kill("SIGKILL");
+      }, 1000);
+    };
+    const timeout = setTimeout(terminate, 10000);
+    const onError = () => {
+      failed = true;
+    };
+    const onClose = (
+      code: number | null,
+      termination: NodeJS.Signals | null,
+    ) => {
+      clearTimeout(timeout);
+      clearTimeout(escalation);
+      signal?.removeEventListener("abort", terminate);
+      child.removeListener("error", onError);
+      child.removeListener("close", onClose);
+      if (!failed && code === 0 && !termination) resolve();
       else reject(new Error("Browser opener failed."));
-    });
+    };
+    child.on("error", onError);
+    child.once("close", onClose);
+    signal?.addEventListener("abort", terminate, { once: true });
+    if (signal?.aborted) terminate();
   });
 }
 
