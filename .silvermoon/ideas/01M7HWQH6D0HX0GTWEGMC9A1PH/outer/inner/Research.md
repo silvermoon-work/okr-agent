@@ -29,8 +29,18 @@
 
 实现 renderer 打包时，应使用合适的通用 UnixFS / CAR 能力并验证 manifest 与资源，或提出共享层公开端口缺口；不得复制 Task 打包器、伪造 task.yaml、规避 Task 校验，或把未打包目录标成 CID 制品。
 
-## 浏览器边界
+## Task Engine 命令风格的补充调研
 
+用户明确要求与 Task Engine 对齐后，通过本工作区依赖执行帮助命令（不是启动 Server / Task，也没有读取个人配置）：
+
+- `task-engine server start --help`：`--data-dir` 是实例目录，默认配置 `server.dataDir` 或 `~/.silvermoon.work/task-engine`；`--ipfs-gateway` 读取缺失 CID 块，未设置时无公网兜底；`--content-data-dir` 是另一个选项。不可把 data dir 与 content data dir 混同。
+- `task-engine config set/list --help`：显式参数、用户配置、产品默认的优先级；变更不自动修改已经运行的 Server。
+- 根帮助声明业务结果 stdout 单个 JSON、stderr 日志，无格式切换。故 ipfsaw 不再照早期 Builder 草案提供 `list --json` 或纯文本业务结果。
+- 有意输入一个不存在的命令，观察到业务错误为 `{ok:false,error:{code:"ARGUMENT_INVALID",message:...}}`，进程退出 1。探测没有提交任务或初始化自己的内容服务。
+
+ipfsaw 的 registry 维护 Schema / CID 对应关系，采用 `registry add/list/remove`；它不是 npm registry，也不是 Task Engine 配置或 IPFS 节点管理的替代品。详细修订只在 [Design](./Design.md) 与 CLI Spec 中维护，不改变已接受的通用预览目标。
+
+## 浏览器边界
 核对 MDN：
 
 - [iframe sandbox](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/iframe#sandbox)：不授予 `allow-same-origin` 会形成特殊 origin；同源嵌入同时开放 scripts 与 same-origin 会削弱 sandbox。新窗口或导航也需要单独处理。

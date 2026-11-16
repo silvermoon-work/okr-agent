@@ -49,6 +49,18 @@ Schema URI 按完整字符串精确匹配，不自动访问该地址、不解析
 
 首轮使用明确的有界保护：源文档 1 MiB、manifest 64 KiB、renderer 逻辑资源及保留内容 16 MiB、文件数 2048。共享 Store 更严格的限制继续生效，不扩宽它。所有限制都有边界反例；不把这些值伪称为 Task 协议上限，也不增加调参命令来绕过失败。
 
+## Task Engine 风格与本地 registry
+
+用户补充要求 data dir、IPFS gateway 等选项与实际 Task Engine 保持一致。已核对本工作区安装版本的 `task-engine --help`、`server start --help` 和 config 帮助，现将早期 CLI 草案作以下修订；公共 `/cli` 入口与 renderer ABI 不变：
+
+- 绑定管理命令改为 `registry add/list/remove`，因为管理对象是 Schema / CID 对应关系，不是 renderer 的运行、打包或发布。
+- `--data-dir` 选择 ipfsaw 自己的应用数据目录，不能被解释为共享 IPFS Store 的内容目录。默认 `~/.silvermoon.work/ipfsaw`，优先级为显式选项、`IPFSAW_DATA_DIR`、默认值。
+- 既有 Task 风格的 `--ipfs-gateway` 用于缺失内容块读取；`--content-data-dir` 单独选择 local 内容目录。前者替代早期草案的 `--content-gateway`。
+- 所有业务结果默认 stdout 单个 `{ok:true,data}` 或 `{ok:false,error:{code,message}}` JSON，stderr 仅诊断 / 日志；帮助与版本为 stdout 文本例外。无需 `--json` 或其他格式开关。用法错误使用 `ARGUMENT_INVALID` 并退出 1，与实际 Task Engine 对齐；不再使用早期草案的退出码 2。
+- 预览成功数据为 `{state:"listening",url,schema,rendererCid}`；只声明 HTTP 就绪。绑定列表数据为 `{version:1,renderers:[{schema,cid}]}`，按 Schema 排序；添加结果含 `schema/cid/changed`，移除结果含 `schema/removed`。未修改结果为明确的 false，而非假装发生修改。
+
+早期 `renderer ...`、`--config`、`--content-gateway` 和 `list --json` 只是未发布设计草案，不需要为其增加兼容别名。此处复用的是命名、语义与 I/O 风格，不引入 Task Engine 的常驻后台 Server 模型。
+
 ## 本地配置
 
 ipfsaw 配置只包含版本、renderer 绑定和浏览器交互偏好：
@@ -63,11 +75,11 @@ ipfsaw 配置只包含版本、renderer 绑定和浏览器交互偏好：
 }
 ```
 
-示例 CID 是占位，不是实际制品。默认位置：Windows 为 LocalAppData 下 `ipfsaw/config.json`，其他平台为用户配置目录下 `ipfsaw/config.json`；具体 Node 路径通过正常平台路径函数生成。`--config` 可选择另一份配置。缺文件视为空绑定；已有非法文件不得静默重建或被参数掩盖。
+示例 CID 是占位，不是实际制品。配置位于所选 ipfsaw `--data-dir` 中的 `config.json`。该目录只承载 ipfsaw 的绑定及交互设置，不复用 Task Engine 实例目录，也不接管 IPFS 数据。使用正常平台路径函数解析相对路径；空 / 非法目录参数或环境变量明确报错，不回落到其他目录。缺配置文件视为空绑定；已有非法文件不得静默重建或被参数掩盖。
 
 预览启动时固定一份配置快照。修改 renderer 绑定后需重新启动预览，不在运行中暗中升级代码。文档 `$schema` 改变时可以在该快照内重新选择 bundle；没绑定则展示明确错误。
 
-IPFS 配置完全交给现有 `createConfiguredContent` / `readContentConfiguration`，遵守 `TASK_CONTENT_CONFIG`、既有平台路径及 backend 规则。仅复用既有 `--content-gateway` / `--content-data-dir` 覆盖语义，不接受 ipfsaw 配置中的第二套 IPFS 键。关闭自己创建的 Store，不停止用户的 Kubo daemon。
+IPFS 配置完全交给现有 `createConfiguredContent` / `readContentConfiguration`，遵守 `TASK_CONTENT_CONFIG`、既有平台路径及 backend 规则。`--ipfs-gateway` 传给现有 helper 的 gateway override，`--content-data-dir` 传给其 local dataDir override；ipfsaw 的 `--data-dir` 绝不能传成内容目录。已有非法配置或 backend 混用仍由共享机制拒绝，不接受 ipfsaw 配置中的第二套 IPFS 键。关闭自己创建的 Store，不停止用户的 Kubo daemon。
 
 绑定添加先验证 Schema URI 与根 CID，不接受 CID 后拼接任意 path。已有不同 CID 需要 `--replace`；相同绑定为明确无修改的幂等结果。移除不存在的键同样明确报告无修改。配置以受控临时文件原子替换，失败保留旧文件，不动源文档。
 

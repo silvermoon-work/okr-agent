@@ -61,11 +61,11 @@
       <ul>
         <li><a href="#view"><code>ipfsaw &lt;document&gt;</code></a> 持续预览
           <ul>
-            <li><code>renderer</code> 仅分组，无参数显示该组帮助
+            <li><code>registry</code> 仅分组，无参数显示该组帮助
               <ul>
-                <li><a href="#renderer-add"><code>add &lt;schema-uri&gt; &lt;cid&gt;</code></a></li>
-                <li><a href="#renderer-list"><code>list</code></a></li>
-                <li><a href="#renderer-remove"><code>remove &lt;schema-uri&gt;</code></a></li>
+                <li><a href="#registry-add"><code>add &lt;schema-uri&gt; &lt;cid&gt;</code></a></li>
+                <li><a href="#registry-list"><code>list</code></a></li>
+                <li><a href="#registry-remove"><code>remove &lt;schema-uri&gt;</code></a></li>
               </ul>
             </li>
           </ul>
@@ -78,38 +78,38 @@
         <p class="status">需求来源：已确认的本地持续预览 / Task Store 复用，加上用户授权主 Agent 完成的资源及接口设计。</p>
         <dl>
           <dt>包与入口</dt><dd>二进制名为 <code>ipfsaw</code>。Alias 调用主包公开 <code>@silvermoon-work/ipfsaw/cli</code> 的 <code>main(argv): Promise&lt;number&gt;</code>，不改写 argv、不二次启动 npx、不复制业务逻辑。</dd>
-          <dt>配置</dt><dd><code>--config &lt;file&gt;</code> 可用于所有命令；只包含 <code>version:1</code>、<code>renderers</code> 和可选 <code>openBrowser</code>。默认使用平台用户配置目录下 <code>ipfsaw/config.json</code>，Windows 使用 LocalAppData。缺文件等于空绑定，非法文件显式失败。具体值优先级为命令参数、用户配置、产品默认。</dd>
-          <dt>IPFS</dt><dd>只在预览场景调用现有 Task 工具链的 Store helper，使用相同配置来源、默认值与 backend 限制。绑定命令不初始化 Store，不添加第二份 IPFS 配置，也不自动使用公网 fallback。</dd>
-          <dt>输出流</dt><dd>stdout 只含主要结果；预览时为就绪 URL，管理时为绑定结果。诊断、加载与文档更新消息走 stderr，不默认打印文档正文、能力 token 或堆栈。非 TTY 与 <code>NO_COLOR</code> 禁用装饰，不依赖交互提示。</dd>
-          <dt>退出码</dt><dd><code>0</code> 为帮助、版本或已完成管理操作；<code>1</code> 为输入、配置、内容、运行或清理失败；<code>2</code> 为 CLI 用法错误。预览正常等待，SIGINT 为 <code>130</code>、SIGTERM 为 <code>143</code>；清理故障仍显式报告且不能返回 0。</dd>
-          <dt>帮助</dt><dd>所有 callable 节点支持 <code>-h/--help</code>；根无参数和 renderer 分组无参数显示简明帮助并返回 0。<code>--version</code> 为独立根选项。未知命令或选项不静默忽略。</dd>
+          <dt>应用数据目录</dt><dd><code>--data-dir &lt;path&gt;</code> 用于所有命令，选择 ipfsaw 自己的数据目录；优先级为显式选项、<code>IPFSAW_DATA_DIR</code>、<code>~/.silvermoon.work/ipfsaw</code>。所选目录的 <code>config.json</code> 只包含 <code>version:1</code>、<code>renderers</code> 和可选 <code>openBrowser</code>。缺文件等于空绑定，非法文件显式失败。不是 Task Engine 实例目录，也不是共享 IPFS 内容目录。</dd>
+          <dt>IPFS</dt><dd>预览使用与 Task Engine 一致的 <code>--ipfs-gateway</code> 和独立的 <code>--content-data-dir</code>，交给共享 Store helper；遵守同一配置来源、默认值与 backend 限制。应用 <code>--data-dir</code> 不得作为 Store dataDir。Registry 命令不初始化 Store，不添加第二份 IPFS 配置或公网 fallback。</dd>
+          <dt>输出流</dt><dd>沿用 Task Engine：业务结果 stdout 单个 <code>{ok:true,data}</code> 或 <code>{ok:false,error:{code,message}}</code> JSON；帮助与版本为文本例外。stderr 仅诊断、加载及更新日志，不默认打印文档正文、能力 token 或堆栈。就绪 URL 放在成功 data 中，其 fragment 可以携带本次会话能力标识。非 TTY 与 <code>NO_COLOR</code> 无装饰，不依赖交互提示。</dd>
+          <dt>退出码</dt><dd><code>0</code> 为帮助、版本或已完成管理操作；<code>1</code> 为用法、输入、配置、内容、运行或清理失败。用法错误 code 为 <code>ARGUMENT_INVALID</code>。预览正常等待，SIGINT 为 <code>130</code>、SIGTERM 为 <code>143</code>；清理故障仍显式报告且不能返回 0。</dd>
+          <dt>帮助</dt><dd>所有 callable 节点支持 <code>-h/--help</code>；根无参数和 registry 分组无参数显示简明帮助并返回 0。<code>--version</code> 为独立根选项。未知命令或选项不静默忽略。</dd>
           <dt>正确性与信任</dt><dd>Schema URI 精确匹配，CID 必须是 bundle 根；不从文档安装代码，不上传或修改源文档，不把 CID 当可信认证。Renderer 不在 Node 中执行。源文档、manifest、bundle 和文件数按 Design 中的明确预算验证。</dd>
-          <dt>首轮不支持</dt><dd>不从 stdin 预览；不自动搜索文件；无 marketplace、编辑器、后台 daemon 或 npm / IPFS 发布命令。根预览没有 JSON 输出模式；管理自动化使用 <code>renderer list --json</code>。只有 list 接受该标志。</dd>
+          <dt>首轮不支持</dt><dd>不从 stdin 预览，不自动搜索文件；无 marketplace、编辑器、后台 daemon 或 npm / IPFS 发布命令。业务结果已默认 JSON，因此没有 <code>--json</code>、plain 或 format 开关。早期草案的 <code>--config</code>、<code>--content-gateway</code> 和 renderer 命令组不保留为别名。</dd>
         </dl>
       </section>
       <section id="view" class="chapter" aria-labelledby="view-title" tabindex="-1">
         <h2 id="view-title"><code>ipfsaw &lt;document&gt;</code></h2>
         <p class="status">S-VIEW；主 Agent 受托设计候选，待实现验证。</p>
         <p>读取一份本地文档，按根 <code>$schema</code> 及本次配置快照查准确 renderer CID，启动回环浏览器入口，保存后持续更新。</p>
-        <pre><code>ipfsaw &lt;document&gt; [--config &lt;file&gt;] [--no-open]
-       [--content-gateway &lt;url&gt;] [--content-data-dir &lt;directory&gt;]</code></pre>
+        <pre><code>ipfsaw &lt;document&gt; [--data-dir &lt;path&gt;] [--no-open]
+       [--ipfs-gateway &lt;url&gt;] [--content-data-dir &lt;directory&gt;]</code></pre>
         <p><a href="#shared-contracts">共享契约</a>全部适用；此命令是持续运行服务，不是一次性转换。</p>
         <h3>参数</h3>
         <div class="table-scroll" tabindex="0" role="region" aria-label="预览参数"><table>
           <thead><tr><th scope="col">名称</th><th scope="col">类型 / 输入</th><th scope="col">必需</th><th scope="col">默认</th><th scope="col">用户配置</th><th scope="col">约束</th></tr></thead>
           <tbody>
             <tr><th scope="row"><code>document</code></th><td>位置参数，文件路径</td><td>预览必需</td><td>无</td><td>无</td><td>YAML / YML / JSON；对象根且有字符串 <code>$schema</code>；<code>-</code> 不能冒充监听文件</td></tr>
-            <tr><th scope="row"><code>--config</code></th><td>文件路径</td><td>否</td><td>共享契约中的用户路径</td><td>绑定与浏览器偏好</td><td>非法配置不可被覆盖参数掩盖</td></tr>
+            <tr><th scope="row"><code>--data-dir</code></th><td>应用目录</td><td>否</td><td>共享契约中的应用路径</td><td><code>IPFSAW_DATA_DIR</code></td><td>配置为目录下 config.json，不改变共享 Store 路径；非法配置不可被参数掩盖</td></tr>
             <tr><th scope="row"><code>--no-open</code></th><td>布尔开关</td><td>否</td><td>默认自动打开</td><td><code>openBrowser</code></td><td>显式使用时只输出地址，不启动浏览器</td></tr>
-            <tr><th scope="row"><code>--content-gateway</code></th><td>URL</td><td>否</td><td>共享 Store 配置</td><td>现有 Task 配置</td><td>原 helper 的同名覆盖语义；不能绕过 backend 验证</td></tr>
+            <tr><th scope="row"><code>--ipfs-gateway</code></th><td>URL</td><td>否</td><td>共享 Store 配置</td><td>现有 Task 配置</td><td>缺块读取网关；不能绕过 backend 验证或暗加公网兜底</td></tr>
             <tr><th scope="row"><code>--content-data-dir</code></th><td>目录</td><td>否</td><td>共享 Store 配置</td><td>现有 Task 配置</td><td>不创建另一套 ipfsaw 内容配置；Kubo 不混用 local 字段</td></tr>
           </tbody>
         </table></div>
         <h3>输出与行为</h3>
         <dl>
-          <dt>stdout</dt><dd>HTTP 就绪后仅一行本地 URL；若有本次运行能力标识，放在浏览器 fragment，不当作普通诊断打印。URL 表示服务就绪，不冒充 renderer 已完成绘制。</dd>
+          <dt>stdout</dt><dd>HTTP 就绪后一个成功 JSON，data 为 <code>{state:"listening",url,schema,rendererCid}</code>；启动失败则一个失败 envelope。URL fragment 可以携带本次能力标识，不当作普通诊断打印。listening 不冒充 renderer 已完成绘制，后续 watch 日志不追加业务 JSON。</dd>
           <dt>stderr</dt><dd>加载状态、明确的文件 / 配置 / CID / renderer 错误及更新反馈；语法错误包含位置和原因，不默认泄露正文。</dd>
-          <dt>退出码</dt><dd>启动失败 1，用法错误 2；运行中可纠正的文档错误保留服务并显示错误状态，不能把旧视图当作当前有效 revision。中断使用共享信号码。</dd>
+          <dt>退出码</dt><dd>启动或用法错误均为 1；运行中可纠正的文档错误保留服务并显示错误状态，不能把旧视图当作当前有效 revision。中断使用共享信号码。</dd>
           <dt>副作用</dt><dd>仅创建本次 HTTP / watcher / Store 资源，读取既有映射和不可变 bundle。地址固定回环，端口由系统分配。Ctrl+C 等待释放资源；不停止外部 Kubo。</dd>
           <dt>交互</dt><dd>不提示缺失参数；无参数显示帮助。自动打开失败应明确警告并保留可访问 URL，不能谎报浏览器打开成功。文件保存更新不需要重启 CLI；绑定修改需重新启动。</dd>
         </dl>
@@ -117,56 +117,56 @@
         <div class="examples">
           <div class="example"><h3>持续查看</h3><dl>
             <dt>调用</dt><dd><pre><code>ipfsaw .\check.yaml --no-open</code></pre></dd>
-            <dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd><pre><code>http://127.0.0.1:49152/#&lt;session-token&gt;</code></pre></dd>
+            <dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd><pre><code>{"ok":true,"data":{"state":"listening","url":"http://127.0.0.1:49152/#&lt;session-token&gt;","schema":"urn:ipfsaw:check-bundle:1","rendererCid":"&lt;renderer-cid&gt;"}}</code></pre></dd>
             <dt>stderr</dt><dd>报告服务就绪与后续文档更新；不输出文档正文。</dd><dt>退出</dt><dd>持续运行；Ctrl+C 后 130，完成清理。</dd>
           </dl></div>
           <div class="example"><h3>没有 renderer 绑定</h3><dl>
-            <dt>调用</dt><dd><pre><code>ipfsaw .\unmapped.json</code></pre></dd><dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd>空</dd>
-            <dt>stderr</dt><dd>未找到该 Schema 的 renderer；给出当前配置位置与 <code>renderer add</code> 的修复建议，不自动安装。</dd><dt>退出</dt><dd>1</dd>
+            <dt>调用</dt><dd><pre><code>ipfsaw .\unmapped.json</code></pre></dd><dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd>一个失败 envelope，说明未绑定该 Schema，并建议 <code>registry add</code>。</dd>
+            <dt>stderr</dt><dd>可有诊断日志，不自动安装，也不打印文档正文。</dd><dt>退出</dt><dd>1</dd>
           </dl></div>
         </div><p><a href="#command-tree">返回命令树</a></p>
       </section>
-      <section id="renderer-add" class="chapter" aria-labelledby="renderer-add-title" tabindex="-1">
-        <h2 id="renderer-add-title"><code>ipfsaw renderer add</code></h2>
+      <section id="registry-add" class="chapter" aria-labelledby="registry-add-title" tabindex="-1">
+        <h2 id="registry-add-title"><code>ipfsaw registry add</code></h2>
         <p class="status">S-BIND；主 Agent 受托设计候选。</p>
         <p>记录一个明确的 Schema URI / 根 CID 绑定；这是用户选择 renderer 的授权操作，不是自动下载或执行。</p>
-        <pre><code>ipfsaw renderer add &lt;schema-uri&gt; &lt;cid&gt; [--replace] [--config &lt;file&gt;]</code></pre>
-        <p><a href="#shared-contracts">共享契约</a>适用；不接收预览专属 content 选项或 <code>--json</code>。</p>
+        <pre><code>ipfsaw registry add &lt;schema-uri&gt; &lt;cid&gt; [--replace] [--data-dir &lt;path&gt;]</code></pre>
+        <p><a href="#shared-contracts">共享契约</a>适用；不接收预览专属 content 选项或格式开关。</p>
         <h3>参数</h3><div class="table-scroll" tabindex="0" role="region" aria-label="添加绑定参数"><table>
           <thead><tr><th scope="col">名称</th><th scope="col">类型</th><th scope="col">必需</th><th scope="col">默认 / 配置</th><th scope="col">约束</th></tr></thead>
           <tbody><tr><th scope="row"><code>schema-uri</code></th><td>位置字符串</td><td>是</td><td>无</td><td>非空完整 URI，精确匹配，不模糊补全</td></tr>
           <tr><th scope="row"><code>cid</code></th><td>位置字符串</td><td>是</td><td>无</td><td>合法根 CID，不接受 path 或远端脚本 URL；以规范 CID 表示保存</td></tr>
           <tr><th scope="row"><code>--replace</code></th><td>布尔</td><td>否</td><td>false</td><td>已有不同 CID 时必须显式提供，不能用交互提示代替</td></tr>
-          <tr><th scope="row"><code>--config</code></th><td>文件路径</td><td>否</td><td>共享配置路径</td><td>原子写入，保留其他有效设置</td></tr></tbody>
+          <tr><th scope="row"><code>--data-dir</code></th><td>应用目录</td><td>否</td><td>共享应用路径</td><td>只原子写入其 config.json，保留其他有效设置</td></tr></tbody>
         </table></div>
-        <h3>输出与行为</h3><dl><dt>stdout</dt><dd>写入后的 Schema / CID 对应关系；相同绑定明确报告未修改。</dd><dt>stderr</dt><dd>配置或覆盖冲突的诊断与 <code>--replace</code> 建议。</dd><dt>退出码</dt><dd>完成或幂等未修改为 0；坏配置 / 冲突 1，参数不完整或非法 2。</dd><dt>副作用</dt><dd>只原子更新所选本地配置；不获取 bundle、不打开浏览器、不创建 IPFS Store。</dd><dt>交互</dt><dd>不要求确认提示，覆盖依赖显式开关；中断清理自己创建的临时文件。</dd></dl>
+        <h3>输出与行为</h3><dl><dt>stdout</dt><dd>成功 data 为 <code>{schema,cid,changed}</code>；相同绑定 changed 为 false。配置或覆盖冲突输出失败 envelope。</dd><dt>stderr</dt><dd>仅诊断日志，不混入业务结果。</dd><dt>退出码</dt><dd>完成或幂等未修改为 0；配置 / 冲突 / 非法参数均为 1。</dd><dt>副作用</dt><dd>只原子更新所选本地配置；不获取 bundle、不打开浏览器、不创建 IPFS Store。</dd><dt>交互</dt><dd>不要求确认提示，覆盖依赖显式开关；中断清理自己创建的临时文件。</dd></dl>
         <h3>预期例子，不是执行证据</h3><div class="examples">
-          <div class="example"><h3>首次绑定</h3><dl><dt>调用</dt><dd><pre><code>ipfsaw renderer add urn:ipfsaw:check-bundle:1 &lt;renderer-cid&gt;</code></pre></dd><dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd>该 Schema 与规范根 CID 的绑定。</dd><dt>stderr</dt><dd>空</dd><dt>退出</dt><dd>0</dd></dl></div>
-          <div class="example"><h3>拒绝隐式替换</h3><dl><dt>调用</dt><dd><pre><code>ipfsaw renderer add urn:ipfsaw:check-bundle:1 &lt;other-cid&gt;</code></pre></dd><dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd>空</dd><dt>stderr</dt><dd>已有不同绑定；如确认变更，使用 --replace。旧文件不变。</dd><dt>退出</dt><dd>1</dd></dl></div>
+          <div class="example"><h3>首次绑定</h3><dl><dt>调用</dt><dd><pre><code>ipfsaw registry add urn:ipfsaw:check-bundle:1 &lt;renderer-cid&gt;</code></pre></dd><dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd>成功 envelope，data 为该 Schema、规范根 CID 及 changed:true。</dd><dt>stderr</dt><dd>空</dd><dt>退出</dt><dd>0</dd></dl></div>
+          <div class="example"><h3>拒绝隐式替换</h3><dl><dt>调用</dt><dd><pre><code>ipfsaw registry add urn:ipfsaw:check-bundle:1 &lt;other-cid&gt;</code></pre></dd><dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd>失败 envelope，说明已有不同绑定、建议 --replace；旧文件不变。</dd><dt>stderr</dt><dd>可有诊断日志</dd><dt>退出</dt><dd>1</dd></dl></div>
         </div><p><a href="#command-tree">返回命令树</a></p>
       </section>
-      <section id="renderer-list" class="chapter" aria-labelledby="renderer-list-title" tabindex="-1">
-        <h2 id="renderer-list-title"><code>ipfsaw renderer list</code></h2><p class="status">S-BIND；主 Agent 受托设计候选。</p>
+      <section id="registry-list" class="chapter" aria-labelledby="registry-list-title" tabindex="-1">
+        <h2 id="registry-list-title"><code>ipfsaw registry list</code></h2><p class="status">S-BIND；主 Agent 受托设计候选。</p>
         <p>查看当前配置中的精确绑定，不探测 IPFS 或执行 renderer。</p>
-        <pre><code>ipfsaw renderer list [--json] [--config &lt;file&gt;]</code></pre><p><a href="#shared-contracts">共享契约</a>适用；无 stdin、浏览器或 Store 副作用。</p>
+        <pre><code>ipfsaw registry list [--data-dir &lt;path&gt;]</code></pre><p><a href="#shared-contracts">共享契约</a>适用；无 stdin、浏览器或 Store 副作用。</p>
         <h3>参数</h3><div class="table-scroll" tabindex="0" role="region" aria-label="查看绑定参数"><table><thead><tr><th scope="col">名称</th><th scope="col">类型</th><th scope="col">必需</th><th scope="col">默认 / 配置</th><th scope="col">约束</th></tr></thead>
-          <tbody><tr><th scope="row"><code>--json</code></th><td>布尔</td><td>否</td><td>false</td><td>stdout 输出单个稳定 JSON 对象，不混入人类日志</td></tr><tr><th scope="row"><code>--config</code></th><td>文件路径</td><td>否</td><td>共享配置路径</td><td>缺文件等于空列表，非法文件不等于空列表</td></tr></tbody></table></div>
-        <h3>输出与行为</h3><dl><dt>stdout</dt><dd>默认显示按 Schema 排序的对应关系；JSON 为 <code>{version:1, renderers:[{schema,cid}]}</code>，不含时序或秘密字段。</dd><dt>stderr</dt><dd>仅读取失败或坏配置诊断。</dd><dt>退出码</dt><dd>成功（包括无绑定）0，读取 / 配置错误 1，用法错误 2。</dd><dt>副作用</dt><dd>无文件写入，不创建 Store。</dd><dt>交互</dt><dd>无提示；支持非 TTY；退出不会留下后台资源。</dd></dl>
+          <tbody><tr><th scope="row"><code>--data-dir</code></th><td>应用目录</td><td>否</td><td>共享应用路径</td><td>缺配置等于空列表，非法配置不等于空列表</td></tr></tbody></table></div>
+        <h3>输出与行为</h3><dl><dt>stdout</dt><dd>成功 envelope，data 为 <code>{version:1,renderers:[{schema,cid}]}</code>，按 Schema 排序，不含时序或秘密字段；错误同样为 JSON envelope。</dd><dt>stderr</dt><dd>仅诊断日志。</dd><dt>退出码</dt><dd>成功（包括无绑定）0，读取 / 配置 / 用法错误均为 1。</dd><dt>副作用</dt><dd>无文件写入，不创建 Store。</dd><dt>交互</dt><dd>无提示；支持非 TTY；退出不会留下后台资源。</dd></dl>
         <h3>预期例子，不是执行证据</h3><div class="examples">
-          <div class="example"><h3>空绑定</h3><dl><dt>调用</dt><dd><pre><code>ipfsaw renderer list --json</code></pre></dd><dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd><pre><code>{"version":1,"renderers":[]}</code></pre></dd><dt>stderr</dt><dd>空</dd><dt>退出</dt><dd>0</dd></dl></div>
-          <div class="example"><h3>非法配置</h3><dl><dt>调用</dt><dd><pre><code>ipfsaw renderer list --config .\broken.json --json</code></pre></dd><dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd>空</dd><dt>stderr</dt><dd>配置文件无法解析或不满足版本 / 形状约束。</dd><dt>退出</dt><dd>1</dd></dl></div>
+          <div class="example"><h3>空绑定</h3><dl><dt>调用</dt><dd><pre><code>ipfsaw registry list</code></pre></dd><dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd><pre><code>{"ok":true,"data":{"version":1,"renderers":[]}}</code></pre></dd><dt>stderr</dt><dd>空</dd><dt>退出</dt><dd>0</dd></dl></div>
+          <div class="example"><h3>非法配置</h3><dl><dt>调用</dt><dd><pre><code>ipfsaw registry list --data-dir .\broken-data</code></pre></dd><dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd>失败 envelope，说明 config.json 无法解析或不满足版本 / 形状约束。</dd><dt>stderr</dt><dd>可有诊断日志</dd><dt>退出</dt><dd>1</dd></dl></div>
         </div><p><a href="#command-tree">返回命令树</a></p>
       </section>
-      <section id="renderer-remove" class="chapter" aria-labelledby="renderer-remove-title" tabindex="-1">
-        <h2 id="renderer-remove-title"><code>ipfsaw renderer remove</code></h2><p class="status">S-BIND；主 Agent 受托设计候选。</p>
+      <section id="registry-remove" class="chapter" aria-labelledby="registry-remove-title" tabindex="-1">
+        <h2 id="registry-remove-title"><code>ipfsaw registry remove</code></h2><p class="status">S-BIND；主 Agent 受托设计候选。</p>
         <p>删除所选 Schema 的本地绑定，不删除 bundle、共享内容或其他人的 pin。</p>
-        <pre><code>ipfsaw renderer remove &lt;schema-uri&gt; [--config &lt;file&gt;]</code></pre><p><a href="#shared-contracts">共享契约</a>适用；没有批量通配删除。</p>
+        <pre><code>ipfsaw registry remove &lt;schema-uri&gt; [--data-dir &lt;path&gt;]</code></pre><p><a href="#shared-contracts">共享契约</a>适用；没有批量通配删除。</p>
         <h3>参数</h3><div class="table-scroll" tabindex="0" role="region" aria-label="移除绑定参数"><table><thead><tr><th scope="col">名称</th><th scope="col">类型</th><th scope="col">必需</th><th scope="col">默认 / 配置</th><th scope="col">约束</th></tr></thead>
-          <tbody><tr><th scope="row"><code>schema-uri</code></th><td>位置字符串</td><td>是</td><td>无</td><td>只删除这个精确键，不把 * 当通配符</td></tr><tr><th scope="row"><code>--config</code></th><td>文件路径</td><td>否</td><td>共享配置路径</td><td>非法文件不重建，其他有效字段保留</td></tr></tbody></table></div>
-        <h3>输出与行为</h3><dl><dt>stdout</dt><dd>明确报告已移除或未找到、未修改；不假装删除不存在的项。</dd><dt>stderr</dt><dd>配置 / 写入错误。</dd><dt>退出码</dt><dd>完成或幂等未修改 0，配置 / 写入错误 1，用法错误 2。</dd><dt>副作用</dt><dd>最多原子更新一个用户明确选择的配置文件；不访问 Store。</dd><dt>交互</dt><dd>精确删除请求本身表达意图，无额外 TTY 提示。中断清理自己创建的临时文件。</dd></dl>
+          <tbody><tr><th scope="row"><code>schema-uri</code></th><td>位置字符串</td><td>是</td><td>无</td><td>只删除这个精确键，不把 * 当通配符</td></tr><tr><th scope="row"><code>--data-dir</code></th><td>应用目录</td><td>否</td><td>共享应用路径</td><td>非法配置不重建，其他有效字段保留</td></tr></tbody></table></div>
+        <h3>输出与行为</h3><dl><dt>stdout</dt><dd>成功 data 为 <code>{schema,removed}</code>，明确区分移除与未找到、未修改；错误为失败 envelope。</dd><dt>stderr</dt><dd>仅诊断日志。</dd><dt>退出码</dt><dd>完成或幂等未修改 0，配置 / 写入 / 用法错误均为 1。</dd><dt>副作用</dt><dd>最多原子更新一个用户明确选择的配置文件；不访问 Store。</dd><dt>交互</dt><dd>精确删除请求本身表达意图，无额外 TTY 提示。中断清理自己创建的临时文件。</dd></dl>
         <h3>预期例子，不是执行证据</h3><div class="examples">
-          <div class="example"><h3>移除绑定</h3><dl><dt>调用</dt><dd><pre><code>ipfsaw renderer remove urn:ipfsaw:check-bundle:1</code></pre></dd><dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd>已移除该绑定；或明确报告未找到且无修改。</dd><dt>stderr</dt><dd>空</dd><dt>退出</dt><dd>0</dd></dl></div>
-          <div class="example"><h3>参数缺失</h3><dl><dt>调用</dt><dd><pre><code>ipfsaw renderer remove</code></pre></dd><dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd>空</dd><dt>stderr</dt><dd>缺少 schema-uri，并给出用法与 --help 提示。</dd><dt>退出</dt><dd>2</dd></dl></div>
+          <div class="example"><h3>移除绑定</h3><dl><dt>调用</dt><dd><pre><code>ipfsaw registry remove urn:ipfsaw:check-bundle:1</code></pre></dd><dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd>成功 envelope，removed:true 或明确的 false。</dd><dt>stderr</dt><dd>空</dd><dt>退出</dt><dd>0</dd></dl></div>
+          <div class="example"><h3>参数缺失</h3><dl><dt>调用</dt><dd><pre><code>ipfsaw registry remove</code></pre></dd><dt>stdin</dt><dd>不使用</dd><dt>stdout</dt><dd>失败 envelope，code 为 ARGUMENT_INVALID，说明缺少 schema-uri 并提示 --help。</dd><dt>stderr</dt><dd>可有诊断日志</dd><dt>退出</dt><dd>1</dd></dl></div>
         </div><p><a href="#command-tree">返回命令树</a></p>
       </section>
     </div>
