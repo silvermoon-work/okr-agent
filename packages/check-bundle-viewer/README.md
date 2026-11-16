@@ -184,3 +184,14 @@ pnpm check
 四项全局覆盖率均要求 90%。浏览器视觉、窄屏与原生键盘体验需要另行实际验收，
 jsdom 行为测试通过受控的 matchMedia、动画帧及 dialog 方法模拟平台缺口，
 验证选择、引用、关闭与 resize 的应用行为；不能证明浏览器原生焦点约束或替代浏览器证据。
+
+## ipfsaw browser renderer
+
+`pnpm --filter @silvermoon-work/check-bundle-viewer build`
+同时生成原有组件模块与
+`dist/renderer/` 中真正自包含的 browser ESM、CSS、source map 和
+`ipfsaw.renderer.json`。入口默认导出 `mount/update/dispose`，复用同一组件；
+不复制脉络树或 Markdown/DAG 逻辑。组件仍接受旧无标识文档；可选根
+`$schema` 只允许准确的 `urn:ipfsaw:check-bundle:1`，未知字段仍严格拒绝。
+用于通用 CLI 时必须带此标识，配置绑定准确根 CID。
+受控本地 pack/import/preview 指令见 [ipfsaw](../ipfsaw/README.md)。

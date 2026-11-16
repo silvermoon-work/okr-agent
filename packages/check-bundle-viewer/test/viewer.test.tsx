@@ -259,6 +259,29 @@ describe("safe Markdown and parameter source", () => {
 });
 
 describe("native mobile navigation pane", () => {
+  it.each([
+    [true, false],
+    [false, true],
+  ])(
+    "synchronizes initial media %s to current %s when layout changes before subscription without an event",
+    (initial, current) => {
+      let queries = 0;
+      vi.stubGlobal("matchMedia", () => ({
+        matches: ++queries === 1 ? initial : current,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+      render();
+      expect(Boolean(host.querySelector("dialog"))).toBe(current);
+      expect(Boolean(host.querySelector(".cbv-navigation-toggle"))).toBe(
+        current,
+      );
+      expect(Boolean(host.querySelector("nav")?.closest("dialog"))).toBe(
+        current,
+      );
+      expect(document.activeElement).toBe(document.body);
+    },
+  );
   it("opens only in a native modal; selection closes it, reveals the target and focuses details", () => {
     platform = browser(true);
     render();

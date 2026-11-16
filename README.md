@@ -78,6 +78,15 @@ pnpm --filter @silvermoon-work/check-bundle-web dev
 <http://127.0.0.1:4173/>，Ctrl+C 停止。只展示定义、不执行 checker 或说明表达式；
 Schema 合法不等于语义前置条件成立。无需发布、后端或远程部署。
 
+### 本地文件持续预览（ipfsaw 私有候选）
+
+[`@silvermoon-work/ipfsaw`](packages/ipfsaw/README.md) 提供通用 YAML/JSON
+文件入口、Schema→不可变 renderer CID registry、共享 Task IPFS Store 与隔离
+浏览器宿主。Check viewer 提供真正自包含的首个 browser renderer，
+旧无 `$schema` 的直接 React 使用保持兼容；CLI 文档使用
+`$schema: urn:ipfsaw:check-bundle:1`。受控本地 CAR 首次运行与命令见包文档；
+不执行 Check / Task，不改原 4173 mock 宿主，也不代表 npm alias 已发布。
+
 ## Silvermoon
 
 项目已接入 Silvermoon v2，默认内容语言为简体中文（`zh-CN`），主分支为
