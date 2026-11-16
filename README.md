@@ -221,10 +221,10 @@ no automatic batch release or automatic version bumping.
 Root [`silvermoon.yaml`](silvermoon.yaml) is the only delivery-intent source;
 all external applications and libraries are listed, not just apps. Only `npm`
 entries are publisher/publint candidates. The current npm entries are
-`check-task-sdk` and `check-task-builder`; preset core stays private and is not
-registered. `task-bundle` classifies the existing private Check authors' local
-Bundle/CAR deliverables without defining IPFS/Pinboard distribution. Open types,
-paths and migration rules are documented in
+`check-task-sdk`, `check-task-builder` and `ipfsaw`; preset core stays private
+and is not registered. `task-bundle` classifies the existing private Check
+authors' local Bundle/CAR deliverables without defining IPFS/Pinboard
+distribution. Open types, paths and migration rules are documented in
 [explicit deliverables](packages/check.typescript-project/src-legacy/references/deliverables.md).
 Cloudflare intent does not certify platform configuration or deployment.
 

@@ -5,6 +5,9 @@ deliverables:
   - path: packages/check-task-builder
     type: npm
     packageId: check-task-builder
+  - path: packages/ipfsaw
+    type: npm
+    packageId: ipfsaw
   - path: packages/check.nodejs-toolchain
     type: task-bundle
   - path: packages/check.typescript-project

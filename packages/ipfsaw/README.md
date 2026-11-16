@@ -1,9 +1,10 @@
-# ipfsaw（本地开发候选）
+# ipfsaw
 
-`@silvermoon-work/ipfsaw@0.1.0-rc.0` 是私有候选：监听一份 YAML/JSON，
+`@silvermoon-work/ipfsaw@0.1.0-rc.0` 监听一份 YAML/JSON，
 用用户明确绑定的不可变 UnixFS renderer 展示。不是编辑器或 Task 执行器，
-不自动安装 renderer，不上传文档。尚未发布 npm；不代表 registry 上的
-`npx ipfsaw` 已可用。独立 alias 的发布与验证不属于本包。
+不自动安装 renderer，不上传文档。该包是已登记的 npm 交付项，仅通过固定
+发布流程、按准确提交与版本授权发到 npm `rc` 标签；未发布前不代表 registry
+上的任何版本或 `npx ipfsaw` 已可用。独立 alias 的发布与验证不属于本包。
 
 ## 受控本地首次运行（PowerShell）
 

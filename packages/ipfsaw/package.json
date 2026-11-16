@@ -1,7 +1,6 @@
 {
   "name": "@silvermoon-work/ipfsaw",
   "version": "0.1.0-rc.0",
-  "private": true,
   "description": "Bounded local YAML/JSON preview with explicitly bound immutable browser renderers.",
   "type": "module",
   "sideEffects": false,
@@ -29,6 +28,10 @@
   ],
   "engines": {
     "node": ">=22.15.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "license": "MIT",
   "repository": {
