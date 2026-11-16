@@ -80,10 +80,10 @@ node <consumer>/node_modules/@silvermoon-work/ipfsaw/dist/bin.js --version
 - 隔离消费目录初次由无项目 manifest 的全局 pnpm `10.22.0` 安装；补入准确 packageManager 后，非 TTY 重建依赖链接被 pnpm 中止。只对本次自建目录使用 `CI=true`，随后 pnpm `11.28.12` 冻结安装与供应链校验通过；最终证据不采用早先安装结果。
 - 安装后第一轮 bin 帮助检查曾超过一次性脚本的 15 秒期限，未宣称成功；相同已安装制品的独立直跑随后为 `1.18s`，源码入口为 `0.51s`，重跑全部制品检查通过。冷启动超时的具体原因未确证，未通过修改产品超时掩盖。
 
-## I-S03 / I-AC03：仍待 alias 交接
+## I-S03 / I-AC03：前轮交接缺口
 
-本机 `D:\Code\ipfsaw` 不存在；对 `https://github.com/silvermoon-work/ipfsaw.git` 执行 `git ls-remote ... HEAD refs/heads/main` 成功但无匹配 refs。当前无可核验的 alias 提交或准确 tarball，因此没有 clone 替代工作区、伪造 alias、复制主实现或改动独立仓库。
+前轮观察到本机 `D:\Code\ipfsaw` 不存在；对 `https://github.com/silvermoon-work/ipfsaw.git` 执行 `git ls-remote ... HEAD refs/heads/main` 成功但无匹配 refs。因此前轮没有可核验的 alias 提交或准确 tarball，I-S03 / I-AC03 当时保持未完成，未追加 `submitInner` 或 `acceptInner`。
 
-下一步由 alias 会话提供包含最终实现的可达提交及准确 tarball / hash，在同一新主包 tarball 上验证真实委派、输出和退出语义，并通过 alias 仓自身质量门禁。此前保留 I-S03 / I-AC03 未完成，不追加 `submitInner` 或 `acceptInner`；所有 D-* 项仍属于后续阶段，不能因本次预演而自动勾选。
+用户随后要求继续推进，本轮已从指定空远端恢复原定独立工作区、完成最小薄入口与准确双制品联调。当前完成结果及证据由 [Dual repository verification](./DualRepositoryVerification.md) 承接；该补充不改写前轮事实，也不以实施预演自动完成后续 D-* 项。
 
 本次没有 npm 发布、release tag、远端 CAR 上传、registry alias 验证或准确 SHA 远端 CI 成功声明。
