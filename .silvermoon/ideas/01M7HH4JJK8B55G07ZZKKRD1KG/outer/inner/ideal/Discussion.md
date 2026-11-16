@@ -59,6 +59,14 @@ monorepo
 不包办 TS、测试、覆盖率等领域配置检查。基本文件结构只看该有的文件是否存在，
 内容由所属领域检查，避免重复报告同一缺失根因。
 
+## 长期维护规范承接
+
+用户已决定废弃独立的 `project-standards-composition`，统一由本 Idea
+承接，不再并行推进。原有[构想](../../../../01M77XWSPRTV6P800ZDEQH2923/outer/inner/ideal/Idea.md)
+及其[长期维护约定](../../../../01M77XWSPRTV6P800ZDEQH2923/outer/inner/ideal/TypeScript-project-convention.md)
+保留为历史规范参考。环境、开发依赖、项目规范、标准脚本、工作流、结构与文档等
+规则仍按本 Idea 的问题驱动方式逐层确认，不因承接自动恢复旧全量规则或追认旧实现。
+
 ## package 级 deliverable 方向
 
 ### Cloudflare 检查承接
