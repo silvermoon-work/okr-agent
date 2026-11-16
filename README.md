@@ -35,6 +35,22 @@ pnpm check
 `invokeTask({ key, bundle: SpaceRef, input, timeoutMs })`，不再接受旧
 `{ cid, path }`。升级后必须重建 CAR 并更新消费者引用的准确 CID；不修改历史制品或 Silvermoon 验收证据。旧 Engine 事实库不能自动迁移，消费者须显式选择新数据域。
 
+### ipfsaw RC.0 发布
+
+`@silvermoon-work/ipfsaw@0.1.0-rc.0` 已通过
+[Trusted Publishing](https://github.com/silvermoon-work/okr-agent/actions/runs/43904944151)
+发布到 npm `rc`；`latest` 仍为 `0.0.0`。准确发布提交
+`14b58fb2af6a8c3ba537bf9b4909519ffd0c0a40` 的
+[Node 22.15 / 24.11 CI](https://github.com/silvermoon-work/okr-agent/actions/runs/43903302978)
+及发布门卫已通过，provenance 记录 `.github/workflows/publish-npm.yaml`。
+独立临时目录仅从 registry 安装该精确版本，`--version`、`--help` 与
+`registry list` 正常；无 scope 的 `ipfsaw` alias 本轮未发布。
+
+该包首个发布失败于 `ENEEDAUTH`：项目发布 workflow 曾被改名为
+`npm-publish.yaml`，与 npm 侧按 `publish-npm.yaml` 配置的 Trusted Publisher
+不匹配；manifest 门卫、构建、打包与 publint 均通过，只有真实 tag push 才暴露。
+现已恢复 `publish-npm.yaml` 并同步 Check 标准资产与全部引用。
+
 ### RC.1 发布与 Ubuntu 验证
 
 `@silvermoon-work/check-task-sdk@0.1.0-rc.1` 与

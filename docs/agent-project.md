@@ -103,6 +103,13 @@
 - The only publishing entries are `pnpm release` and `pnpm release-dry-run`,
   used by `.github/workflows/publish-npm.yaml`. Their shared fixed core reads
   the root deliverables list; it never batch-publishes.
+- The publisher workflow filename is `publish-npm.yaml`, not `npm-publish.yaml`.
+  `npm-publish.mjs` is only the shared implementation library name. npm Trusted
+  Publisher bindings are configured per package against the exact workflow
+  filename, so a rename silently breaks previously authorized packages even
+  though the workflow body still passes locally and in a manual dispatch dry
+  run. A release tag push validates that binding for real; keep the repository
+  workflow, the Check standard asset and its enforced path identical.
 - Workflow standards use `actions/checkout@v7`, `actions/setup-node@v7` and
   `pnpm/action-setup@v6`, whose own Action runtime is Node 24. Keep the Check
   assets, actual workflows and publisher's exact CI verifier aligned. This does
