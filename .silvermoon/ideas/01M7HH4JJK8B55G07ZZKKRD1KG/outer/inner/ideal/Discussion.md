@@ -171,23 +171,32 @@ workspace 基础错误仍使用 workspace 问题，不改报身份无效。
 scripts 的名称指根 package.json 的 scripts 命令名，不是脚本文件名；
 Turbo 已确认必须提供根 turbo.json。
 
-先参考当前项目建议九个必需命令：build、check、clean、format、
-format-check、lint、test、test-coverage、typecheck。此清单待用户确认，
-允许额外命令，不把发布、包交付或本仓库专用命令自动设为通用要求。
-名称不符按缺少约定名称理解，不猜测额外命令是否为拼写错误。
+已确认根 scripts 恰好为九个命令：build、check、clean、format、
+format-check、lint、test、test-coverage、typecheck。
+禁止额外命令，包括生命周期钩子、发布或项目专用命令。
 
-设计稿中全局配置检查 scripts 容器、约定名称及 turbo.json 普通文件入口，
+设计稿中全局配置检查 scripts 容器及 turbo.json 普通文件入口，
 再分别向 scripts 内容和 Turbo 内容节点传递已发现事实。前者不重读根 manifest，
 后者负责首次读取 Turbo 内容。入口发现失败阻断其全部内容 children，
 不影响并列的成员发现。内容规则和新问题码仍为设计候选，未修改生产契约。
 
-用户随后明确“确认清单”，九个根 script 名称现已确认，不再标为建议待定。
-按此新增九个衍生脚本设计节点，分别定义命令接口、同名入口和操作职责；
-沿用仓库固定 node scripts/<same-name>.mjs 约定，允许 scripts/lib/ 委托。
-脚本检查只读，不执行目标命令，不以入口存在就证明实际行为正确。
+根 Scripts Check 统一检查名称集合及命令值，作为一个叶节点，
+不再派生九个子 Check。脚本检查只读，不执行目标命令。
 
 新增独立工具设计分支，参考当前项目将 Turbo、Prettier、ESLint、
 typescript-eslint、Vitest、coverage-v8 与 TypeScript 对应到这些脚本。
 根开发依赖及 catalog 版本声明检查与脚本操作职责分开，避免重复报告。
-工具组合、版本及动态实现的证明边界仍为设计候选；确认脚本清单不等于
+工具组合及版本仍为设计候选；确认脚本清单不等于
 确认全部工具政策，不自动扩展至 Node/pnpm/NRM 宿主环境检查。
+
+## 根 scripts 使用固定 Turbo 聚合命令
+
+用户进一步确认：本层只讨论 monorepo 根 scripts，根只承担这九个聚合操作，
+每个命令精确为 turbo run <同名任务>，不得附加参数、串联或自定义包装。
+Turbo 已承担公共聚合工具的职责，无需另发工具包，也不再校验复制到项目内的
+固定脚本或分析行为等价性。该方案替代先前的本地固定文件方案。
+
+缺少、额外名称及命令值不匹配由同一个 Check 分别指出具体名称；
+缺少或额外的键不重复报告命令值问题。成员实际操作、Turbo 任务依赖与缓存、
+工具声明及领域配置分别归属对应检查，聚合接口合规不代表任务存在或已执行。
+本轮只调整设计 Spec，不修改本仓库现行 Node 脚本约定及生产 Check。

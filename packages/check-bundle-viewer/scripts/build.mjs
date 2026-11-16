@@ -3,6 +3,16 @@ import { writeFile } from "node:fs/promises";
 import { build } from "vite";
 
 pnpm(["exec", "tsc", "--project", "tsconfig.build.json"]);
+const { typescriptProjectDesignSpec } =
+  await import("../dist/typescript-project-design.js");
+await writeFile(
+  "dist/typescript-project-design.json",
+  JSON.stringify(
+    { $schema: "urn:ipfsaw:check-bundle:1", ...typescriptProjectDesignSpec },
+    null,
+    2,
+  ) + "\n",
+);
 await build({
   configFile: false,
   define: { "process.env.NODE_ENV": JSON.stringify("production") },

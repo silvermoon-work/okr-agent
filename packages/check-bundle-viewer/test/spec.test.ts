@@ -38,7 +38,6 @@ describe("Spec validation", () => {
     ).toEqual([
       "workspace-scripts-missing",
       "workspace-scripts-invalid",
-      "workspace-script-missing",
       "workspace-turbo-missing",
       "workspace-turbo-invalid",
     ]);
@@ -73,26 +72,19 @@ describe("Spec validation", () => {
     expect(
       design["workspace-tools"]!.children.map((edge) => edge.checker),
     ).toContain("tool-@vitest/coverage-v8");
-    const scripts = design["workspace-scripts"]!.children;
-    expect(scripts.map((edge) => edge.checker)).toEqual([
-      "script-build",
-      "script-check",
-      "script-clean",
-      "script-format",
-      "script-format-check",
-      "script-lint",
-      "script-test",
-      "script-test-coverage",
-      "script-typecheck",
+    expect(design["workspace-scripts"]!.children).toEqual([]);
+    expect(
+      design["workspace-scripts"]!.rules.flatMap((rule) =>
+        rule.problems.map((problem) => problem.code),
+      ),
+    ).toEqual([
+      "workspace-script-missing",
+      "workspace-script-unexpected",
+      "workspace-script-command-invalid",
     ]);
-    for (const edge of scripts) {
-      expect(design[edge.checker]!.parameter.schema.required).toEqual([
-        "projectDirectory",
-        "command",
-      ]);
-      expect(design[edge.checker]!.children).toEqual([]);
-      expect(typescriptProjectSpec.checkers).not.toHaveProperty(edge.checker);
-    }
+    expect(
+      Object.keys(design).some((checker) => checker.startsWith("script-")),
+    ).toBe(false);
     expect(design["monorepo"]!.children[1]?.parameter).toContain(
       "patterns: workspace.packages",
     );

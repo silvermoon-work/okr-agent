@@ -43,67 +43,8 @@ const monorepoParameters = {
   },
   required: ["projectDirectory", "packageJson", "workspace"],
 };
-const scriptDefinitions = [
-  {
-    name: "build",
-    purpose:
-      "聚合成员构建并尊重内部依赖顺序；参考当前项目使用 Turbo 编排，不将聚合根再次当作成员递归构建。",
-    tools: "Turbo，以及具体成员声明的构建工具；不要求所有成员采用相同构建器。",
-  },
-  {
-    name: "check",
-    purpose:
-      "聚合格式检查、依赖有序构建、类型检查、lint 与覆盖率测试；适用的附加门禁仍按其领域政策处理。传播失败，不用只打印命令或空实现冒充执行。",
-    tools:
-      "通过下层操作复用工具，不另设一个 check 工具，也不自动执行 format 写入操作。",
-  },
-  {
-    name: "clean",
-    purpose:
-      "清理约定的生成输出与任务缓存，不删除源码、必需配置或锁文件。参考当前项目聚合成员 clean 并清理根 Turbo 缓存。",
-    tools: "Node.js 文件系统能力与 Turbo 编排；不额外要求 rimraf。",
-  },
-  {
-    name: "format",
-    purpose:
-      "对项目约定范围执行显式格式化写入；允许写文件是该维护命令的职责，不代表本 Check 会执行它。",
-    tools:
-      "Prettier。具体格式选项与忽略范围属于格式配置领域，不在脚本检查中重新定义。",
-  },
-  {
-    name: "format-check",
-    purpose:
-      "只检查格式，不写文件；差异或工具失败必须失败，不能以 format 的写入模式替代。",
-    tools: "Prettier 的检查模式，与 format 共享工具及适用配置。",
-  },
-  {
-    name: "lint",
-    purpose:
-      "调度适用源码与测试的 lint 并传播失败；类型感知规则的实际启用由 lint 配置领域检查。",
-    tools:
-      "ESLint 与 typescript-eslint；不把命令存在或 eslint 字样当作类型感知 lint 已成立。",
-  },
-  {
-    name: "test",
-    purpose:
-      "调度适用成员的单次非 watch 测试并传播失败；共享 Vitest 配置须在各成员的实际执行根下使用，不能仅因复用配置就认定是多项目执行器。",
-    tools: "Vitest。不得用 passWithNoTests 或吞错掩盖适用测试没有执行。",
-  },
-  {
-    name: "test-coverage",
-    purpose:
-      "单次运行适用测试并开启、强制执行覆盖率门禁；覆盖未测试源码及四项全局阈值的具体定义由测试配置领域检查，不在脚本中硬编码统一阈值。",
-    tools: "Vitest 与 @vitest/coverage-v8；必须传播实际覆盖率门禁失败。",
-  },
-  {
-    name: "typecheck",
-    purpose:
-      "以适用 tsconfig 执行不生成输出的类型检查并传播失败；strict 是否启用由 TypeScript 配置领域检查，不能仅靠 tsc 命令证明。",
-    tools: "TypeScript 编译器。",
-  },
-] as const;
 const toolDefinitions = [
-  { name: "turbo", purpose: "根 build / clean 的成员任务编排。" },
+  { name: "turbo", purpose: "九个根 scripts 的成员同名任务聚合。" },
   { name: "prettier", purpose: "format 与 format-check 共享的格式化工具。" },
   { name: "eslint", purpose: "lint 的执行工具。" },
   {
@@ -120,70 +61,6 @@ const toolDefinitions = [
     purpose: "typecheck 的编译器及类型感知工具的 TypeScript 支持。",
   },
 ] as const;
-const scriptCheckers: Record<string, CheckerDefinition> = Object.fromEntries(
-  scriptDefinitions.map(({ name, purpose, tools }) => [
-    `script-${name}`,
-    {
-      title: `${name} 脚本`,
-      description: `**脚本职责设计，尚未实现。**\n\n**检查对象：** 传入的根 scripts[${JSON.stringify(name)}] 值、对应的 \`scripts/${name}.mjs\` 普通文件，以及静态可追踪的本地委托实现。Check 只读分析，不执行命令、导入目标模块或加载目标配置。\n\n**操作职责：** ${purpose}\n\n**对应工具：** ${tools}\n\n本节点不重复检查命令名是否存在，也不检查共享工具版本。入口委托到 scripts/lib/ 是允许的，不要求业务逻辑全写在顶层文件。静态分析的支持边界尚待实现时定义，不能把无法证明的动态行为默认为合规，也不能只检查命令字样就声称操作实际执行成功。`,
-      parameter: {
-        schema: {
-          type: "object",
-          properties: {
-            projectDirectory: singleParameters.properties.projectDirectory,
-            command: {
-              description: `已发现的 scripts[${JSON.stringify(name)}] 原始 JSON 值；类型和内容由本节点检查。`,
-            },
-          },
-          required: ["projectDirectory", "command"],
-          additionalProperties: false,
-        },
-        preconditions: [
-          `直接父节点已确认根 scripts 对象及 ${name} 自有键存在，原样传入该值；不保证值是字符串或有效命令。`,
-          "项目根只读访问范围已成立；不要求对应脚本文件已存在、可解析或实现正确。",
-        ],
-      },
-      rules: [
-        {
-          description: `沿用仓库已有固定入口约定：命令必须精确为 \`node scripts/${name}.mjs\`，不得附加参数或 shell 链接。`,
-          problems: [
-            {
-              code: "workspace-script-command-invalid",
-              description: "根 script 的命令值不符合固定入口约定。",
-              when: `command 不是字符串，或不精确等于 node scripts/${name}.mjs。`,
-            },
-          ],
-        },
-        {
-          description: `对应的 scripts/${name}.mjs 必须为普通文件。共享实现允许放在 scripts/lib/，不能用顶层其他名字替代固定入口。`,
-          problems: [
-            {
-              code: "workspace-script-entry-missing",
-              description: "缺少固定脚本入口文件。",
-              when: `项目根 scripts/${name}.mjs 不存在。`,
-            },
-            {
-              code: "workspace-script-entry-invalid",
-              description: "固定脚本入口不是普通文件。",
-              when: `scripts/${name}.mjs 是目录等非普通条目；链接重定向或意外 I/O 仍为执行故障。`,
-            },
-          ],
-        },
-        {
-          description: `入口及其本地委托应承担本操作职责：${purpose} 这里只定义应证明的行为，不声称已实现相应静态证明器；不要求源码全文相等。`,
-          problems: [
-            {
-              code: "workspace-script-implementation-invalid",
-              description: "脚本内容明确违背其操作职责。",
-              when: "只在受支持的只读分析可明确证明语法非法、空实现、遗漏必要操作或吞掉失败等违约时报告。无法分析的动态实现不自动当作本问题，也不得静默判定通过；其诊断机制仍待细化。",
-            },
-          ],
-        },
-      ],
-      children: [],
-    },
-  ]),
-);
 const toolCheckers: Record<string, CheckerDefinition> = Object.fromEntries(
   toolDefinitions.map(({ name, purpose }) => [
     `tool-${name}`,
@@ -308,7 +185,7 @@ export const typescriptProjectDesignSpec: CheckBundleSpec = {
       ...workspace,
       title: "全局工程配置 · 职责节点",
       description:
-        "**设计候选，不是当前实现。**\n\n**检查对象：** 已传入的根 `packageJson.scripts` 声明，以及根目录的 `turbo.json` 文件入口。\n\n**本节点检查：** scripts 对象是否存在、已确认的九个必需命令是否以约定名称声明，以及 `turbo.json` 是否为存在的普通文件。不重复读取根 manifest 或检查 pnpm workspace 基础结构，不负责成员发现、逐包检查，也不执行目标命令。\n\n**下层职责：** scripts 的值、命令与入口实现，Turbo 内容，以及支撑这些操作的开发工具声明交给三个对应子分支。工具版本不在脚本检查中重复报告。这里有了本地入口发现检查，不再只是空的虚拟分组。\n\n本节点失败不展开任何子检查，但不影响 monorepo 下并列的成员发现分支。意外 I/O、链接重定向和取消仍是执行故障，不伪装成配置缺失。",
+        "**设计候选，不是当前实现。**\n\n**检查对象：** 已传入的根 `packageJson.scripts` 声明，以及根目录的 `turbo.json` 文件入口。\n\n**本节点检查：** scripts 对象是否存在，以及 `turbo.json` 是否为存在的普通文件。不重复读取根 manifest 或检查 pnpm workspace 基础结构，不负责成员发现、逐包检查，也不执行目标命令。\n\n**下层职责：** 根 Scripts Check 统一检查九个名称的封闭集合与固定 Turbo 命令值；Turbo 内容及开发工具声明由另外两个分支负责。根只聚合，不承载成员实际操作或额外职责。\n\n本节点失败不展开任何子检查，但不影响 monorepo 下并列的成员发现分支。意外 I/O、链接重定向和取消仍是执行故障，不伪装成配置缺失。",
       parameter: {
         schema: monorepoParameters,
         preconditions: [
@@ -335,17 +212,6 @@ export const typescriptProjectDesignSpec: CheckBundleSpec = {
         },
         {
           description:
-            "**已确认清单：** 要求根 scripts 提供 `build`、`check`、`clean`、`format`、`format-check`、`lint`、`test`、`test-coverage`、`typecheck`。名称必须精确匹配；允许额外命令，不因出现其他名称就判定它是拼写错误。本轮不把 `release`、`release-dry-run`、`lint-package` 或本仓库专用的 `check-scripts`、`test-release` 设为通用必需项。",
-          problems: [
-            {
-              code: "workspace-script-missing",
-              description: "缺少约定名称的根 script。",
-              when: "仅在 scripts 已确认为对象后，对已确认的九个必需名称逐项查找；任一名称不是 scripts 的自有键。其他名称不能替代，但不猜测哪个额外命令是错名。",
-            },
-          ],
-        },
-        {
-          description:
             "**已确认：** 根目录必须存在普通文件 `turbo.json`。此处只发现约定名称与位置的入口，不读取或解析内容；只有 `turbo.jsonc` 或其他文件名不能替代。",
           problems: [
             {
@@ -364,9 +230,9 @@ export const typescriptProjectDesignSpec: CheckBundleSpec = {
       children: [
         {
           checker: "workspace-scripts",
-          when: "本节点通过，scripts 为对象且具备已确认的九个必需命令名。",
+          when: "本节点通过，scripts 已确认为对象；不要求名称或命令值已合规。",
           parameter:
-            "构造 `{ projectDirectory, scripts: packageJson.scripts }`，传递已发现的命令映射事实，不重读根 manifest，不重复检查必需名称。",
+            "构造 `{ projectDirectory, scripts: packageJson.scripts }`，传递已发现的命令映射事实，不重读根 manifest；名称集合与命令值由接收方统一检查。",
         },
         {
           checker: "workspace-turbo",
@@ -383,9 +249,9 @@ export const typescriptProjectDesignSpec: CheckBundleSpec = {
       ],
     },
     "workspace-scripts": {
-      title: "根 scripts · 九个衍生脚本",
+      title: "根 Scripts · 固定 Turbo 聚合接口",
       description:
-        "**设计候选，尚未实现。**\n\n**检查对象：** 已传入的根 scripts 命令映射。已确认九个必需命令，分别展开对应脚本检查；不重复名称存在性判断，也不执行命令。\n\n每个衍生脚本节点检查自己的命令值、同名 .mjs 入口及静态可证明的操作职责。共享工具声明由并列工具分支统一负责；TypeScript、lint、格式与覆盖率配置细节仍属于各自领域，不被 scripts 节点包办。",
+        "**已确认封闭的九个 Turbo 聚合命令，检查尚未实现。**\n\n**检查对象：** 已传入的根 scripts 命令映射。一个 Check 统一检查名称集合与命令值，不再按九个脚本派生子 Check。\n\n根只聚合成员同名任务，不承担额外根操作。不检查本地脚本入口、固定核心或自定义实现行为，不需要另发公共聚合工具包。成员实际操作、Turbo 任务依赖与缓存策略、共享工具及各领域配置由对应分支检查。本节点通过只证明根聚合接口合规，不代表成员任务存在或已成功执行。",
       parameter: {
         schema: {
           type: "object",
@@ -395,28 +261,53 @@ export const typescriptProjectDesignSpec: CheckBundleSpec = {
               type: "object",
               additionalProperties: true,
               description:
-                "已发现且具备必需命令名的根 scripts 对象；未保证各值是有效命令字符串。",
+                "已确认为对象的根 scripts；未保证名称集合或命令值合规。",
             },
           },
           required: ["projectDirectory", "scripts"],
           additionalProperties: false,
         },
         preconditions: [
-          "直接父节点已确认项目根只读访问范围、scripts 对象及已确认的九个必需命令名。",
-          "未保证 scripts 的值类型、命令、入口文件内容或实际执行行为正确；这些不属于父节点的存在性与名称校验。",
+          "直接父节点已确认项目根只读访问范围及 scripts 为对象，并原样传入。",
+          "不假定任一必需名称存在、没有额外名称或命令值有效，也不依赖并列 Turbo 或工具分支通过。",
         ],
       },
-      rules: [],
-      children: scriptDefinitions.map(({ name }) => ({
-        checker: `script-${name}`,
-        when: `本节点通过，${name} 命令名已由前置条件保证存在。`,
-        parameter: `构造 { projectDirectory, command: scripts[${JSON.stringify(name)}] }，原样传递该命令值，不提前假定其类型或内容有效。`,
-      })),
+      rules: [
+        {
+          description:
+            "根 scripts 自有键必须恰好为 `build`、`check`、`clean`、`format`、`format-check`、`lint`、`test`、`test-coverage`、`typecheck`。既不能缺少，也不能增加；生命周期钩子、发布或项目专用命令均不例外。",
+          problems: [
+            {
+              code: "workspace-script-missing",
+              description: "缺少约定名称的根 script，指出具体名称。",
+              when: "九个必需名称中的任一项不是 scripts 自有键；额外名称不能替代缺少的名称。",
+            },
+            {
+              code: "workspace-script-unexpected",
+              description: "根 scripts 存在封闭清单以外的命令，指出具体名称。",
+              when: "存在九个允许名称之外的自有键，包括 pre/post 生命周期钩子；与缺少名称分别报告，不猜测拼写意图。",
+            },
+          ],
+        },
+        {
+          description:
+            "对已存在的允许名称，命令必须精确等于 `turbo run <同名任务>`。例如 `build` 只能是 `turbo run build`，`test-coverage` 只能是 `turbo run test-coverage`。只读比较原始字符串，不接受附加参数、空白变体、串联、包装脚本或其他委托，不执行命令。",
+          problems: [
+            {
+              code: "workspace-script-command-invalid",
+              description:
+                "根 script 不是规定的 Turbo 聚合命令，指出名称、实际值及期望值。",
+              when: "允许名称已存在，但其值不是字符串或不精确等于对应的 turbo run <同名任务>。缺少的名称只报告 missing，额外名称只报告 unexpected，避免对同一根因重复诊断。",
+            },
+          ],
+        },
+      ],
+      children: [],
     },
     "workspace-tools": {
       title: "脚本所需工具 · 设计候选",
       description:
-        "**尚未实现，工具组合参考当前项目提出。**\n\n**检查对象：** 已传入的根 packageJson.devDependencies 与 workspace catalog 版本事实。本节点只确认开发依赖声明容器为对象，再按工具展开各自的声明与版本检查；不把根开发依赖中的所有包都列为通用必需工具。\n\n对应关系：build / clean → Turbo；format / format-check → Prettier；lint → ESLint 与 typescript-eslint；test → Vitest；test-coverage → Vitest 与 coverage-v8；typecheck → TypeScript。check 复用这些操作，不引入额外工具。\n\n共享工具只检查根声明，不强迫每个成员重复安装；同一工具供多个命令使用，也只在本分支报告声明问题。具体工具版本、安装状态、领域配置和消费者最低 Node 版本不是由 scripts 名称推导的。",
+        "**尚未实现，工具组合参考当前项目提出。**\n\n**检查对象：** 已传入的根 packageJson.devDependencies 与 workspace catalog 版本事实。本节点只确认开发依赖声明容器为对象，再按工具展开各自的声明与版本检查；不把根开发依赖中的所有包都列为通用必需工具。\n\n九个根 scripts 统一由 Turbo 聚合。Prettier、ESLint、typescript-eslint、Vitest、coverage-v8 与 TypeScript 是被聚合操作的共享工具候选，不是根 scripts 直接执行的命令。\n\n共享工具只检查根声明，不强迫每个成员重复安装；同一工具供多个命令使用，也只在本分支报告声明问题。具体工具版本、安装状态、领域配置和消费者最低 Node 版本不是由 scripts 名称推导的。",
       parameter: {
         schema: monorepoParameters,
         preconditions: [
@@ -469,7 +360,6 @@ export const typescriptProjectDesignSpec: CheckBundleSpec = {
       rules: [],
       children: [],
     },
-    ...scriptCheckers,
     ...toolCheckers,
     packages: {
       title: "成员发现 · 设计候选",

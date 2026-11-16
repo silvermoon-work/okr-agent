@@ -127,24 +127,28 @@ monorepo 直接从已接收事实中向成员发现投影
 分支通过；单包检查不作为 monorepo 的第三个并列分支。
 这不是已实现图，也不表示已经决定全局工程配置内的领域细分。
 全局工程配置本轮增加入口发现职责：检查已传入的根 scripts 是否为对象、
-约定命令名是否存在，以及根 `turbo.json` 是否存在且为普通文件。其下
-`workspace-scripts` 和 `workspace-turbo` 接收已发现的入口，具体内容规则待讨论；
-scripts 值和命令内容、Turbo 解析和任务配置不在发现层提前验证。
+以及根 `turbo.json` 是否存在且为普通文件。其下
+`workspace-scripts` 和 `workspace-turbo`
+接收已发现的入口，Turbo 内容规则待讨论；
+scripts 名称集合和命令值、Turbo 解析和任务配置不在发现层提前验证。
 入口发现失败会阻断其全部子节点，但不阻断并列的成员发现分支。
 
 scripts 必需名已确认：`build`、`check`、`clean`、`format`、`format-check`、
 `lint`、`test`、`test-coverage`、`typecheck`，
-允许额外命令，不把发布或本仓库专用命令设为通用要求。
+必须恰好为这九个，禁止额外命令，包括生命周期钩子、发布及项目专用命令。
 根 `turbo.json` 的必需性与名称已确认，不接受其他名称替代。
 这组新问题码仅为设计稿候选，未加入生产 Check 契约。
 
-scripts 分支分别展开九个同名操作节点，接收原始 command 值，检查固定
-`node scripts/<same-name>.mjs` 接口、同名普通入口与该操作的职责。
-允许本地委托到 scripts/lib/，不以源码全文相等或出现工具名证明真正执行；
-只读分析的具体支持边界尚待实现时定义，不能把未知动态行为静默当作通过。
-check 聚合已有操作，不另引入工具；format 可写、format-check 只读，
-test 与 test-coverage 单次运行并传播失败，后者需实际开启覆盖率。
-类型、lint、测试、格式的配置细节仍由各自领域负责，不被 scripts 分支包办。
+scripts 分支合并为一个叶节点，统一检查自有键集合与九个命令值，
+不再派生九个子 Check。每个值精确为 `turbo run <同名任务>`，
+不接受附加参数、空白变体、串联命令或自定义包装。
+缺少名称、额外名称和命令值错误分别报告，并指出具体脚本；
+缺少或额外名称不重复报告命令值错误。
+根只聚合成员同名任务，不承载额外根操作；无需公共聚合工具包，
+不检查本地 .mjs 入口或固定核心，也不分析自定义脚本行为。
+成员操作、Turbo 任务依赖与缓存、共享工具及领域配置由各自分支检查；
+聚合命令匹配不证明成员任务存在或已成功执行。
+这是新设计，不修改本仓库现行的固定 Node 脚本约定或生产 Check。
 
 独立 `workspace-tools` 分支参考当前项目组合，定义 Turbo、Prettier、ESLint、
 typescript-eslint、Vitest、coverage-v8 与 TypeScript 七个工具节点，
@@ -195,3 +199,7 @@ jsdom 行为测试通过受控的 matchMedia、动画帧及 dialog 方法模拟�
 `$schema` 只允许准确的 `urn:ipfsaw:check-bundle:1`，未知字段仍严格拒绝。
 用于通用 CLI 时必须带此标识，配置绑定准确根 CID。
 受控本地 pack/import/preview 指令见 [ipfsaw](../ipfsaw/README.md)。
+
+同一次 build 还导出 `dist/typescript-project-design.json`，带上述 `$schema`，
+可直接作为 `ipfsaw` 的设计稿文档输入。修改设计源后重新 build 即可更新；
+renderer 未改变时无需重建其 CID 或更换绑定。
