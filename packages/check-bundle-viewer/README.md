@@ -101,13 +101,25 @@ checker 引用形成的定义循环同样不合法。
 `src/typescript-project.ts` 人工记录当前源码的身份分流：
 [`project`](../check.typescript-project/src/checks/project.ts) →
 [`single-repo` / `monorepo`](../check.typescript-project/src/checks/repositories.ts)。
-问题码为当前契约的
-`typescript-project-invalid`；两个分支当前仅检查取消信号后通过，
-没有工程检查 children。示例不冒充旧 `src-legacy`
+根问题码为当前契约的 `typescript-project-invalid`；single
+repo 当前仍是通过叶节点，
+monorepo 展开 `workspace`，验证必需的 pnpm workspace 文件、YAML 与显式非空
+`packages` 字符串数组，失败报告 `workspace-configuration-invalid`。
+该视图按现有代码记录问题归属、前置假设及参数传递，不展开尚未实现的成员发现。
+示例不冒充旧 `src-legacy`
 的成员脚本检查，也不把丰富 mock 中的规划节点
 说成已经实现。该文档不自动生成或同步。
 作者修改对应代码时，应在同一变更中复核 parameter、问题触发与边；代码、测试和评审
 而非 schema 负责证明语义。此功能没有修改 Check 作者源文件。
+
+`typescriptProjectDesignSpec` 是在真实视图基础上扩展的独立讨论稿：
+`monorepo → workspace → packages → package`。workspace 验证配置后传递
+`{ projectDirectory, patterns }`，成员发现确认范围后逐个传递
+`{ projectDirectory, packageDirectory }`。这是建议的前置门禁关系，
+不是已实现图，也不表示已经决定最终的 workspace 全局领域分组。
+成员发现与单包节点明确标注未实现；空匹配、manifest 缺失、去重、
+名称冲突与根包归属仍待讨论，没有为它们预设问题码或通过结论。
+在宿主中选择「TypeScript Project · Monorepo 下一层设计（未实现）」查看。
 
 宿主的分流/批量、共享引用与无效数据是明确标注的 mock；循环引用属于无效 Spec 示例，
 不能当作现有 Check 的实际执行拓扑。

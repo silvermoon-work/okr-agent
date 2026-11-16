@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { validateCheckBundleSpec } from "../src/spec.js";
 import { createOutline } from "../src/outline.js";
 import { typescriptProjectSpec } from "../src/typescript-project.js";
+import { typescriptProjectDesignSpec } from "../src/typescript-project-design.js";
 import type { CheckBundleSpec } from "../src/spec.js";
 import { graphSpec, validationSpec } from "./fixtures.js";
 
@@ -13,6 +14,63 @@ const edge = (checker: string) => ({
 });
 
 describe("Spec validation", () => {
+  it("keeps the proposed member expansion valid and separate from the implemented graph", () => {
+    expect(validateCheckBundleSpec(typescriptProjectDesignSpec).valid).toBe(
+      true,
+    );
+    const design = typescriptProjectDesignSpec.checkers;
+    expect(design["workspace"]!.children.map((edge) => edge.checker)).toEqual([
+      "packages",
+    ]);
+    expect(design["packages"]!.children[0]?.checker).toBe("package");
+    expect(design["packages"]!.children[0]?.forEach).toBeTruthy();
+    expect(design["packages"]!.parameter.schema.required).toEqual([
+      "projectDirectory",
+      "patterns",
+    ]);
+    expect(design["package"]!.parameter.schema.required).toEqual([
+      "projectDirectory",
+      "packageDirectory",
+    ]);
+    expect(typescriptProjectSpec.checkers["workspace"]!.children).toEqual([]);
+    expect(typescriptProjectSpec.checkers).not.toHaveProperty("packages");
+    expect(typescriptProjectSpec.checkers).not.toHaveProperty("package");
+  });
+
+  it("describes the implemented workspace branch without adding planned member checks", () => {
+    const { checkers } = typescriptProjectSpec;
+    expect(Object.keys(checkers).sort()).toEqual([
+      "monorepo",
+      "project",
+      "single-repo",
+      "workspace",
+    ]);
+    expect(checkers["project"]!.children.map((child) => child.checker)).toEqual(
+      ["single-repo", "monorepo"],
+    );
+    expect(checkers["monorepo"]!.children).toEqual([
+      {
+        checker: "workspace",
+        when: "本节点通过，即取消信号未触发。",
+        parameter: "原样传递 `target`，即 `{ projectDirectory }`。",
+      },
+    ]);
+    expect(checkers["workspace"]!.parameter.schema).toEqual(
+      checkers["project"]!.parameter.schema,
+    );
+    expect(
+      checkers["workspace"]!.rules.flatMap((rule) =>
+        rule.problems.map((problem) => problem.code),
+      ),
+    ).toEqual([
+      "workspace-configuration-invalid",
+      "workspace-configuration-invalid",
+      "workspace-configuration-invalid",
+    ]);
+    expect(checkers["workspace"]!.children).toEqual([]);
+    expect(checkers["single-repo"]!.children).toEqual([]);
+  });
+
   it("accepts the current real project graph and preserves inert text", () => {
     expect(validateCheckBundleSpec(typescriptProjectSpec).valid).toBe(true);
     const spec = fresh();
