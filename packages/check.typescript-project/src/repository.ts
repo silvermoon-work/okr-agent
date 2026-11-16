@@ -1,7 +1,8 @@
-import { lstat, open, readdir, realpath } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { guardPath, readProjectFile } from "./read-file.js";
 
 const Manifest = Type.Record(Type.String(), Type.Unknown());
 const ignored = new Set([
@@ -23,13 +24,7 @@ export async function identifyRepository(
   if (!isAbsolute(projectDirectory) || /[\0\r\n]/.test(projectDirectory))
     throw new Error("projectDirectory must be an absolute host directory.");
   const root = resolve(projectDirectory);
-  const guard = async (path: string) => {
-    signal.throwIfAborted();
-    const info = await lstat(path);
-    if (info.isSymbolicLink() || (await realpath(path)) !== path)
-      throw new Error(`Cannot inspect a linked or redirected path: ${path}`);
-    return info;
-  };
+  const guard = (path: string) => guardPath(path, signal);
   if (!(await guard(root)).isDirectory())
     throw new Error("projectDirectory must be a directory.");
 
@@ -54,60 +49,9 @@ export async function identifyRepository(
   if (!paths.includes(rootManifest))
     return { kind: "invalid", reason: "根目录缺少普通文件 package.json。" };
 
-  let bytes = 0;
+  const budget = { bytes: 0 };
   const manifest = async (path: string) => {
-    await guard(path);
-    const file = await open(path, "r");
-    const failures: unknown[] = [];
-    let text = "";
-    try {
-      const before = await file.stat();
-      if (!before.isFile()) throw new Error(`Not a regular file: ${path}`);
-      if (before.size > 1_048_576 || bytes + before.size > 16_777_216)
-        throw new Error(
-          "Manifest read budget exceeded (1MiB/file, 16MiB total).",
-        );
-      bytes += before.size;
-      const buffer = Buffer.alloc(before.size + 1);
-      let offset = 0;
-      while (offset < buffer.length) {
-        signal.throwIfAborted();
-        const result = await file.read(
-          buffer,
-          offset,
-          buffer.length - offset,
-          offset,
-        );
-        if (!result.bytesRead) break;
-        offset += result.bytesRead;
-      }
-      const after = await file.stat();
-      if (
-        offset !== before.size ||
-        before.size !== after.size ||
-        before.mtimeMs !== after.mtimeMs
-      )
-        throw new Error(`Manifest changed during read: ${path}`);
-      await guard(path);
-      signal.throwIfAborted();
-      text = new TextDecoder("utf-8", { fatal: true }).decode(
-        buffer.subarray(0, offset),
-      );
-    } catch (error) {
-      failures.push(error);
-    } finally {
-      try {
-        await file.close();
-      } catch (error) {
-        failures.push(error);
-      }
-    }
-    if (failures.length === 1) throw failures[0];
-    if (failures.length > 1)
-      throw new AggregateError(
-        failures,
-        `Manifest read and cleanup failed: ${path}`,
-      );
+    const text = await readProjectFile(path, signal, budget);
     let value: unknown;
     try {
       value = JSON.parse(text);

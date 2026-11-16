@@ -115,3 +115,15 @@ Task SDK 按 ContentRefSchema 生成 `{data,cidPaths}`，数组文档使用通�
 下一会话从 monorepo 的 workspace 声明及成员发现开始，逐层讨论问题与边界。
 不要立即恢复旧工具、scripts、交付等全部规则。用户要求每轮完成后 build CAR，
 提供一条可复制命令试跑，再继续讨论。
+
+## 本轮确认的 workspace 规则
+
+- monorepo 必须提供根 pnpm-workspace.yaml；已有 monorepo 依据但缺少该文件
+  时报告 problem，不退回 single repo，也不以 manifest workspaces 替代成员配置。
+- 显式声明非空 packages 字符串数组，每项不得为空白；YAML 或声明结构
+  非法属于 workspace 配置问题，不属于 TypeScript 身份问题。
+- 成员发现遵循 pnpm 的模式语义，不强制 apps/、packages/ 或固定深度。
+- 本轮先实现 workspace 声明结构检查，不展开成员模式。空匹配、缺少成员
+  manifest、名称冲突和根包是否计入成员仍待讨论，不能作为已确认规则实施。
+- 继续采用快速迭代：每轮完成实现与验证、构建新 CAR，提供检查本仓库的命令，
+  由用户观察效果并反馈，不等待全部规则讨论完毕再交付。

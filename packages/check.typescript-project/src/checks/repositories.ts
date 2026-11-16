@@ -1,5 +1,6 @@
 import { defineChecker } from "@silvermoon-work/check-task-sdk";
 import { Input } from "../contract.js";
+import { workspace } from "./workspace.js";
 
 export const repositories = {
   "single-repo": defineChecker({
@@ -11,9 +12,13 @@ export const repositories = {
   }),
   monorepo: defineChecker({
     target: Input,
-    check: (_target, signal) => {
+    check: (target, signal) => {
       signal.throwIfAborted();
-      return Promise.resolve({ pass: true, children: [] } as const);
+      return Promise.resolve({
+        pass: true,
+        children: [{ checker: "workspace", target }],
+      } as const);
     },
   }),
+  workspace,
 };

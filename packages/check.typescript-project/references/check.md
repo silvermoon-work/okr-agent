@@ -1,4 +1,4 @@
-# TypeScript 项目身份与仓库分流
+# TypeScript 项目身份、仓库分流与 workspace 配置
 
 输入为 `{"projectDirectory":"执行机上的项目绝对目录"}`，不接受额外字段。
 检查只读取目标文件，不执行目标代码、配置、脚本或联网查询，不修改目标项目。
@@ -9,6 +9,7 @@
 project
 ├─ single-repo
 └─ monorepo
+   └─ workspace
 ```
 
 根检查要求普通文件 `package.json` 可解析为 JSON 对象，并具有下列任一依据：
@@ -25,9 +26,16 @@ project
 TypeScript 依赖提供身份依据。
 
 身份不成立只报告 `typescript-project-invalid`，说明具体原因，不展开子检查。
-身份成立只展开一个分支。当前两个分支均为通过的叶节点；报告通过仅证明
-本轮身份与分流规则成立，不证明 scripts、tools、packages、deliverable、
-文件结构或其他工程标准合规。后续按讨论逐步增加分支规则。
+身份成立只展开一个分支。single repo 当前为通过叶节点；monorepo 展开
+workspace 检查，要求根 `pnpm-workspace.yaml` 是合法 YAML 对象，
+显式包含非空 `packages` 数组，每项为非空白字符串。缺少文件、不是普通
+文件或声明结构非法时报告 `workspace-configuration-invalid`，不回退到
+manifest 的 `workspaces`。意外 I/O 和链接重定向仍为执行故障。
+
+成员发现将遵循 pnpm 的模式语义，不限定 `apps/`、`packages/` 布局；
+本轮尚不展开成员模式，不检查空匹配、成员 manifest、名称冲突或根包归属。
+报告通过仅证明当前身份、分流及适用的 workspace 声明结构成立，不证明
+scripts、tools、packages、deliverable、文件结构或其他工程标准合规。
 
 通过业务结果为
 `{pass:true,documentation:"文档 CID",assets:"标准资产目录 CID"}`，不通过时
@@ -44,6 +52,7 @@ space 路径；独立执行器的本地文档仍为作者路径。
 node_modules、.git、.silvermoon、.turbo、dist、coverage，忽略范围内的
 TypeScript 文件不构成身份依据。最多枚举 16384 项、64 层目录，
 manifest 单文件读取上限 1MiB、总读取上限 16MiB。
+workspace 配置单文件上限为 1MiB，YAML 别名展开预算为 32。
 
 非法输入、不可访问目录、意外 I/O、读取期间文件变化、取消及预算耗尽
 属于执行故障，不转换为正常 problem 或通过结果。
