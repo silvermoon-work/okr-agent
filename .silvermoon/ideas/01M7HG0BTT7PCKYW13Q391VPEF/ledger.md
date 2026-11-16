@@ -18,10 +18,10 @@
 
 ### Deployment steps
 
-- [ ] **D-S01:** 启动本地 mock Web UI
-- [ ] **D-S02:** 浏览器视觉与交互验收
+- [x] **D-S01:** 启动本地 mock Web UI
+- [x] **D-S02:** 浏览器视觉与交互验收
 
 ### Deployment acceptance criteria
 
-- [ ] **D-AC01:** 本地服务可访问且可复现
-- [ ] **D-AC02:** 视觉与交互满足讨论用途
+- [x] **D-AC01:** 本地服务可访问且可复现
+- [x] **D-AC02:** 视觉与交互满足讨论用途
