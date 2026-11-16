@@ -4,15 +4,15 @@
 
 ### Implementation steps
 
-- [ ] **I-S01:** 定义 Spec 与真实样例
-- [ ] **I-S02:** 实现 React 定义视图
-- [ ] **I-S03:** 验证契约与渲染行为
+- [x] **I-S01:** 定义 Spec 与真实样例
+- [x] **I-S02:** 实现 React 定义视图
+- [x] **I-S03:** 验证契约与渲染行为
 
 ### Implementation acceptance criteria
 
-- [ ] **I-AC01:** Spec 语义可表达且可校验
-- [ ] **I-AC02:** 组件可嵌入并可靠导航
-- [ ] **I-AC03:** 项目校验与文档完整
+- [x] **I-AC01:** Spec 语义可表达且可校验
+- [x] **I-AC02:** 组件可嵌入并可靠导航
+- [x] **I-AC03:** 项目校验与文档完整
 
 ## Deployment
 
