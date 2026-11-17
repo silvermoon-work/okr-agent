@@ -1,0 +1,77 @@
+{
+  "name": "@silvermoon-work/silvermoon",
+  "version": "0.1.0-rc.0",
+  "description": "Check-backed repository-owned requirements, design, test consensus and evidence.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./domain": {
+      "types": "./dist/domain.d.ts",
+      "import": "./dist/domain.js"
+    },
+    "./check": {
+      "types": "./dist/check.d.ts",
+      "import": "./dist/check.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "silvermoon": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "skills",
+    "references",
+    "check.build.yaml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/silvermoon-work/okr-agent.git",
+    "directory": "packages/silvermoon"
+  },
+  "homepage": "https://github.com/silvermoon-work/okr-agent/tree/main/packages/silvermoon#readme",
+  "bugs": {
+    "url": "https://github.com/silvermoon-work/okr-agent/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "build": "rimraf dist && tsc --project tsconfig.build.json && node scripts/build.mjs",
+    "lint": "eslint . --max-warnings=0",
+    "lint-package": "publint --strict",
+    "prepublishOnly": "publish-gate check",
+    "test": "vitest run --root . --config ../../vitest.config.ts",
+    "test-coverage": "vitest run --root . --config ../../vitest.config.ts --coverage",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
+  },
+  "dependencies": {
+    "@silvermoon-work/check-task-sdk": "workspace:*",
+    "@silvermoon-work/ipfs-store": "catalog:",
+    "@silvermoon-work/task-builder": "catalog:",
+    "@silvermoon-work/task-engine": "catalog:",
+    "@sinclair/typebox": "catalog:",
+    "commander": "catalog:",
+    "multiformats": "catalog:",
+    "yaml": "catalog:"
+  },
+  "devDependencies": {
+    "@silvermoon-work/check-task-builder": "workspace:*",
+    "@silvermoon-work/task-builder-cli": "catalog:",
+    "@silvermoon-work/task-sdk": "catalog:"
+  }
+}

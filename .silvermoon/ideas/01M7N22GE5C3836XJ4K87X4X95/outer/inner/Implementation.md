@@ -1,6 +1,6 @@
 # Implementation
 
-本契约是旧 Silvermoon 准备阶段的高层种子，构想批准后按实际调研逐步细化，不表示已经批准具体技术方案。
+本契约沿用旧 Silvermoon 实施门限。用户已委托主 Agent 负责全部门限审阅；已确认的技术默认值与文字测试约定见 ideal 层的[执行决定](ideal/execution-decisions.md)、[场景索引](ideal/test-index.md)和[测试用例](ideal/test-spec.md)。实际验证结果记录在[实施证据](implementation-evidence.md)，不以作者自报完成替代独立审查。
 
 ## Steps
 

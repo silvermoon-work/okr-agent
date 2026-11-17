@@ -1,0 +1,25 @@
+{
+  "name": "@silvermoon-work/check.silvermoon",
+  "version": "0.1.0-rc.0",
+  "private": true,
+  "description": "Silvermoon Check CAR author; not an npm delivery.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.15.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run --root . --config ../../vitest.config.ts",
+    "test-coverage": "vitest run --root . --config ../../vitest.config.ts --coverage",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
+  },
+  "dependencies": {
+    "@silvermoon-work/silvermoon": "workspace:*"
+  },
+  "devDependencies": {
+    "@silvermoon-work/check-task-builder": "workspace:*",
+    "@silvermoon-work/task-builder": "catalog:",
+    "@silvermoon-work/task-builder-cli": "catalog:"
+  }
+}
