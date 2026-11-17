@@ -8,6 +8,7 @@ export default tseslint.config(
       "**/coverage/**",
       "**/dist/**",
       "**/.check-task-builder-*/**",
+      "**/.test-work/**",
       ".turbo/**",
       ".silvermoon/**",
     ],
