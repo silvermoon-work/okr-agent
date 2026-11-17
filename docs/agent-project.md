@@ -13,6 +13,11 @@
 - Name every workspace package, including the private root, under
   `@silvermoon-work/*`. Keep imports, workspace dependencies, release mappings,
   and documentation consistent when renaming packages.
+- Development-tool packages use `@silvermoon-work/devtool.<name>`.
+  `devtool.publish-gate` is an independent npm candidate, not yet a replacement
+  for the fixed publisher or a root dependency. First publish it through the
+  existing workflow; only then adopt a pinned published development dependency.
+  Keep publication authorization separate from Trusted Publisher setup.
 - Keep workspace build, test, test-coverage, lint-package and typecheck
   responsibilities aligned with `turbo.json`. Turbo reads workspace membership
   and dependency order; do not duplicate that graph in a custom scheduler. Run

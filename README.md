@@ -2,6 +2,14 @@
 
 基于 pnpm workspaces 和 Turborepo 的 OKR Agent monorepo。
 
+## 开发工具
+
+[`@silvermoon-work/devtool.publish-gate`](packages/devtool.publish-gate/README.md)
+是只读的 npm `prepublishOnly` 发布上下文门禁，检查准确提交的 CI、Git/tag、
+交付声明和 registry 状态，不接管构建、打包和发布。当前为未迁移的独立候选，
+首次发布仍使用现有发布器；根包尚不依赖它，后续固定消费已发布版本。
+组织内开发工具包使用 `@silvermoon-work/devtool.<name>` 命名。
+
 ## Check Task 作者入口
 
 - [`@silvermoon-work/check-task-sdk`](packages/check-task-sdk/README.md)：TypeBox 输入/问题码契约、命名 Checker 与有界并发检查图、v2 结果及来源文档。
@@ -284,10 +292,11 @@ no automatic batch release or automatic version bumping.
 Root [`silvermoon.yaml`](silvermoon.yaml) is the only delivery-intent source;
 all external applications and libraries are listed, not just apps. Only `npm`
 entries are publisher/publint candidates. The current npm entries are
-`check-task-sdk`, `check-task-builder` and `ipfsaw`; preset core stays private
-and is not registered. `task-bundle` classifies the existing private Check
-authors' local Bundle/CAR deliverables without defining IPFS/Pinboard
-distribution. Open types, paths and migration rules are documented in
+`check-task-sdk`, `check-task-builder`, `ipfsaw` and the publish-gate candidate;
+preset core stays private and is not registered. `task-bundle` classifies the
+existing private Check authors' local Bundle/CAR deliverables without defining
+IPFS/Pinboard distribution. Open types, paths and migration rules are documented
+in
 [explicit deliverables](packages/check.typescript-project/src-legacy/references/deliverables.md).
 Cloudflare intent does not certify platform configuration or deployment.
 
