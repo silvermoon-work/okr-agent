@@ -1,12 +1,12 @@
 # Deployment
 
-轻量部署种子。只定义未来验收方式，不把已发布旧 RC 或旧 renderer 的测试当作新宿主的证明。本轮不发布 npm 或上传远端制品。
+本地交付验收范围、准确代码/制品身份和真实浏览器证据见 [BrowserAcceptance](./BrowserAcceptance.md)。不把已发布旧 RC 或旧 renderer 的测试当作新宿主的证明。本轮不发布 npm 或上传远端制品。
 
 ## Steps
 
 ### D-S01: 试跑两种 Bundle 来源
 
-使用准确构建产物与正式配置的受控副本，分别通过 run --cid 与 run --car 加载 Check browser Task；不篡改个人配置来掩盖问题。
+使用准确构建产物与正式共享 Store 配置机制下的独立受控 local 配置，分别通过 run --cid 与 run --car 加载 Check browser Task；不读取或篡改个人配置来掩盖问题，不声称验证了用户远端节点。
 
 ### D-S02: 浏览器与生命周期验收
 
