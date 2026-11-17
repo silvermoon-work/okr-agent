@@ -1,6 +1,6 @@
 # ipfsaw
 
-`@silvermoon-work/ipfsaw@0.1.0-rc.0` 监听一份 YAML/JSON，
+`@silvermoon-work/ipfsaw@0.1.0-rc.1` 监听一份 YAML/JSON，
 用用户明确绑定的不可变 UnixFS renderer 展示。不是编辑器或 Task 执行器，
 不自动安装 renderer，不上传文档。该包是已登记的 npm 交付项，仅通过固定
 发布流程、按准确提交与版本授权发到 npm `rc` 标签；未发布前不代表 registry
