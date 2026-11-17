@@ -107,22 +107,22 @@ pnpm --filter @silvermoon-work/check-bundle-web dev
 <http://127.0.0.1:4173/>，Ctrl+C 停止。只展示定义、不执行 checker 或说明表达式；
 Schema 合法不等于语义前置条件成立。无需发布、后端或远程部署。
 
-### 本地文件持续预览（ipfsaw 私有候选）
+### 本地文件持续预览与 Browser Task（ipfsaw RC.2）
 
-当前未发布源码新增标准 browser Task 路径：
+`0.1.0-rc.2` 发布候选新增标准 browser Task 路径：
 
 ```powershell
 pnpm exec turbo run build --filter=@silvermoon-work/ipfsaw
 node packages\ipfsaw\dist\bin.js run --car packages\ipfsaw\dist\check-task.car --document packages\ipfsaw\dist\check-task.json --no-open
 ```
 
-使用前按 [ipfsaw 文档](packages/ipfsaw/README.md#标准-browser-task未发布源码)
+使用前按 [ipfsaw 文档](packages/ipfsaw/README.md#标准-browser-taskrc2)
 选择受控内容配置和 app 目录。`--cid` 可选择同一准确 Bundle；
 HTTP
 listening 不表示 Task 已启动。浏览器调用显式 ESM 默认导出，返回后应用继续存活；
 保存内容会替换页面、重置应用/router 状态。原根位置参数、registry 和旧 renderer
 ABI 保留独立，
-已发布 `0.1.0-rc.0` 不会因此获得新 `run` 命令。
+已发布 `0.1.0-rc.0` / `0.1.0-rc.1` 不会因此获得新 `run` 命令。
 
 [`@silvermoon-work/ipfsaw`](packages/ipfsaw/README.md) 提供通用 YAML/JSON
 文件入口、Schema→不可变 renderer CID registry、共享 Task IPFS Store 与隔离

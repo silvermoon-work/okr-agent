@@ -1,7 +1,8 @@
 # ipfsaw
 
-`@silvermoon-work/ipfsaw@0.1.0-rc.1` 的既有入口监听一份 YAML/JSON，
-用用户明确绑定的不可变 UnixFS renderer 展示。不是编辑器或 Task 执行器，
+`@silvermoon-work/ipfsaw@0.1.0-rc.2` 发布候选提供标准 browser Task 的
+`run --cid/--car --document` 入口，同时保留既有 YAML/JSON 到不可变 renderer
+绑定的 legacy 预览。它不是编辑器，不执行 Node Worker Task，
 不自动安装 renderer，不上传文档。该包是已登记的 npm 交付项，仅通过固定
 发布流程、按准确提交与版本授权发到 npm `rc` 标签；未发布前不代表 registry
 上的任何版本或 `npx ipfsaw` 已可用。独立 alias 的发布与验证不属于本包。
@@ -46,7 +47,7 @@ ipfsaw registry list [--data-dir <path>]
 ipfsaw registry remove <schema-uri> [--data-dir <path>]
 ```
 
-`run` 是下面说明的**未发布源码功能**；其余是保留的 legacy 入口。
+`run` 是下面说明的 **RC.2 功能**；其余是保留的 legacy 入口。
 每个 source/document 选项只能出现一次。`run`
 不接受旧 renderer，也不在校验失败后自动回退。
 
@@ -164,7 +165,7 @@ iframe 不是对任意恶意代码的绝对沙箱或强制终止保证，浏览�
 仍是信任边界。不要绑定不信任的 renderer。宿主停止时断开连接，
 浏览器显示服务已关闭，不再声称旧内容是当前成功结果。
 
-## 标准 browser Task（未发布源码）
+## 标准 browser Task（RC.2）
 
 ### 版本、构建与启动
 
