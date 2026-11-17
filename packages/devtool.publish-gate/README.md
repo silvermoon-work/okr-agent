@@ -4,19 +4,18 @@
 `prepublishOnly`，成功退出 0，任何无法确认的条件退出非 0。真正的打包、上传、
 OIDC 认证和 provenance 由标准 npm / pnpm 完成。
 
-`0.1.0-rc.1` 已通过原发布器和 Trusted Publishing 发布。本仓库根包固定依赖这个
-已发布版本，而不是同仓候选源码。源码现已迁移到包内声明与完整名称 tag；
-固定的 rc.1 不支持此新协议，不能用它验证本次迁移的发布。
+`0.1.0-rc.3` 已通过旧框架、已安装的 rc.1 门禁和 Trusted Publishing 发布。
+本仓库根包固定依赖已发布的 rc.3，而不是同仓候选源码。
+源码与当前 workflow 均采用包内声明与完整名称 tag。
 所有 npm 成员仍通过 `prepublishOnly` 调用已发布的根开发依赖。
 Trusted Publisher 必须绑定 `.github/workflows/publish-npm.yaml` 和 `npm`
 environment；配置 Trusted Publisher 不等于授权任意版本发布。
 
-**两阶段发布衔接**：rc.2 已发布，本次源码候选为 rc.3。
-第一阶段暂时保留根 `silvermoon.yaml` 和旧 `*-v*` workflow 过滤，仅由固定的
-已发布 rc.1 使用，tag 为 `devtool-publish-gate-v0.1.0-rc.3`。
-新源码仍拒绝根清单，不添加回退，也不参与自身这次发布的门禁判断。
-第二阶段待 rc.3 确认发布后，将根依赖及 lockfile 固定到 rc.3，移除根清单，
-启用 `**@*` 过滤，并由 rc.3 检查发布 rc.4，tag 为
+**两阶段发布衔接**：rc.3 已发布，tag 为
+`devtool-publish-gate-v0.1.0-rc.3`。根依赖及 lockfile 现固定到 rc.3，
+根 `silvermoon.yaml` 已移除，workflow 启用 `**@*` 过滤。
+本次 rc.4 仅递增版本、更新接入说明，运行时代码与 rc.3 相同，
+由已安装的 rc.3 检查发布，tag 为
 `@silvermoon-work/devtool.publish-gate@0.1.0-rc.4`。
 每阶段都需准确提交的 main-push CI 成功，并另行确认版本和 SHA 后才推 tag；
 不绕过生命周期，不以同仓候选源码替代固定的已发布门禁。

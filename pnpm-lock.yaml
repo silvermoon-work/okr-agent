@@ -132,8 +132,8 @@ importers:
         specifier: 'catalog:'
         version: 10.0.1(eslint@10.15.0(supports-color@10.2.2))
       '@silvermoon-work/devtool.publish-gate':
-        specifier: 0.1.0-rc.1
-        version: 0.1.0-rc.1
+        specifier: 0.1.0-rc.3
+        version: 0.1.0-rc.3
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.6
@@ -972,8 +972,8 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
-  '@silvermoon-work/devtool.publish-gate@0.1.0-rc.1':
-    resolution: {integrity: sha512-h9x7xkFmHa+V6I/jyiSJeFJDTw5ECSRvtJ0ZkHZUH2udkQkZykWT2jmlJxLDJW6R7V2Rryo2vmY+YQqfaWgsgQ==}
+  '@silvermoon-work/devtool.publish-gate@0.1.0-rc.3':
+    resolution: {integrity: sha512-UbGHMtvoUJ2h46i5Kfumg+WOnQ7bNllN3WLwmfbh26C9PhaZbPcGgE5apbphbzLgaTJlwqR9knqmTSSLeT9alw==}
     engines: {node: '>=22.15.0'}
     hasBin: true
 
@@ -3392,7 +3392,7 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@silvermoon-work/devtool.publish-gate@0.1.0-rc.1':
+  '@silvermoon-work/devtool.publish-gate@0.1.0-rc.3':
     dependencies:
       commander: 14.0.2
       semver: 7.8.6

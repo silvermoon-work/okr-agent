@@ -1,12 +1,11 @@
 name: Publish one verified npm package
 on:
   push:
-    tags: ["*-v*"]
+    tags: ["**@*"]
   workflow_dispatch:
     inputs:
       package:
-        description:
-          Bootstrap only - legacy package ID for the installed rc.1 gate
+        description: Full npm package name, including scope
         required: true
         type: string
 permissions: {}
