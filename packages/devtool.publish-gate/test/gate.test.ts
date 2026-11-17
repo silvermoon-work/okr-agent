@@ -3,7 +3,7 @@ import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { checkPublishContext } from "../src/index.js";
+import { checkPublishContext, selectPublishTarget } from "../src/index.js";
 
 const command = vi.hoisted(() =>
   vi.fn<(file: string, args: string[], options: unknown) => string>(),
@@ -27,6 +27,7 @@ let dependency: Record<string, unknown> | null;
 let dirty: string;
 let tagSha: string;
 let scopeRegistry: string;
+let workspaceProjects: unknown[];
 let runReads: number;
 let responder: ((url: string) => Response) | undefined;
 let fetcher: ReturnType<typeof vi.fn<typeof fetch>>;
@@ -128,10 +129,15 @@ beforeEach(async () => {
   dirty = "";
   tagSha = sha;
   scopeRegistry = "undefined";
+  workspaceProjects = [{ name: "semver", version: "7.8.6" }];
   runReads = 0;
   responder = undefined;
   command.mockImplementation((file, args) => {
-    if (file === process.execPath) return scopeRegistry;
+    if (file !== "git") {
+      return args.includes("list")
+        ? JSON.stringify(workspaceProjects)
+        : scopeRegistry;
+    }
     if (args[0] === "status") return dirty;
     if (args[0] === "merge-base") return "";
     if (args[1] === "--show-toplevel") return root;
@@ -168,6 +174,200 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
   await rm(root, { recursive: true, force: true });
+});
+
+function pnpmContext(binary = "pnpm.cjs") {
+  env.npm_config_user_agent = "pnpm/11.28.12 npm/? node/v26.13.1";
+  env.npm_execpath = binary;
+  for (const key of ["registry", "access", "tag", "provenance", "dry_run"]) {
+    const value = env[`npm_config_${key}`];
+    if (value !== undefined) env[`PNPM_CONFIG_${key.toUpperCase()}`] = value;
+    delete env[`npm_config_${key}`];
+  }
+}
+
+describe("workflow target selection", () => {
+  beforeEach(async () => {
+    await writeFile(
+      join(root, "package.json"),
+      JSON.stringify({ private: true }),
+    );
+    await writeFile(
+      join(root, "pnpm-workspace.yaml"),
+      "packages: [packages/*]\n",
+    );
+    workspaceProjects = [{ path: cwd, name, version }];
+  });
+
+  it("selects only the exact tag or explicit full name without approving publication", () => {
+    const expected = {
+      directory: "packages/widget",
+      name,
+      version,
+      channel: "rc",
+    };
+    expect(selectPublishTarget(root, env)).toEqual(expected);
+    env.GITHUB_EVENT_NAME = "workflow_dispatch";
+    env.PACKAGE_INPUT = name;
+    dirty = " M src/index.ts";
+    expect(selectPublishTarget(root, env)).toEqual(expected);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["GITHUB_ACTIONS", "false"],
+    ["GITHUB_EVENT_NAME", "pull_request"],
+    ["GITHUB_REF", "refs/tags/widget-v9.0.0"],
+    ["GITHUB_REF_TYPE", "branch"],
+  ])("rejects an invalid selection context %s", (key, value) => {
+    env[key] = value;
+    expect(() => selectPublishTarget(root, env)).toThrow();
+  });
+
+  it("rejects unmapped manual names and selects stable packages on latest", async () => {
+    env.GITHUB_EVENT_NAME = "workflow_dispatch";
+    env.PACKAGE_INPUT = "missing";
+    expect(() => selectPublishTarget(root, env)).toThrow("exactly one");
+    env.PACKAGE_INPUT = name;
+    manifest.version = "1.0.0";
+    await saveManifest();
+    expect(selectPublishTarget(root, env)).toMatchObject({
+      version: "1.0.0",
+      channel: "latest",
+    });
+  });
+
+  it("selects a root single package without pnpm or workspace discovery", async () => {
+    await rm(join(root, "pnpm-workspace.yaml"));
+    cwd = root;
+    await saveManifest();
+    await writeFile(join(root, "deliverable.yaml"), "type: npm\n");
+    delete env.npm_execpath;
+    expect(selectPublishTarget(root, env)).toEqual({
+      directory: ".",
+      name,
+      version,
+      channel: "rc",
+    });
+    expect(command.mock.calls.every(([file]) => file === "git")).toBe(true);
+  });
+
+  it("does not inherit declarations and rejects duplicate full names", async () => {
+    await rm(join(cwd, "deliverable.yaml"));
+    expect(() => selectPublishTarget(root, env)).toThrow("exactly one");
+    await writeFile(join(cwd, "deliverable.yaml"), "type: task-bundle\n");
+    expect(() => selectPublishTarget(root, env)).toThrow("exactly one");
+    await writeFile(join(cwd, "deliverable.yaml"), "type: npm\n");
+    await saveManifest();
+    await writeFile(join(root, "package.json"), JSON.stringify(manifest));
+    await writeFile(join(root, "deliverable.yaml"), "type: npm\n");
+    expect(() => selectPublishTarget(root, env)).toThrow(
+      "Duplicate npm delivery name",
+    );
+  });
+
+  it("rejects workspace paths outside the repository and incomplete discovery", () => {
+    workspaceProjects = [{ path: join(root, "..") }];
+    expect(() => selectPublishTarget(root, env)).toThrow(
+      "inside the repository",
+    );
+    workspaceProjects = [{}];
+    expect(() => selectPublishTarget(root, env)).toThrow("path is unavailable");
+  });
+});
+
+describe("native pnpm publishing context", () => {
+  it.each(["pnpm.cjs", "pnpm.exe"])(
+    "supports lifecycle executable %s and catalog declarations",
+    async (binary) => {
+      pnpmContext(binary);
+      await writeFile(
+        join(root, "pnpm-workspace.yaml"),
+        "catalog:\n  semver: ^7.0.0\n",
+      );
+      manifest.dependencies = { semver: "catalog:" };
+      manifest.peerDependencies = { semver: "catalog:" };
+      await saveManifest();
+      await expect(checkPublishContext(cwd, env)).resolves.toMatchObject({
+        name,
+        channel: "rc",
+      });
+      expect(
+        command.mock.calls.some(
+          ([, args]) => args.includes("pack") || args.includes("publish"),
+        ),
+      ).toBe(false);
+      expect(
+        command.mock.calls.some(
+          ([file]) =>
+            file === (binary.endsWith(".cjs") ? process.execPath : binary),
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it("resolves workspace:* with pnpm membership and queries published versions, not local build output", async () => {
+    pnpmContext();
+    manifest.dependencies = { semver: "workspace:*" };
+    manifest.optionalDependencies = { semver: "workspace:*" };
+    await saveManifest();
+    await expect(checkPublishContext(cwd, env)).resolves.toMatchObject({
+      name,
+    });
+    expect(
+      command.mock.calls.filter(([, args]) => args.includes("list")),
+    ).toHaveLength(1);
+    workspaceProjects = [];
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "exactly one member",
+    );
+    workspaceProjects = [{ name: "semver", version: "not-semver" }];
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "exact version",
+    );
+    workspaceProjects = [{ name: "semver", version: "6.0.0" }];
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "already be published",
+    );
+  });
+
+  it("requires explicit native options and preserves manual dry-run protection", async () => {
+    pnpmContext();
+    delete env.PNPM_CONFIG_TAG;
+    env.npm_config_tag = "rc";
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow("PNPM_CONFIG");
+    env.PNPM_CONFIG_TAG = "rc";
+    env.GITHUB_EVENT_NAME = "workflow_dispatch";
+    env.PACKAGE_INPUT = name;
+    env.PNPM_CONFIG_DRY_RUN = "true";
+    await expect(checkPublishContext(cwd, env)).resolves.toMatchObject({
+      dryRun: true,
+    });
+    env.PNPM_CONFIG_DRY_RUN = "false";
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow("dry-run only");
+  });
+
+  it.each(["catalog:named", "workspace:^", "workspace:../other"])(
+    "rejects unsupported protocol %s",
+    async (range) => {
+      pnpmContext();
+      manifest.dependencies = { semver: range };
+      await saveManifest();
+      await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+        "registry SemVer range",
+      );
+    },
+  );
+
+  it("rejects missing catalog entries rather than inventing a dependency range", async () => {
+    pnpmContext();
+    manifest.dependencies = { semver: "catalog:" };
+    await saveManifest();
+    await writeFile(join(root, "pnpm-workspace.yaml"), "catalog: {}\n");
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "registry SemVer range",
+    );
+  });
 });
 
 describe("authorized release context", () => {
@@ -226,7 +426,9 @@ describe("authorized release context", () => {
   it("does not inherit a root declaration or accept the legacy root registry", async () => {
     await rm(join(cwd, "deliverable.yaml"));
     await writeFile(join(root, "deliverable.yaml"), "type: npm\n");
-    await expect(checkPublishContext(cwd, env)).rejects.toThrow("ENOENT");
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "Declare type: npm",
+    );
     await writeFile(join(root, "silvermoon.yaml"), "deliverables: []");
     await expect(checkPublishContext(cwd, env)).rejects.toThrow("Migrate");
     expect(fetcher).not.toHaveBeenCalled();

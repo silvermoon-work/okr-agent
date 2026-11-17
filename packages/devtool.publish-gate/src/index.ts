@@ -100,6 +100,194 @@ function list(value: unknown): unknown[] {
   return value;
 }
 
+function deliveryDeclaration(root: string, directory: string) {
+  requireValue(
+    !existsSync(join(root, "silvermoon.yaml")),
+    "Migrate root silvermoon.yaml to per-package deliverable.yaml; legacy delivery declarations are not supported.",
+  );
+  const path = join(directory, "deliverable.yaml");
+  let info;
+  try {
+    info = lstatSync(path);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT")
+      return undefined;
+    throw error;
+  }
+  requireValue(
+    info.isFile() &&
+      !info.isSymbolicLink() &&
+      realpathSync(path) === path &&
+      info.size <= 1_048_576,
+    "deliverable.yaml must be a regular non-redirected file of at most 1MiB.",
+  );
+  const declaration = yaml(path);
+  requireValue(
+    typeof declaration.type === "string" &&
+      /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(declaration.type) &&
+      !["path", "packageId", "deliverables"].some((key) =>
+        Object.hasOwn(declaration, key),
+      ),
+    "Declare a valid type in this package's deliverable.yaml; path and packageId are derived, not configurable.",
+  );
+  return declaration;
+}
+
+function packageIdentity(directory: string) {
+  const manifest = object(
+    JSON.parse(readFileSync(join(directory, "package.json"), "utf8")),
+  );
+  const { name, version } = manifest;
+  requireValue(
+    typeof name === "string" &&
+      packagePattern.test(name) &&
+      !/template|your[-_]|example|^@workspace\//i.test(name) &&
+      (manifest.private === undefined || manifest.private === false) &&
+      typeof version === "string" &&
+      versionPattern.test(version) &&
+      semver.valid(version) === version,
+    "Expected a public npm package with a canonical stable or rc version.",
+  );
+  return {
+    manifest,
+    name,
+    version,
+    channel: version.includes("-rc.") ? ("rc" as const) : ("latest" as const),
+  };
+}
+
+export interface PublishTarget {
+  readonly directory: string;
+  readonly name: string;
+  readonly version: string;
+  readonly channel: "latest" | "rc";
+}
+
+export function selectPublishTarget(
+  cwd = process.cwd(),
+  env = process.env,
+): PublishTarget {
+  requireValue(
+    env.GITHUB_ACTIONS === "true" &&
+      (env.GITHUB_EVENT_NAME === "push" ||
+        env.GITHUB_EVENT_NAME === "workflow_dispatch"),
+    "Target selection requires a GitHub Actions tag push or manual dispatch.",
+  );
+  const root = resolve(git(cwd, "rev-parse", "--show-toplevel"));
+  const paths = existsSync(join(root, "pnpm-workspace.yaml"))
+    ? list(
+        JSON.parse(
+          packageManager(
+            root,
+            env,
+            "list",
+            "--recursive",
+            "--include-workspace-root",
+            "--depth",
+            "-1",
+            "--json",
+          ),
+        ),
+      ).map((entry) => {
+        const path = object(entry).path;
+        requireValue(
+          typeof path === "string",
+          "Workspace member path is unavailable.",
+        );
+        return resolve(path);
+      })
+    : [];
+  const names = new Set<string>();
+  const candidates = [...new Set([root, ...paths])]
+    .flatMap((directory) => {
+      const path = relative(root, directory).split(sep).join("/") || ".";
+      requireValue(
+        path !== ".." &&
+          !path.startsWith("../") &&
+          !path.includes(":") &&
+          !path.startsWith("/") &&
+          realpathSync(directory) === directory,
+        "Publishing directories must be non-redirected package directories inside the repository.",
+      );
+      if (deliveryDeclaration(root, directory)?.type !== "npm") return [];
+      const { name, version, channel } = packageIdentity(directory);
+      requireValue(!names.has(name), `Duplicate npm delivery name: ${name}`);
+      names.add(name);
+      return [{ directory: path, name, version, channel }];
+    })
+    .filter((entry) =>
+      env.GITHUB_EVENT_NAME === "push"
+        ? env.GITHUB_REF_TYPE === "tag" &&
+          env.GITHUB_REF === `refs/tags/${entry.name}@${entry.version}`
+        : env.PACKAGE_INPUT === entry.name,
+    );
+  requireValue(
+    candidates.length === 1,
+    "Release event must select exactly one registered npm package and version.",
+  );
+  return candidates[0]!;
+}
+
+function packageManager(
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  ...args: string[]
+) {
+  const cli = env.npm_execpath;
+  requireValue(cli, "The lifecycle package-manager executable is unavailable.");
+  const javascript = /\.[cm]?js$/i.test(cli);
+  return execFileSync(
+    javascript ? process.execPath : cli,
+    javascript ? [cli, ...args] : args,
+    {
+      cwd,
+      env,
+      encoding: "utf8",
+      timeout: 10_000,
+      maxBuffer: 1_048_576,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  ).trim();
+}
+
+function pnpmDependencyResolver(root: string, env: NodeJS.ProcessEnv) {
+  let projects: Record<string, unknown>[] | undefined;
+  let catalog: Record<string, unknown> | undefined;
+  return (name: string, range: unknown): unknown => {
+    if (range === "catalog:") {
+      catalog ??= object(yaml(join(root, "pnpm-workspace.yaml")).catalog);
+      return catalog[name];
+    }
+    if (range === "workspace:*") {
+      projects ??= list(
+        JSON.parse(
+          packageManager(
+            root,
+            env,
+            "list",
+            "--recursive",
+            "--depth",
+            "-1",
+            "--json",
+          ),
+        ),
+      ).map(object);
+      const matches = projects.filter((project) => project.name === name);
+      requireValue(
+        matches.length === 1,
+        `Workspace dependency ${name} must identify exactly one member.`,
+      );
+      const version = matches[0]!.version;
+      requireValue(
+        typeof version === "string" && semver.valid(version) === version,
+        `Workspace dependency ${name} needs an exact version.`,
+      );
+      return version;
+    }
+    return range;
+  };
+}
+
 function verifyRun(run: Record<string, unknown>, sha: string): void {
   requireValue(
     run.head_sha === sha &&
@@ -266,7 +454,7 @@ export async function checkPublishContext(
     env.GITHUB_ACTIONS === "true" &&
       env.npm_command === "publish" &&
       env.npm_lifecycle_event === "prepublishOnly",
-    "Run publish-gate check from npm publish's prepublishOnly hook in GitHub Actions.",
+    "Run publish-gate check from npm/pnpm publish's prepublishOnly hook in GitHub Actions.",
   );
   requireValue(
     !env.NPM_TOKEN &&
@@ -305,42 +493,14 @@ export async function checkPublishContext(
     "Checkout HEAD must match the exact GitHub event SHA.",
   );
   git(root, "merge-base", "--is-ancestor", sha, "refs/remotes/origin/main");
-  const manifest = object(
-    JSON.parse(readFileSync(join(cwd, "package.json"), "utf8")),
-  );
-  const { name, version } = manifest;
+  const { manifest, name, version, channel } = packageIdentity(cwd);
   requireValue(
-    typeof name === "string" &&
-      packagePattern.test(name) &&
-      !/template|your[-_]|example|^@workspace\//i.test(name) &&
-      (manifest.private === undefined || manifest.private === false) &&
-      typeof version === "string" &&
-      versionPattern.test(version) &&
-      semver.valid(version) === version,
-    "Expected a public npm package with a canonical stable or rc version.",
+    deliveryDeclaration(root, cwd)?.type === "npm",
+    "Declare type: npm in this package's deliverable.yaml.",
   );
-  requireValue(
-    !existsSync(join(root, "silvermoon.yaml")),
-    "Migrate root silvermoon.yaml to per-package deliverable.yaml; legacy delivery declarations are not supported.",
-  );
-  const declarationPath = join(cwd, "deliverable.yaml");
-  const declarationInfo = lstatSync(declarationPath);
-  requireValue(
-    declarationInfo.isFile() &&
-      !declarationInfo.isSymbolicLink() &&
-      realpathSync(declarationPath) === declarationPath &&
-      declarationInfo.size <= 1_048_576,
-    "deliverable.yaml must be a regular non-redirected file of at most 1MiB.",
-  );
-  const declaration = yaml(declarationPath);
-  requireValue(
-    declaration.type === "npm" &&
-      !Object.hasOwn(declaration, "path") &&
-      !Object.hasOwn(declaration, "packageId") &&
-      !Object.hasOwn(declaration, "deliverables"),
-    "Declare type: npm in this package's deliverable.yaml; path and packageId are derived, not configurable.",
-  );
-  const channel = version.includes("-rc.") ? "rc" : "latest";
+  const pnpm = env.npm_config_user_agent?.startsWith("pnpm/") === true;
+  const option = (name: string) =>
+    env[pnpm ? `PNPM_CONFIG_${name.toUpperCase()}` : `npm_config_${name}`];
   const config = object(manifest.publishConfig);
   requireValue(
     Object.keys(config).every((key) =>
@@ -350,35 +510,28 @@ export async function checkPublishContext(
       config.access === "public" &&
       config.directory === undefined &&
       (config.tag === undefined || config.tag === channel) &&
-      env.npm_config_registry === registry &&
-      env.npm_config_access === "public" &&
-      env.npm_config_tag === channel &&
-      env.npm_config_provenance === "true" &&
-      env.npm_config_force !== "true",
-    `Use npm publish --registry=${registry} --access=public --tag=${channel} --provenance without --force; publishConfig must agree.`,
+      option("registry") === registry &&
+      option("access") === "public" &&
+      option("tag") === channel &&
+      option("provenance") === "true" &&
+      option("force") !== "true",
+    `Use ${pnpm ? "PNPM_CONFIG_* publishing options" : "npm publish options"} for public ${registry}, --tag=${channel} and provenance, without --force; publishConfig must agree.`,
   );
   if (name.startsWith("@")) {
-    requireValue(
-      env.npm_execpath,
-      "npm's lifecycle executable is unavailable.",
+    requireValue(env.npm_execpath, "The lifecycle executable is unavailable.");
+    const scopedRegistry = packageManager(
+      cwd,
+      env,
+      "config",
+      "get",
+      `${name.split("/")[0]}:registry`,
     );
-    const scopedRegistry = execFileSync(
-      process.execPath,
-      [env.npm_execpath, "config", "get", `${name.split("/")[0]}:registry`],
-      {
-        cwd,
-        env,
-        encoding: "utf8",
-        timeout: 10_000,
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    ).trim();
     requireValue(
       scopedRegistry === "undefined" || scopedRegistry === registry,
       "A scope-specific registry must not redirect publication away from public npm.",
     );
   }
-  const dryRun = env.npm_config_dry_run === "true";
+  const dryRun = option("dry_run") === "true";
   if (env.GITHUB_EVENT_NAME === "push") {
     const tag = `${name}@${version}`;
     requireValue(
@@ -406,6 +559,7 @@ export async function checkPublishContext(
     "Registry package identity mismatch.",
   );
   unpublished(version, metadata);
+  const resolvePnpmDependency = pnpmDependencyResolver(root, env);
   let queries = 0;
   for (const field of [
     "dependencies",
@@ -414,14 +568,19 @@ export async function checkPublishContext(
   ]) {
     const dependencies = manifest[field];
     if (dependencies === undefined) continue;
-    for (const [dependency, range] of Object.entries(object(dependencies))) {
+    for (const [dependency, declaration] of Object.entries(
+      object(dependencies),
+    )) {
+      const range = pnpm
+        ? resolvePnpmDependency(dependency, declaration)
+        : declaration;
       requireValue(++queries <= 64, "Dependency verification budget exceeded.");
       requireValue(
         packagePattern.test(dependency) &&
           typeof range === "string" &&
           semver.validRange(range) &&
           !/^(?:workspace|file|link|portal|npm):/.test(range),
-        `Dependency ${dependency} must use a registry SemVer range; workspace protocols require conversion before npm publish.`,
+        `Dependency ${dependency} must use a registry SemVer range; only native pnpm supports catalog: and workspace:* here.`,
       );
       const published = await request(
         `${registry}${encodeURIComponent(dependency)}`,

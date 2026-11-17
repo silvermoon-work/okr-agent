@@ -31,27 +31,23 @@
     "format-check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",
     "lint-package": "turbo run lint-package",
-    "release": "node scripts/release.mjs",
-    "release-dry-run": "node scripts/release-dry-run.mjs",
     "test": "turbo run test --concurrency=1",
     "test-coverage": "turbo run test-coverage --concurrency=1",
     "typecheck": "tsc --noEmit --project tsconfig.json && turbo run typecheck"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",
+    "@silvermoon-work/devtool.publish-gate": "0.1.0-rc.1",
     "@types/node": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "eslint": "catalog:",
     "globals": "catalog:",
-    "acorn": "catalog:",
     "prettier": "catalog:",
     "publint": "catalog:",
     "rimraf": "catalog:",
-    "semver": "catalog:",
     "turbo": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
-    "vitest": "catalog:",
-    "yaml": "catalog:"
+    "vitest": "catalog:"
   }
 }

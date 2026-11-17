@@ -1,6 +1,6 @@
 {
   "name": "@silvermoon-work/devtool.publish-gate",
-  "version": "0.1.0-rc.0",
+  "version": "0.1.0-rc.2",
   "description": "Read-only npm prepublishOnly context checks for Silvermoon GitHub Actions releases.",
   "type": "module",
   "sideEffects": false,
@@ -33,6 +33,7 @@
     "build": "tsc --project tsconfig.build.json",
     "lint": "eslint . --max-warnings=0",
     "lint-package": "publint",
+    "prepublishOnly": "publish-gate check",
     "test": "vitest run --root . --config ../../vitest.config.ts",
     "test-coverage": "vitest run --root . --config ../../vitest.config.ts --coverage",
     "typecheck": "tsc --noEmit --project tsconfig.json"
