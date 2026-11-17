@@ -52,6 +52,8 @@ CLI 不维护独立于 Checker 的阶段和完成判断；不同 audience 不能
 
 复用本仓库现有 Check Task SDK、Builder 和上游 Task Engine 能力，不把旧 Potential Guide / Objective Guide 包一层后冒充迁移。具体模块及包拆分由技术设计决定。
 
+独立 `reference` 命令由 Check 结果中的 documentation ContentRef 和通用 CID 内容读取替代，不继续维护旧 Objective / level / check / problem 的专属引用命名空间。CLI / 宿主必须提供实际可用的内容读取与必要的有界呈现，缺块和不可用应明确报告，不能只输出 CID 就假设 Agent 能访问。
+
 ## Events 与证据的权威边界
 
 保留 Events 记录过程事实、据此推导进展的思路。Spec 定义约定，Evidence 支撑验证，Events 记录明确确认、修订、验收等事实，Checker 综合判断。
@@ -65,7 +67,7 @@ CLI 不维护独立于 Checker 的阶段和完成判断；不同 audience 不能
 新模型不继续使用 Ideal / Inner / Outer 世界术语和嵌套层级，采用软件工程术语。建议的职责布局如下；具体大小写和文件名在技术阶段定稿：
 
 ```text
-<idea-id>/
+.silvermoon/i/<idea-id>/
 ├── requirements/
 │   ├── Spec.md
 │   └── ...                 # Mock、CLI/API 示例
@@ -85,6 +87,12 @@ CLI 不维护独立于 Checker 的阶段和完成判断；不同 audience 不能
 三套 Spec 是逻辑契约，不强制每套只能有一个文件。支持文档属于相应 Spec，不成为平行的第二套要求。
 
 Idea 内容长期留在 Git，保留决策来龙去脉；本次不迁到 IPFS。这不排斥现有 Task / Check Bundle 通过 CID 分发，文档存储和运行制品分发是两件事。
+
+旧 `.silvermoon/ideas` 完整保留作为历史档案。新 CLI 不扫描、不查询、不校验、不写入其中的旧 Idea，不提供旧 Idea 迁移；需要旧流程时继续显式使用旧工具。
+
+用户进一步确定不再沿用 ULID，改用分钟级 `YYYYMMDDHHmm` 加 4 位 Hex 随机码，总计 16 位，以匹配单项目 Idea 稀疏的使用场景。用户已澄清先前“Base64”是口误，实际指 Hex。这个最新方向替代此前 33 位表示；此前 `nnn` 指毫秒的解释只作为讨论历史。时区及碰撞策略的建议见[技术审阅稿](technical-review.md)。
+
+项目 `.silvermoon/config.yaml` 尽量保持旧版路径、字段和语义，不借重建顺便重设计配置。新工具不读取或注入 `.silvermoon/guidance` 提示词；项目可自行通过 `.agents/skills` 指导 Agent 编写 Specs，工具不将其当成第四套契约或批准事实。这里定义未来产品行为，不在本轮更改本仓库现有 skill 路径约定。
 
 ## Evidence 与取消 ledger
 

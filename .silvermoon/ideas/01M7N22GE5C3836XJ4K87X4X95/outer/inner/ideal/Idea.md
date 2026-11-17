@@ -6,11 +6,11 @@
 
 ## 结果
 
-在本仓库重建 `@silvermoon-work/silvermoon`，以 Requirements、Technical、Test 三套 Spec 形成共识，通过 Checker、Events 和 Evidence 驱动实现及部署验收。详见[协作约定](collaboration.md)、[检查与存储](checker-and-artifacts.md)及[交付边界](delivery-and-open-questions.md)。
+在本仓库重建 `@silvermoon-work/silvermoon`，以 Requirements、Technical、Test 三套 Spec 形成共识，通过 Checker、Events 和 Evidence 驱动实现及部署验收。详见[协作约定](collaboration.md)、[检查与存储](checker-and-artifacts.md)、[交付边界](delivery-and-open-questions.md)及[技术调研审阅稿](technical-review.md)。
 
 ## 边界
 
-- Idea 全部内容留在 Git；取消新模型的世界嵌套术语与必备 ledger，不迁移至 IPFS。
+- Idea 内容留在 Git；新建于 `.silvermoon/i`，旧 `.silvermoon/ideas` 仅留档、不迁移或消费；取消世界嵌套术语与必备 ledger。
 - 保留设备、项目及 primary 整备；修订须重新形成受影响的共识。
 - 本 Idea 始终使用旧 Silvermoon 推进；新版本发布后再试用，不提前自举切换。
 
