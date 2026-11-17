@@ -1,6 +1,6 @@
 # Deployment
 
-本契约是旧 Silvermoon 准备阶段的高层种子。准确交付版本、提交及试用环境后续确定；本文不构成发布授权。
+本契约使用旧 Silvermoon 部署门限。候选为 `@silvermoon-work/silvermoon@0.1.0-rc.0`，准确提交 `353fe73d26fd90414a1df4e14a2a1e1b6e3f97b3`；主 Agent 受托负责生命周期验收，但真实发布仍需准确授权与全部发布前提。当前状态及恢复步骤见[部署准备记录](deployment-readiness.md)；本文不构成发布授权。
 
 ## Steps
 
