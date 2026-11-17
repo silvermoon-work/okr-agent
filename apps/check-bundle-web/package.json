@@ -8,12 +8,11 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "clean": "node scripts/clean.mjs",
     "dev": "node scripts/dev.mjs",
-    "lint": "node scripts/lint.mjs",
-    "test": "node scripts/test.mjs",
-    "test-coverage": "node scripts/test-coverage.mjs",
-    "typecheck": "node scripts/typecheck.mjs"
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run --root . --config ../../vitest.config.ts",
+    "test-coverage": "vitest run --root . --config ../../vitest.config.ts --coverage",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
   },
   "dependencies": {
     "@silvermoon-work/check-bundle-viewer": "workspace:*",

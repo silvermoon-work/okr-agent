@@ -33,14 +33,13 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "clean": "node scripts/clean.mjs",
-    "lint": "node scripts/lint.mjs",
-    "lint-package": "node scripts/lint-package.mjs",
+    "build": "tsc --project tsconfig.build.json",
+    "lint": "eslint . --max-warnings=0",
+    "lint-package": "publint",
     "smoke": "node scripts/smoke.mjs",
-    "test": "node scripts/test.mjs",
-    "test-coverage": "node scripts/test-coverage.mjs",
-    "typecheck": "node scripts/typecheck.mjs"
+    "test": "vitest run --root . --config ../../vitest.config.ts",
+    "test-coverage": "vitest run --root . --config ../../vitest.config.ts --coverage",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
   },
   "engines": {
     "node": ">=22.15.0"

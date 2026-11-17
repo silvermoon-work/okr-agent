@@ -13,10 +13,57 @@
 - Name every workspace package, including the private root, under
   `@silvermoon-work/*`. Keep imports, workspace dependencies, release mappings,
   and documentation consistent when renaming packages.
-- Keep workspace build, lint, test, test-coverage, lint-package and typecheck
-  responsibilities aligned with `turbo.json`. The fixed root commands discover
-  members and dependencies from the workspace manifests; Turbo remains available
-  for cached builds and targeted workspace actions.
+- Keep workspace build, test, test-coverage, lint-package and typecheck
+  responsibilities aligned with `turbo.json`. Turbo reads workspace membership
+  and dependency order; do not duplicate that graph in a custom scheduler. Run
+  whole-repository ESLint and Prettier once from the root.
+
+## Engineering simplification and Check policy boundary
+
+- This consuming repository deliberately uses direct package commands rather
+  than the old fixed `node scripts/<same-name>.mjs` interface. The user
+  explicitly approved this engineering experiment. The unchanged standard
+  `AGENTS.md` and TypeScript Check assets still describe the older interface:
+  this is an open policy conflict, not a claim that the Check Idea has been
+  accepted or that this repository passes that Check. Do not copy the repository
+  changes into Check author code, tests, references or assets to conceal the
+  conflict.
+- Simple member commands call tsc, Vitest, ESLint and publint directly. Keep
+  scripts only for actual multi-step builds, development servers and integration
+  harnesses. Do not restore copied command/delivery libraries in every member.
+- Root `check` stops at the first failure: format-check, build, typecheck,
+  whole-repository lint, test-coverage (including JavaScript release/engineering
+  regressions), then npm package lint. Root configuration TypeScript is checked
+  explicitly, in addition to Turbo's member typechecks. Whole-repository ESLint
+  covers root configuration, remaining maintenance scripts, member source and
+  tests; there is no separate duplicate `check-scripts` pass.
+- Root build/typecheck/test/test-coverage use Turbo. Tests and typechecks depend
+  on upstream builds; package lint depends on its own build. Shared TypeScript,
+  Vitest, Node selection and build-helper inputs invalidate caches. Build
+  outputs include the entire `dist/` (including CARs and browser renderers);
+  coverage restores `coverage/`. Root test/coverage invocations keep one active
+  workspace at a time, preserving the old scheduler's resource bound for
+  process/timing-sensitive tests while retaining dependency ordering and
+  caching. Build/typecheck remain parallel where dependencies permit. Native,
+  smoke, dev and demo tasks are not cached. Release commands are not Turbo tasks
+  and remain explicit single-package entries using the unchanged fixed publisher
+  and its dependencies.
+- Root `lint-package` resolves only `type: npm` entries from `silvermoon.yaml`
+  against pnpm's actual workspace list, validates their scripts and invokes
+  Turbo for those targets. Do not create a second publishable-package list.
+- Member commands operate in their own working directory. Shared Vitest is
+  passed explicitly with `--root . --config ../../vitest.config.ts`; no hidden
+  root discovery or graph reconstruction occurs inside a member command. Direct
+  `pnpm --filter <package> test` does not build dependencies. Use
+  `pnpm exec turbo run test --filter=<package>` for dependency-aware execution.
+- Root `clean` removes only `dist`, `coverage` and `.turbo` under this
+  worktree's root and pnpm-declared members. It validates redirected
+  member/output paths before deleting anything. It does not remove dependencies,
+  pnpm stores, undeclared directories or other worktrees.
+- CI continues to call `pnpm check` after frozen installation. Required jobs,
+  compatibility matrix and publisher verification identities are unchanged. The
+  existing consumer-minimum/full-development-tool matrix mismatch remains a
+  separate discussion; this migration does not raise minimum Node versions.
 
 ## Skills
 
@@ -68,20 +115,16 @@
 
 - `.silvermoon/` contains lifecycle metadata and historical/generated deployment
   evidence, not current runtime or maintenance source. It is intentionally
-  excluded from formatting so new formatter releases do not rewrite accepted
-  world revisions. This exclusion does not apply to source, tests, scripts,
-  workflows or required configuration outside that tree.
+  excluded from formatting and linting so new tool releases do not rewrite or
+  reinterpret accepted world revisions. This exclusion does not apply to source,
+  tests, scripts, workflows or required configuration outside that tree.
 
 - The previous root guidance was moved here before restoring the complete
   standard AGENTS.md; its project-specific conventions remain in force.
-- `pnpm check` uses the fixed scheduler: format-check, dependency-ordered build,
-  types, lint, coverage, `test-release`, package lint, and `check-scripts`.
-  `pnpm test` is a single non-coverage run; use `pnpm test-coverage` for
-  coverage.
-- A non-code aggregate root is not built again by the per-project check plan;
-  its `pnpm build` remains the explicit Turbo aggregate action. Each member is
-  built once in dependency order. Keep the standard command asset and installed
-  workspace copies in sync when changing this behavior.
+- `pnpm test` is a single non-coverage run; use `pnpm test-coverage` for
+  coverage. Both include `test/*.test.js` through `pnpm test-release`. Migration
+  regressions execute the real Turbo graph and root gate in isolated fixtures,
+  including ordering, cache restoration/invalidation, failures and clean safety.
 - Default toolchain tests use controlled tools and isolated configuration, not
   ambient npm/pnpm/nrm installations. Real installed-tool checks are explicit
   `native-test`/`smoke` actions and the manual cross-platform native workflow.
@@ -116,7 +159,8 @@
   not change the project's development Node or consumer compatibility matrix.
 - For a focused TypeScript test, run
   `pnpm --filter <package> exec vitest run --root . --config ../../vitest.config.ts test/<file>.test.ts`.
-  Fixed standard entries intentionally reject extra arguments.
+  Direct member commands accept tool arguments; root test commands also run
+  release regressions, so prefer a member command for a focused selection.
 - The user explicitly authorized raising the SDK's consumer minimum in this
   normalization round: `>=22.13` became `>=22.15.0`, matching the parsed minimum
   of the other applicable code packages. This intentionally tightens the SDK's

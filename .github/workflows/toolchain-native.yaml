@@ -28,6 +28,8 @@ jobs:
         with:
           node-version-file: .node-version
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @silvermoon-work/check.nodejs-toolchain... build
+      - run:
+          pnpm exec turbo run build
+          --filter=@silvermoon-work/check.nodejs-toolchain
       - run: pnpm --filter @silvermoon-work/check.nodejs-toolchain native-test
       - run: pnpm --filter @silvermoon-work/check.nodejs-toolchain smoke
