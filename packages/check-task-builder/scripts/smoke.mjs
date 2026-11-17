@@ -70,16 +70,16 @@ try {
     assert.ok(run.reclaimedAt, JSON.stringify(run));
     if (fault) {
       assert.equal(run.stage, "failed", JSON.stringify(run));
-      assert.equal(run.output, undefined);
+      assert.equal(run.result, undefined);
       results.push({ kind: "failed", reclaimed: true });
       continue;
     }
     assert.equal(run.stage, "completed", JSON.stringify(run));
-    assert.ok(run.output);
-    const result = run.output.result.data;
+    assert.ok(run.result);
+    const result = run.result.data;
     assert.equal(typeof result.pass, "boolean");
     assert.deepEqual(
-      run.output.result.cidPaths,
+      run.result.cidPaths,
       result.pass
         ? ['$["documentation"]']
         : ['$["documentation"]', '$["problems"][*]["documentation"]'],
@@ -120,7 +120,7 @@ try {
     results.push({
       kind: "completed",
       pass: result.pass,
-      output: run.output,
+      result: run.result,
       documentation: paths,
       resources: ancillary,
       reclaimed: true,

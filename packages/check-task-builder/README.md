@@ -1,5 +1,11 @@
 # Check Task Builder
 
+当前工作树配套 Task Builder/Builder CLI `0.2.1-rc.0`、
+Protocol/Engine `0.2.1-rc.1` 和 Node-only SDK `0.2.0`：
+新生成模板锁定该 Builder CLI，新 Node 构建入口为 ESM `main.mjs`，
+Engine snapshot 直接提供 `result` payload。源码集成与 smoke 已按该公共接口更新；
+历史 npm/CAR 不重写，旧 `worker.cjs` 的加载兼容由上游保留。
+
 把 Check 项目只读文件树转换为标准 Task Builder 输入，再复用
 `@silvermoon-work/task-builder@0.2.0-rc.4`
 编译、绑定、校验和编码 CAR。不复制上游编译器，不生成编辑器类型文件，不保留完整中间项目。

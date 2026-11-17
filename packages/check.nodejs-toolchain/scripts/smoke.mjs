@@ -392,7 +392,7 @@ try {
   const observed = await until(async () => {
     const task = engine.getTask(probe.taskId, caller);
     if (task.stage === "failed") assert.fail(JSON.stringify(task));
-    return task.stage === "completed" ? task.output.result.data : undefined;
+    return task.stage === "completed" ? task.result.data : undefined;
   });
   assert.equal(observed.pass, false);
   assert.equal(observed.problems[0].code, "version-too-low");
@@ -461,7 +461,7 @@ try {
     assert.ok(run.reclaimedAt, JSON.stringify(run));
     if (sample.stage) {
       assert.equal(run.stage, sample.stage, JSON.stringify(run));
-      assert.equal(run.output, undefined);
+      assert.equal(run.result, undefined);
       if (sample.name === "cancel") {
         assert.equal(task.canceled, true);
         assert.equal(run.error, undefined);
@@ -491,9 +491,9 @@ try {
       continue;
     }
     assert.equal(run.stage, "completed", JSON.stringify(run));
-    const output = run.output;
+    const output = run.result;
     assert.ok(output);
-    const result = output.result.data;
+    const result = output.data;
     assert.deepEqual(
       Object.keys(result).sort(),
       sample.pass
@@ -507,7 +507,7 @@ try {
     );
     assert.equal("problems" in result, !sample.pass);
     assert.deepEqual(
-      output.result.cidPaths,
+      output.cidPaths,
       sample.pass
         ? ['$["documentation"]']
         : ['$["documentation"]', '$["problems"][*]["documentation"]'],
@@ -571,7 +571,7 @@ try {
       pass: result.pass,
       problems: result.problems?.map((p) => p.code) ?? [],
       documents: [...new Set(paths)],
-      cidPaths: output.result.cidPaths,
+      cidPaths: output.cidPaths,
       reclaimed: true,
     });
   }

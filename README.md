@@ -16,8 +16,9 @@
 - [`@silvermoon-work/check-task-builder`](packages/check-task-builder/README.md)：
   `check-task-builder init/build`，一次构建交付标准 Task Bundle/CAR。
 
-两包基于已发布 Task SDK/Protocol 0.2.0-rc.1、Builder/CLI/Engine
-0.2.0-rc.2 及 IPFS Store 0.1.0-rc.1，不复制运行时或编译器。先运行
+历史发布基于 Task SDK/Protocol 0.2.0 RC；本工作树对接 Protocol/Engine
+`0.2.1-rc.1`、Builder/Builder CLI `0.2.1-rc.0`、Node-only SDK `0.2.0` 与 IPFS
+Store/Payload `0.1.0`。不复制运行时或编译器，不自动升级历史 npm/CAR。先运行
 `check-task-builder init text-check`，编辑逻辑、契约与
 `references/`，再运行生成项目中的 `pnpm build`。
 
@@ -39,9 +40,12 @@ pnpm check
 ```
 
 新版 Bundle 支持不可变 `imports`，Builder 的 `content` 与 Engine 的 `ipfsStore`
-注入同一种调用方拥有的 `IpfsStore`。子 Task 使用
-`invokeTask({ key, bundle: SpaceRef, input, timeoutMs })`，不再接受旧
-`{ cid, path }`。升级后必须重建 CAR 并更新消费者引用的准确 CID；不修改历史制品或 Silvermoon 验收证据。旧 Engine 事实库不能自动迁移，消费者须显式选择新数据域。
+注入同一种调用方拥有的 `IpfsStore`。当前公共子调用使用
+`invokeTask({ key, bundle: "<CID>", path?, parameters, timeoutMs })`；
+新构建的 Node/browser 入口均为 ESM `main.mjs`，旧 Node `worker.cjs`
+仍由上游加载。
+Engine snapshot 现在直接暴露 `result` payload，不再套 `output.result`。
+升级后必须重建 CAR 并更新消费者引用的准确 CID；不修改历史制品或 Silvermoon 验收证据。旧 Engine 事实库不能自动迁移，消费者须显式选择新数据域。
 
 ### ipfsaw RC.0 发布
 
@@ -104,12 +108,28 @@ Schema 合法不等于语义前置条件成立。无需发布、后端或远程�
 
 ### 本地文件持续预览（ipfsaw 私有候选）
 
+当前未发布源码新增标准 browser Task 路径：
+
+```powershell
+pnpm exec turbo run build --filter=@silvermoon-work/ipfsaw
+node packages\ipfsaw\dist\bin.js run --car packages\ipfsaw\dist\check-task.car --document packages\ipfsaw\dist\check-task.json --no-open
+```
+
+使用前按 [ipfsaw 文档](packages/ipfsaw/README.md#标准-browser-task未发布源码)
+选择受控内容配置和 app 目录。`--cid` 可选择同一准确 Bundle；
+HTTP
+listening 不表示 Task 已启动。浏览器调用显式 ESM 默认导出，返回后应用继续存活；
+保存内容会替换页面、重置应用/router 状态。原根位置参数、registry 和旧 renderer
+ABI 保留独立，
+已发布 `0.1.0-rc.0` 不会因此获得新 `run` 命令。
+
 [`@silvermoon-work/ipfsaw`](packages/ipfsaw/README.md) 提供通用 YAML/JSON
 文件入口、Schema→不可变 renderer CID registry、共享 Task IPFS Store 与隔离
 浏览器宿主。Check viewer 提供真正自包含的首个 browser renderer，
 旧无 `$schema` 的直接 React 使用保持兼容；CLI 文档使用
 `$schema: urn:ipfsaw:check-bundle:1`。受控本地 CAR 首次运行与命令见包文档；
-不执行 Check / Task，不改原 4173 mock 宿主，也不代表 npm alias 已发布。
+旧路径不执行 Check / Task；新路径只执行启动 browser Task，不执行 Check checker。
+不改原 4173 mock 宿主，也不代表 npm alias 已发布。
 
 ## Silvermoon
 

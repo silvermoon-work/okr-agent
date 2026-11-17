@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { ServerResponse } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
@@ -7,12 +7,23 @@ import type { IpfsStore } from "@silvermoon-work/ipfs-store";
 import type { Configuration } from "./configuration.js";
 import { assetPath, loadRenderer, mime } from "./bundle.js";
 import type { RendererBundle } from "./bundle.js";
-import { DocumentError, limits, readDocument } from "./document.js";
+import { DocumentError, limits, readDocument, record } from "./document.js";
 import { frameClient, hostClient } from "./browser.js";
+import { loadBrowserTask, TaskInvocation } from "./task.js";
+import type { TaskSource } from "./task.js";
+import { isTaskBundlePath, TaskError } from "@silvermoon-work/task-protocol";
+import { taskHostClient } from "./task-browser.js";
 
 export type PreviewState =
   | { type: "loading"; revision: number }
   | { type: "error"; revision: number; message: string }
+  | {
+      type: "task";
+      revision: number;
+      parameters: unknown;
+      cid: string;
+      entry: string;
+    }
   | {
       type: "document";
       revision: number;
@@ -29,12 +40,14 @@ export interface PreviewOptions {
   signal: AbortSignal;
   diagnostic(message: string): void;
   pollMs?: number;
+  task?: TaskSource;
 }
 
 export async function startPreview(options: PreviewOptions): Promise<{
   url: string;
   schema: string;
   rendererCid: string;
+  bundleCid?: string;
   close(): Promise<void>;
 }> {
   const lifetime = new AbortController();
@@ -43,6 +56,25 @@ export async function startPreview(options: PreviewOptions): Promise<{
   const token = randomBytes(32).toString("base64url");
   const nonce = randomBytes(24).toString("base64url");
   const clients = new Set<ServerResponse>();
+  const sessions = new Map<
+    string,
+    { call?: TaskInvocation; blocked?: boolean }
+  >();
+  const cleanups = new Set<Promise<void>>();
+  const cleanupFailures: unknown[] = [];
+  const retire = (call: TaskInvocation | undefined) => {
+    if (!call) return;
+    const cleanup = call.close();
+    cleanups.add(cleanup);
+    void cleanup
+      .catch((error) => {
+        cleanupFailures.push(error);
+      })
+      .finally(() => cleanups.delete(cleanup));
+  };
+  const task = options.task
+    ? await loadBrowserTask(options.store, options.task, signal)
+    : undefined;
   let revision = 0;
   let state: PreviewState = { type: "loading", revision };
   let bundle: RendererBundle | undefined;
@@ -50,6 +82,13 @@ export async function startPreview(options: PreviewOptions): Promise<{
   let observedFile = "";
   let closing: Promise<void> | undefined;
   const publish = (next: PreviewState) => {
+    if (task) {
+      for (const session of sessions.values()) {
+        retire(session.call);
+        delete session.call;
+        delete session.blocked;
+      }
+    }
     state = next;
     const event = `data: ${JSON.stringify(next)}\n\n`;
     for (const client of clients) {
@@ -79,17 +118,38 @@ export async function startPreview(options: PreviewOptions): Promise<{
       // Failed revisions retry on a real save/change, never by polling the same content repeatedly.
       if (!initial && identity === observedFile) return;
       observedFile = identity;
-      const parsed = await readDocument(options.path);
+      const parsed = await readDocument(options.path, !!task);
       const nextFingerprint = JSON.stringify(parsed.document);
       if (
         !initial &&
-        state.type === "document" &&
+        (state.type === "document" || state.type === "task") &&
         nextFingerprint === fingerprint
       )
         return;
       fingerprint = nextFingerprint;
       const current = ++revision;
       publish({ type: "loading", revision: current });
+      if (task) {
+        const parameters = task.parameters(parsed.document);
+        if (
+          JSON.stringify((await readDocument(options.path, true)).document) !==
+          nextFingerprint
+        ) {
+          observedFile = "";
+          return;
+        }
+        publish({
+          type: "task",
+          revision: current,
+          parameters,
+          cid: task.cid,
+          entry: task.resolved.entry,
+        });
+        options.diagnostic(
+          `Document revision ${String(current)} prepared; browser startup is pending.`,
+        );
+        return;
+      }
       const cid = options.configuration.renderers[parsed.schema];
       if (!cid)
         throw new DocumentError(
@@ -108,10 +168,13 @@ export async function startPreview(options: PreviewOptions): Promise<{
         observedFile = "";
         return;
       }
+      if (!record(parsed.document))
+        throw new DocumentError("Expected a document object.");
       publish({
         type: "document",
         revision: current,
-        ...parsed,
+        document: parsed.document,
+        schema: parsed.schema,
         cid: bundle.cid,
         manifest: bundle.manifest,
       });
@@ -123,23 +186,38 @@ export async function startPreview(options: PreviewOptions): Promise<{
       const message =
         error instanceof DocumentError
           ? error.message
-          : "Renderer content could not be loaded or verified. Check the binding and shared Store configuration; save again to retry.";
+          : task
+            ? "Task parameters could not be validated. Correct the document and save again."
+            : "Renderer content could not be loaded or verified. Check the binding and shared Store configuration; save again to retry.";
       if (state.type !== "error" || state.message !== message) {
         publish({ type: "error", revision: ++revision, message });
         options.diagnostic(message);
       }
     }
   };
-  await refresh(true);
+  try {
+    await refresh(true);
+  } catch (error) {
+    await task?.close();
+    throw error;
+  }
   const initialMetadata = () => {
+    if (state.type === "task")
+      return { schema: "", rendererCid: "", bundleCid: state.cid };
     if (state.type !== "document")
       throw new DocumentError(
         "Document changed during startup. Retry when saving is complete.",
       );
     return { schema: state.schema, rendererCid: state.cid };
   };
-  const metadata = initialMetadata();
-  signal.throwIfAborted();
+  let metadata: ReturnType<typeof initialMetadata>;
+  try {
+    metadata = initialMetadata();
+    signal.throwIfAborted();
+  } catch (error) {
+    await task?.close();
+    throw error;
+  }
   let origin = "";
   const server = createServer((request, response) => {
     const headers = {
@@ -163,6 +241,121 @@ export async function startPreview(options: PreviewOptions): Promise<{
       refuse(403);
       return;
     }
+    if (task && request.method === "POST" && request.url === "/call") {
+      if (
+        request.headers.origin === "null" ||
+        request.headers.authorization !== `Bearer ${token}`
+      ) {
+        refuse(403);
+        return;
+      }
+      void (async () => {
+        let length = 0;
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) {
+          const bytes = Buffer.from(chunk as Uint8Array);
+          length += bytes.length;
+          if (length > limits.document)
+            throw new TaskError("capacity_exceeded", "Request limit exceeded.");
+          chunks.push(bytes);
+        }
+        const input: unknown = JSON.parse(
+          Buffer.concat(chunks).toString("utf8"),
+        );
+        if (
+          !record(input) ||
+          typeof input.session !== "string" ||
+          input.revision !== revision ||
+          state.type !== "task" ||
+          typeof input.operation !== "string"
+        )
+          throw new TaskError(
+            "invalid_request",
+            "Invalid or obsolete startup request.",
+          );
+        const session = sessions.get(input.session);
+        if (!session)
+          throw new TaskError(
+            "content_forbidden",
+            "No authorized browser session.",
+          );
+        let value: unknown;
+        if (input.operation === "start") {
+          if (session.call || session.blocked)
+            throw new TaskError(
+              "invalid_request",
+              "Startup already called or cancelled.",
+            );
+          session.call = new TaskInvocation(
+            task,
+            task.parameters(state.parameters),
+          );
+          value = {
+            runId: session.call.id,
+            scope: session.call.scope,
+            startedAt: session.call.startedAt,
+            bundle: task.cid,
+          };
+        } else {
+          const call = session.call;
+          if (input.operation === "cancel") {
+            value = call ? await call.cancel() : true;
+            if (value) session.blocked = true;
+          } else if (input.operation === "close") {
+            session.blocked = true;
+            await call?.close();
+            value = null;
+          } else if (!call)
+            throw new TaskError("run_finished", "No active startup call.");
+          else if (input.operation === "complete") {
+            value = call.complete(input.payload);
+            await call.close();
+            if (input.revision === revision && session.call === call)
+              options.diagnostic(
+                `Browser startup completed for revision ${String(revision)}.`,
+              );
+          } else if (input.operation === "fail") {
+            await call.fail();
+            if (input.revision === revision && session.call === call)
+              options.diagnostic(
+                "Browser startup failed. Check the document and browser Task.",
+              );
+            value = null;
+          } else if (
+            input.operation === "cancelContent" &&
+            typeof input.requestId === "number"
+          ) {
+            value = call.cancelContent(input.requestId);
+          } else
+            value = await call.request({
+              operation: input.operation,
+              ...(typeof input.id === "number" ? { id: input.id } : {}),
+              ...(typeof input.cid === "string" ? { cid: input.cid } : {}),
+              ...(typeof input.path === "string" ? { path: input.path } : {}),
+            });
+        }
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(
+          JSON.stringify({ ok: true, data: value }, (_key, item: unknown) =>
+            item instanceof Uint8Array
+              ? { base64: Buffer.from(item).toString("base64") }
+              : item,
+          ),
+        );
+      })().catch((error: unknown) => {
+        response.writeHead(400, { "Content-Type": "application/json" });
+        response.end(
+          JSON.stringify({
+            ok: false,
+            error: {
+              code: error instanceof TaskError ? error.code : "invalid_request",
+              message: "Browser Task request failed.",
+            },
+          }),
+        );
+      });
+      return;
+    }
     if (request.method !== "GET") {
       refuse(405);
       return;
@@ -180,37 +373,80 @@ export async function startPreview(options: PreviewOptions): Promise<{
         refuse(429);
         return;
       }
+      const sessionId = request.headers["x-ipfsaw-session"];
+      if (
+        task &&
+        (typeof sessionId !== "string" ||
+          !/^[a-z0-9-]{36}$/iu.test(sessionId) ||
+          sessions.has(sessionId))
+      ) {
+        refuse(403);
+        return;
+      }
+      if (typeof sessionId === "string") sessions.set(sessionId, {});
       response.writeHead(200, { "Content-Type": "text/event-stream" });
       response.write(`data: ${JSON.stringify(state)}\n\n`);
       clients.add(response);
       response.on("close", () => {
         clients.delete(response);
+        if (typeof sessionId === "string") {
+          retire(sessions.get(sessionId)?.call);
+          sessions.delete(sessionId);
+        }
       });
       return;
     }
     if (path?.startsWith("/assets/")) {
       // Only already-verified files of the single current, explicitly selected root.
-      const prefix = bundle ? `/assets/${bundle.cid}/` : "";
+      const selected = task ?? bundle;
+      const prefix = selected ? `/assets/${selected.cid}/` : "";
       let filename: string;
       try {
         const encoded =
           prefix && path.startsWith(prefix) ? path.slice(prefix.length) : "";
         if (/[?#]/u.test(encoded) || /%2f|%5c/iu.test(encoded))
           throw new Error();
-        filename = assetPath(decodeURIComponent(encoded));
+        const decoded = decodeURIComponent(encoded);
+        if (task) {
+          if (!isTaskBundlePath(decoded)) throw new Error();
+          filename = decoded;
+        } else filename = assetPath(decoded);
       } catch {
         refuse(404);
         return;
       }
-      const asset = bundle?.files.get(filename);
+      const asset = selected?.files.get(filename);
       if (!asset) {
         refuse(404);
         return;
       }
       response.setHeader("Access-Control-Allow-Origin", "*");
       response.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
-      response.writeHead(200, { "Content-Type": mime(filename) });
+      let contentType: string;
+      try {
+        contentType = mime(filename);
+      } catch {
+        if (!task) {
+          refuse(404);
+          return;
+        }
+        contentType = "application/octet-stream";
+      }
+      response.writeHead(200, { "Content-Type": contentType });
       response.end(asset);
+      return;
+    }
+    if (task && path === "/task-runtime.js") {
+      response.setHeader("Access-Control-Allow-Origin", "*");
+      response.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      void readFile(new URL("../dist/task-runtime.js", import.meta.url))
+        .then((bytes) => {
+          response.writeHead(200, { "Content-Type": "text/javascript" });
+          response.end(bytes);
+        })
+        .catch(() => {
+          refuse(500);
+        });
       return;
     }
     if (request.headers.origin === "null") {
@@ -224,7 +460,7 @@ export async function startPreview(options: PreviewOptions): Promise<{
       );
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       response.end(
-        `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ipfsaw preview</title><style nonce="${nonce}">html,body{height:100%;margin:0;color:#203047;background:#fff;font:14px "Segoe UI",sans-serif}body{display:flex;flex-direction:column}header{padding:10px 18px;border-bottom:1px solid #c6d3e2;background:#eef4fa;display:flex;gap:24px;align-items:center}h1{font-size:16px;margin:0}#status{margin:0;overflow-wrap:anywhere}#renderer{flex:1;min-height:0}iframe{height:100%;width:100%;border:0}[hidden]{display:none!important}</style><header><h1>ipfsaw</h1><p id="status" role="status">Connecting…</p></header><main id="renderer" hidden></main><script nonce="${nonce}">(${hostClient.toString()})()</script></html>`,
+        `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ipfsaw preview</title><style nonce="${nonce}">html,body{height:100%;margin:0;color:#203047;background:#fff;font:14px "Segoe UI",sans-serif}body{display:flex;flex-direction:column}header{padding:10px 18px;border-bottom:1px solid #c6d3e2;background:#eef4fa;display:flex;gap:24px;align-items:center}h1{font-size:16px;margin:0}#status{margin:0;overflow-wrap:anywhere}#renderer{flex:1;min-height:0}iframe{height:100%;width:100%;border:0}[hidden]{display:none!important}</style><header><h1>ipfsaw</h1><p id="status" role="status">Connecting…</p>${task ? '<button id="cancel" type="button">Cancel startup</button><button id="close" type="button">Close app</button>' : ""}</header><main id="renderer" hidden></main><script nonce="${nonce}">(${(task ? taskHostClient : hostClient).toString()})()</script></html>`,
       );
       return;
     }
@@ -232,11 +468,13 @@ export async function startPreview(options: PreviewOptions): Promise<{
       // Check's existing AJV compiler uses Function. This permission never reaches the host realm.
       response.setHeader(
         "Content-Security-Policy",
-        `default-src 'none'; script-src 'nonce-${nonce}' 'unsafe-eval' ${origin}/assets/; style-src ${origin}/assets/; img-src ${origin}/assets/ data:; font-src ${origin}/assets/; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'`,
+        `default-src 'none'; script-src 'nonce-${nonce}' 'unsafe-eval' ${origin}/assets/ ${task ? `${origin}/task-runtime.js` : ""}; style-src ${task ? `'nonce-${nonce}' ` : ""}${origin}/assets/; img-src ${origin}/assets/ data:; font-src ${origin}/assets/; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'`,
       );
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       response.end(
-        `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Renderer</title><div id="app"></div><script nonce="${nonce}">(${frameClient.toString()})(${JSON.stringify(origin)})</script></html>`,
+        task
+          ? `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Browser app</title><style nonce="${nonce}">html,body{height:100%;margin:0}</style><script type="module" nonce="${nonce}">import {taskFrameClient} from '/task-runtime.js';taskFrameClient(${JSON.stringify(origin)});</script></html>`
+          : `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Renderer</title><div id="app"></div><script nonce="${nonce}">(${frameClient.toString()})(${JSON.stringify(origin)})</script></html>`,
       );
       return;
     }
@@ -245,7 +483,7 @@ export async function startPreview(options: PreviewOptions): Promise<{
   const close = (): Promise<void> =>
     (closing ??= (async () => {
       lifetime.abort();
-      const failures: unknown[] = [];
+      const failures: unknown[] = cleanupFailures;
       try {
         await polling;
       } catch (error) {
@@ -254,6 +492,14 @@ export async function startPreview(options: PreviewOptions): Promise<{
       try {
         for (const client of clients) client.destroy();
         clients.clear();
+        for (const session of sessions.values()) retire(session.call);
+        sessions.clear();
+        await Promise.all([...cleanups]);
+        await task?.close();
+      } catch (error) {
+        failures.push(error);
+      }
+      try {
         await new Promise<void>((resolve, reject) => {
           server.close((error) => {
             if (error) reject(error);
@@ -284,6 +530,7 @@ export async function startPreview(options: PreviewOptions): Promise<{
   } catch (error) {
     signal.removeEventListener("abort", onAbort);
     lifetime.abort();
+    await task?.close();
     throw error;
   }
   const address = server.address();

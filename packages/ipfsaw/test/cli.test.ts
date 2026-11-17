@@ -62,6 +62,7 @@ describe("public main(argv) interface", () => {
       ["registry", "add", "-h"],
       ["registry", "list", "--help"],
       ["registry", "remove", "--help"],
+      ["run", "--help"],
       ["--version"],
     ]) {
       const output = streams();
@@ -120,6 +121,159 @@ describe("public main(argv) interface", () => {
       process.listenerCount("SIGTERM"),
     ]).toEqual(before);
   });
+  it.each([
+    ["run", "--document", "doc.json"],
+    ["run", "--cid", "bad", "--document", "doc.json"],
+    ["run", "--car", "a.car", "--cid", "bad", "--document", "doc.json"],
+    ["run", "--cid", "bad"],
+    ["run", "--document", "a.json", "--document", "b.json", "--cid", "bad"],
+    ["run", "--cid", "one", "--cid", "two", "--document", "doc.json"],
+    ["run", "--car", "one", "--car", "two", "--document", "doc.json"],
+    ["run", "--car", "", "--document", "doc.json"],
+  ])(
+    "rejects invalid new Task source selection before opening content: %j",
+    async (...args) => {
+      const output = streams();
+      expect(await main(args)).toBe(1);
+      expect(output.result().error?.code).toBe("ARGUMENT_INVALID");
+      expect(output.out.trim().split("\n")).toHaveLength(1);
+      expect(mocks.content).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["cid", "car"] as const)(
+    "runs the explicit %s path without registry bindings and emits HTTP listening only",
+    async (source) => {
+      const fixture = await fixtureDirectory();
+      const renderer = await rendererFixture();
+      const output = streams();
+      const close = vi.fn().mockResolvedValue(undefined);
+      const storeClose = vi.fn().mockResolvedValue(undefined);
+      mocks.content.mockResolvedValue({ close: storeClose });
+      mocks.preview.mockResolvedValue({
+        url: "http://127.0.0.1:1234/#PRIVATE",
+        bundleCid: renderer.cid,
+        close,
+      });
+      const car = join(fixture.directory, "task.car");
+      await writeFile(car, new Uint8Array([1, 2, 3]));
+      let running: Promise<number> | undefined;
+      try {
+        running = main([
+          "run",
+          source === "cid" ? "--cid" : "--car",
+          source === "cid" ? renderer.cid : car,
+          "--document",
+          join(fixture.directory, "raw.yaml"),
+          "--data-dir",
+          fixture.directory,
+          "--content-data-dir",
+          join(fixture.directory, "content"),
+          "--ipfs-gateway",
+          "http://127.0.0.1:1",
+          "--no-open",
+        ]);
+        await vi.waitFor(() => {
+          expect(output.result().data?.state).toBe("listening");
+        });
+        expect(output.result().data).toEqual({
+          state: "listening",
+          url: "http://127.0.0.1:1234/#PRIVATE",
+          bundleCid: renderer.cid,
+          runtime: "browser",
+        });
+        expect(output.err).toContain("startup is pending");
+        expect(output.err).not.toContain("PRIVATE");
+        expect(mocks.content).toHaveBeenCalledWith({
+          dataDir: join(fixture.directory, "content"),
+          gateway: "http://127.0.0.1:1",
+        });
+        expect(mocks.preview).toHaveBeenCalledWith(
+          expect.objectContaining({
+            task:
+              source === "cid"
+                ? { cid: renderer.cid }
+                : { car: Buffer.from([1, 2, 3]) },
+            configuration: { version: 1, renderers: {} },
+          }),
+        );
+        process.emit("SIGINT");
+        expect(await running).toBe(130);
+        expect(close).toHaveBeenCalledOnce();
+        expect(storeClose).toHaveBeenCalledOnce();
+      } finally {
+        process.emit("SIGTERM");
+        await running;
+        await renderer.store.close();
+        await fixture.cleanup();
+      }
+    },
+  );
+  it.each(["startup", "opener", "cleanup"] as const)(
+    "reports %s failures on the Task path without leaking details or emitting twice",
+    async (scenario) => {
+      const fixture = await fixtureDirectory();
+      const renderer = await rendererFixture();
+      const output = streams();
+      const storeClose = vi.fn().mockResolvedValue(undefined);
+      const close = vi
+        .fn()
+        .mockImplementation(() =>
+          scenario === "cleanup"
+            ? Promise.reject(new Error("secret close"))
+            : Promise.resolve(),
+        );
+      mocks.content.mockResolvedValue({ close: storeClose });
+      if (scenario === "startup")
+        mocks.preview.mockRejectedValue(new Error("secret source"));
+      else
+        mocks.preview.mockResolvedValue({
+          url: "http://127.0.0.1:1234/#SECRET",
+          bundleCid: renderer.cid,
+          close,
+        });
+      mocks.spawn.mockImplementation(() => {
+        const child = new EventEmitter();
+        queueMicrotask(() => {
+          child.emit("close", 1, null);
+        });
+        return child;
+      });
+      let running: Promise<number> | undefined;
+      try {
+        running = main([
+          "run",
+          "--cid",
+          renderer.cid,
+          "--document",
+          "raw.json",
+          "--data-dir",
+          fixture.directory,
+        ]);
+        if (scenario === "startup") {
+          expect(await running).toBe(1);
+          expect(output.result().ok).toBe(false);
+        } else {
+          await vi.waitFor(() => {
+            expect(output.err).toContain("Warning:");
+          });
+          process.emit("SIGTERM");
+          expect(await running).toBe(143);
+          expect(output.result().ok).toBe(true);
+          if (scenario === "cleanup")
+            expect(output.err).toContain("cleanup failed");
+        }
+        expect(output.out.trim().split("\n")).toHaveLength(1);
+        expect(output.err).not.toContain("secret");
+        expect(output.err).not.toContain("SECRET");
+        expect(storeClose).toHaveBeenCalledOnce();
+      } finally {
+        process.emit("SIGTERM");
+        await running;
+        await renderer.store.close();
+        await fixture.cleanup();
+      }
+    },
+  );
   it("manages sorted exact bindings atomically without creating a Store", async () => {
     const fixture = await fixtureDirectory();
     const one = await rendererFixture();

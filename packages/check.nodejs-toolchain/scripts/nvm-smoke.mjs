@@ -250,8 +250,8 @@ try {
     );
     assert.ok(run.reclaimedAt);
     assert.equal(run.exit.forced, false);
-    assert.ok(run.output);
-    const result = run.output.result.data;
+    assert.ok(run.result);
+    const result = run.result.data;
     assert.equal(
       result.pass,
       sample.codes.length === 0,
@@ -299,7 +299,7 @@ try {
       pass: result.pass,
       codes: sample.codes,
       briefs: result.problems?.map((problem) => problem.brief) ?? [],
-      cidPaths: run.output.result.cidPaths,
+      cidPaths: run.result.cidPaths,
       documents: [...new Set(documents)],
       reclaimed: true,
     });

@@ -44,7 +44,7 @@
     "url": "https://github.com/silvermoon-work/okr-agent/issues"
   },
   "scripts": {
-    "build": "rimraf dist && tsc --project tsconfig.build.json",
+    "build": "rimraf dist && tsc --project tsconfig.build.json && node scripts/build.mjs",
     "demo": "node scripts/demo.mjs",
     "lint": "eslint . --max-warnings=0",
     "lint-package": "publint",
@@ -55,6 +55,9 @@
   "dependencies": {
     "@ipld/car": "catalog:",
     "@silvermoon-work/ipfs-store": "catalog:",
+    "@silvermoon-work/task-protocol": "catalog:",
+    "@silvermoon-work/ipfs-payload": "catalog:",
+    "@silvermoon-work/task-builder": "catalog:",
     "commander": "catalog:",
     "ipfs-unixfs-importer": "catalog:",
     "multiformats": "catalog:",
@@ -62,6 +65,12 @@
   },
   "devDependencies": {
     "@silvermoon-work/check-bundle-viewer": "workspace:*",
+    "@silvermoon-work/task-sdk": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "vite": "catalog:",
     "jsdom": "catalog:"
   }
 }

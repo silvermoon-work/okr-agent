@@ -197,9 +197,9 @@ runCheck(contract, {root: "text", registry: {
           if (errors.length)
             throw new AggregateError(errors, "Child execution/release failed.");
           const task = engine.getTask(taskId, caller);
-          if (task.stage !== "completed" || !task.output)
+          if (task.stage !== "completed" || !task.result)
             throw new Error("Child did not produce a complete report.");
-          return { result: task.output.result };
+          return { result: task.result };
         } finally {
           signal.removeEventListener("abort", cancel);
         }
@@ -732,7 +732,7 @@ text: defineChecker({target: Input, check: async (input, signal) => {
                 : run.bundle?.cid) === parentCar.cid,
           )
           .map((run) => {
-            const result = run.output?.result;
+            const result = run.result;
             return result &&
               typeof result === "object" &&
               !Array.isArray(result)
@@ -799,7 +799,7 @@ text: defineChecker({target: Input, check: async (input, signal) => {
       "0.1.0-rc.1",
     );
     expect(manifest.devDependencies["@silvermoon-work/task-builder-cli"]).toBe(
-      "0.2.0-rc.4",
+      "0.2.1-rc.0",
     );
     expect(manifest.scripts.car).toContain("dist/example-text-check/task.yaml");
     expect(await readdir(join(scratch, "example"))).not.toContain(
@@ -844,11 +844,9 @@ text: defineChecker({target: Input, check: async (input, signal) => {
         pass: boolean;
         reclaimed: boolean;
         resources: string[];
-        output: {
-          result: {
-            data: { pass: boolean; documentation: string };
-            cidPaths: string[];
-          };
+        result: {
+          data: { pass: boolean; documentation: string };
+          cidPaths: string[];
         };
       }[];
     };
@@ -859,11 +857,9 @@ text: defineChecker({target: Input, check: async (input, signal) => {
     ]);
     expect(smoke.results.every((result) => result.reclaimed)).toBe(true);
     for (const result of smoke.results) {
-      expect(result.output.result.data.documentation).toMatch(/^b[a-z2-7]+$/u);
-      expect(result.output).toMatchObject({
-        result: {
-          data: { pass: result.pass },
-        },
+      expect(result.result.data.documentation).toMatch(/^b[a-z2-7]+$/u);
+      expect(result.result).toMatchObject({
+        data: { pass: result.pass },
       });
     }
     expect(
@@ -899,11 +895,11 @@ text: defineChecker({target: Input, check: async (input, signal) => {
       ),
     ).toEqual([]);
     await rm(join(directory, "references", "check.md"));
-    const before = await readFile(join(archivePath.slice(0, -4), "worker.cjs"));
+    const before = await readFile(join(archivePath.slice(0, -4), "main.mjs"));
     expect((await cli(["build", "--no-car"], directory)).exitCode).toBe(1);
-    expect(
-      await readFile(join(archivePath.slice(0, -4), "worker.cjs")),
-    ).toEqual(before);
+    expect(await readFile(join(archivePath.slice(0, -4), "main.mjs"))).toEqual(
+      before,
+    );
   }, 30_000);
 
   it("does not turn a throw after a problem into a nonpassing business result", async () => {

@@ -1,10 +1,10 @@
 # Browser Task 宿主验收测试规格
 
-关联：[Implementation](./Implementation.md) / [Design](./ideal/Design.md)。本文件是可实施的测试计划，**不是执行记录、审批或通过证明**。本轮没有运行以下产品测试，没有新增收集中的 skip/todo/失败用例；没有 browser 实现、模拟 Task 协议或新工具链。
+关联：[Implementation](./Implementation.md) / [Design](./ideal/Design.md)。本文件是首次编制的测试计划，**不是执行记录、审批或通过证明**。首次编制时没有运行以下产品测试，没有新增收集中的 skip/todo/失败用例或 browser 实现。后续已确定的配套版本与方案见 [IntegrationDecisions](./IntegrationDecisions.md)，实际证据及未完成项见 [Verification](./Verification.md)；表内原始 R/P/U/D 标签不会自动升级为通过。
 
 ## 开工条件与状态
 
-2026-11-17 本工作树的公共安装包事实：Protocol/SDK `0.2.0-rc.2`，Builder `0.2.0-rc.4`。Protocol `dist\bundle.d.ts:78–82` 和 `dist\bundle.js:37,44` 仅接受 node/worker.cjs；SDK `dist\index.js:1,49–56` 依赖 Worker 与 build-locked binding；Builder `dist\index.js:162–163`、`dist\esbuild.js:207–209` 固定 node/node22/cjs。这不是未来版本结论；用户协调上游完成不等于本工作树已经获得支持。
+首次编制时的安装包为 Protocol/SDK `0.2.0-rc.2`、Builder `0.2.0-rc.4`，当时固定 node/worker.cjs，确实阻塞。用户后来提供的完整 browser 配套发布已取代该历史阻塞；准确新版本、explicit ESM 入口与不使用 Node SDK 的接入方式以 IntegrationDecisions 为准。上游就绪不等于本仓的宿主 / 制品 / 浏览器验收已通过。
 
 状态列：**R** = 已有可运行的旧行为回归，本轮未运行，不证明 browser Task；**P** = 已规划的新断言，尚无可执行用例；**U** = 被上游 browser 契约阻塞；**D** = 被明确设计决策阻塞。组合状态表示保留已有回归、另加新用例仍阻塞。所有新 browser 端到端用例均以 E01 通过为前提，即使其状态只标 D。表内 ID 固定，不随未来测试函数或文件重命名改变。
 

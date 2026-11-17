@@ -115,7 +115,7 @@ try {
     assert.equal(request.status, "accepted", JSON.stringify(request));
     const task = await terminal(request.taskId);
     assert.equal(task.stage, "completed", JSON.stringify(task));
-    const payload = task.output.result;
+    const payload = task.result;
     const result = payload.data;
     assert.deepEqual(
       Object.keys(result).sort(),
@@ -193,7 +193,7 @@ try {
     if (request.status === "accepted") {
       const task = await terminal(request.taskId);
       assert.equal(task.stage, "failed");
-      assert.equal(task.output, undefined);
+      assert.equal(task.result, undefined);
       invalid.push("failed");
     } else {
       assert.equal(request.status, "rejected", JSON.stringify(request));
@@ -207,14 +207,14 @@ try {
   const failed = await terminal(fault.taskId);
   console.error("smoke: fault", failed.stage);
   assert.equal(failed.stage, "failed");
-  assert.equal(failed.output, undefined);
+  assert.equal(failed.result, undefined);
   const cancel = await submit({ projectDirectory: directories[0] });
   assert.equal(cancel.status, "accepted");
   engine.cancelTask(cancel.taskId, caller);
   const canceled = await terminal(cancel.taskId);
   console.error("smoke: cancel", canceled.stage);
   assert.equal(canceled.canceled, true);
-  assert.equal(canceled.output, undefined);
+  assert.equal(canceled.result, undefined);
   const drained = await engine.drain();
   console.error("smoke: drained");
   for (const taskId of taskIds) {

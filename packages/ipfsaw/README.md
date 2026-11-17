@@ -1,6 +1,6 @@
 # ipfsaw
 
-`@silvermoon-work/ipfsaw@0.1.0-rc.1` 监听一份 YAML/JSON，
+`@silvermoon-work/ipfsaw@0.1.0-rc.1` 的既有入口监听一份 YAML/JSON，
 用用户明确绑定的不可变 UnixFS renderer 展示。不是编辑器或 Task 执行器，
 不自动安装 renderer，不上传文档。该包是已登记的 npm 交付项，仅通过固定
 发布流程、按准确提交与版本授权发到 npm `rc` 标签；未发布前不代表 registry
@@ -36,12 +36,19 @@ node packages\ipfsaw\dist\bin.js packages\ipfsaw\.ipfsaw-demo\check.json --data-
 ## CLI
 
 ```text
+ipfsaw run (--cid <bundleCID> | --car <localCAR>) --document <YAMLorJSON>
+       [--data-dir <path>] [--no-open]
+       [--ipfs-gateway <url>] [--content-data-dir <directory>]
 ipfsaw <document> [--data-dir <path>] [--no-open]
        [--ipfs-gateway <url>] [--content-data-dir <directory>]
 ipfsaw registry add <schema-uri> <cid> [--replace] [--data-dir <path>]
 ipfsaw registry list [--data-dir <path>]
 ipfsaw registry remove <schema-uri> [--data-dir <path>]
 ```
+
+`run` 是下面说明的**未发布源码功能**；其余是保留的 legacy 入口。
+每个 source/document 选项只能出现一次。`run`
+不接受旧 renderer，也不在校验失败后自动回退。
 
 根 / registry 无参数显示帮助；所有 callable 节点支持 `-h/--help`，
 根支持 `--version`。不接受 stdin、`--json`、旧草案 `renderer`、
@@ -156,6 +163,173 @@ CID 只证明身份，不证明可信。显式绑定授权执行该 JavaScript�
 iframe 不是对任意恶意代码的绝对沙箱或强制终止保证，浏览器及操作系统
 仍是信任边界。不要绑定不信任的 renderer。宿主停止时断开连接，
 浏览器显示服务已关闭，不再声称旧内容是当前成功结果。
+
+## 标准 browser Task（未发布源码）
+
+### 版本、构建与启动
+
+使用准确公共 Protocol `0.2.1-rc.1`、Builder/Builder CLI `0.2.1-rc.0`、
+Engine `0.2.1-rc.1`、IPFS Store/Payload `0.1.0`。SDK `0.2.0` 只供类型引用和
+既有 Node 作者使用，**不会导入浏览器运行时**；Node Engine 不执行 browser Task。
+本宿主不是把任务提交给 Node
+Engine 的客户端，不提供 server/history/queue/async 空命令。
+Engine CLI `0.2.1-rc.0` 的 run 命令形状是对照，而非本包运行依赖。
+
+```powershell
+pnpm exec turbo run build --filter=@silvermoon-work/ipfsaw
+```
+
+这同时构建 `dist/task-runtime.js`，并将 `src/check-task.ts` 中真正的默认启动函数
+预打包静态依赖，再交给官方 `buildTaskBundle` 的 browser explicit 目标及
+`encodeTaskBundleCar`。产物为：
+
+- `packages/ipfsaw/dist/check-task/task.yaml`、`main.mjs`、`resources/check.css`；
+- `packages/ipfsaw/dist/check-task.car`、准确根 `check-task.cid`；
+- `packages/ipfsaw/dist/check-task.json`：真实 TypeScript 项目定义文档。
+
+这是标准 Task CAR，不包含
+`ipfsaw.renderer.json`，不依赖旧 mount/update/dispose 对象。
+无远端上传、发布或个人 Store 修改。示例复用共享 Check
+viewer 及其严格 DAG/安全 Markdown，
+不会执行 Check checker。
+
+运行前选择自己的受控 `TASK_CONTENT_CONFIG`，不要为试跑重写个人配置。下面只在
+**不存在的新目录**创建独立 local 配置，使用完恢复原环境变量；不会向 gateway/Kubo 回退：
+
+```powershell
+$demo = Join-Path (Get-Location) ".browser-task-preview"
+if (Test-Path $demo) { throw "Choose a new isolated demo directory." }
+New-Item -ItemType Directory $demo | Out-Null
+$content = Join-Path $demo "content"
+[IO.File]::WriteAllText(
+  (Join-Path $demo "task-content.json"),
+  (@{ backend = "local"; dataDir = $content } | ConvertTo-Json),
+  (New-Object Text.UTF8Encoding $false)
+)
+$previousContentConfig = $env:TASK_CONTENT_CONFIG
+$env:TASK_CONTENT_CONFIG = Join-Path $demo "task-content.json"
+node packages\ipfsaw\dist\bin.js run --car packages\ipfsaw\dist\check-task.car --document packages\ipfsaw\dist\check-task.json --data-dir $demo --no-open
+# Ctrl+C 后恢复；如此前未设置该变量，Remove-Item Env:TASK_CONTENT_CONFIG
+$env:TASK_CONTENT_CONFIG = $previousContentConfig
+```
+
+从 stdout 的唯一 JSON 读取 URL，浏览器打开。`--car` 先由公共 CAR
+reader 完整校验，
+仅在本次宿主内持有，不偷偷持久化或上传到配置的内容 backend。
+`--cid <准确根CID>`
+通过同一个验证器加载同一 DAG；其块须已存在于明确配置的共享 Store，
+或由用户明确配置的 gateway 获取。不会因为刚用 `--car`
+打开就声称共享 Store 已被导入。
+两条路径都不要求 registry，也不借文档 `$schema` 选包。`--data-dir`
+仍只管 app 配置，
+`--content-data-dir`/`--ipfs-gateway` 原样使用公共 Store
+helper 的覆盖/backend 语义。
+
+### 作者与参数契约
+
+browser Bundle 必须真实声明 `{type:"browser"}`、入口 `main.mjs`；
+Builder 使用
+`source.mode:"explicit"`（非 Node 的默认值），保留作者 exports，不注入 SDK。
+本宿主选择的入口契约是 ESM **默认导出函数**，签名：
+
+```ts
+import type { TaskCallback } from "@silvermoon-work/task-sdk";
+const start: TaskCallback<Parameters, Result> = async (parameters, context) => {
+  context.signal.throwIfAborted();
+  const main = document.createElement("main");
+  document.body.append(main);
+  main.textContent = "App started";
+  return { started: true }; // 必须符合该 Bundle 的 resultSchema
+};
+export default start;
+```
+
+`Parameters`/`Result`
+由作者的真实契约定义，不是宿主新增通用类型。静态依赖需完整 bundle，
+CSS/字体/图片通过 Builder include/binary；Builder 不负责 CSS
+import 或资源 URL 重写。
+浏览器作者可用原生 `import.meta.url`
+相对定位已批准 Bundle 的资源，或通过 context 读取内容；
+没有 `container`、`assetUrl`、`onClose`，没有隐藏的替代 context。
+
+`--document` 的 YAML/JSON 值经共享的 UTF-8/有限数/alias/深度/展开与 1
+MiB 安全检查，
+再按真实 Task parameters/payload 契约校验（与 Engine
+parameters 输入规则一致，包括显式
+`{data,cidPaths}` payload）。不会自动套 `{document,route}`。当前上游 parameters
+Schema
+要求对象根；这是协议约束，而非旧 `$schema` 分流约束。不需要
+`$schema`，除非作者 schema 要求。
+需要 router 的应用自行定义参数；正常前端导航不重新启动 Task。
+
+参数和结果使用公共 payload 编解码；只有声明的 ContentRef 才提供引用能力，普通 CID 字符串
+不会变成授权。结果按官方 resultSchema 验证；函数、DOM、函数 handle 和不合法引用不能作为结果。
+不支持的消息能力明确拒绝，而非丢弃消息或绕过 messageSchema。
+
+### 实际 context 能力与预算
+
+所有字段/方法遵守真实 TaskContext；以下为宿主实现范围，不把类型共享当实现证明：
+
+| 成员                                     | 实际行为                                                                                                             |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| runId / scope / startedAt / bundle       | 每次启动独立身份、作用域、开始时间和已验证 Bundle 根                                                                 |
+| signal                                   | 仅未完成启动的取消；完成后不拿它关闭 app                                                                             |
+| readContent                              | 公共 Store 的真实文件流/目录条目；受启动 reader 预算约束                                                             |
+| resolveContent                           | 公共 Store 路径解析，返回真实 CID 并授权该结果                                                                       |
+| 内容作用域                               | 初始只允许 Bundle 根与 parameters 中真实 ContentRef；解析结果和目录条目可继续读取；逐请求 AbortSignal 取消传到 Store |
+| putContent / invokeTask / progress / log | 明确拒绝 `unsupported_capability`，无写入、子任务或假日志回执                                                        |
+| messages                                 | 尝试迭代明确拒绝 `unsupported_capability`，不存在静默空 inbox                                                        |
+
+启动完成后调用能力方法拒绝
+`run_finished`，reader 被释放；应用 DOM/副作用继续存在。
+内容在私有 MessagePort→宿主认证 RPC 中传递，不给 opaque iframe 宿主能力 token。
+这里只做有界、完整读取再交给浏览器流，不承诺跨 RPC 的逐块零拷贝。
+
+Bundle 逻辑总量/单文件各 **64 MiB**、256 文件、512 路径、CAR **72 MiB**，
+均来自官方 `taskBundleLimits`，再受更严格的调用方 Store 限制约束。
+Store 自身块数/块大小/深度/读取预算继续生效；不把旧 renderer 的 16
+MiB 冒充 Task 协议。
+每个启动最多 8 个并发内容请求，最多 8 个授权页面；控制取消有界处理。
+文档仍限制源与展开 JSON 各 1 MiB；结果遵守上游默认 payload 预算。
+
+保留 loopback Host/Origin、sandbox、最小 CSP、精确批准 assets 和有界重读；
+runtime 模块与不可变 assets 可供 opaque
+iframe 以 CORS 加载，文档/RPC 不开放跨源权限。
+只有 Check 现有 AJV 动态 schema 编译需要的 iframe `unsafe-eval`
+被保留，宿主页面不开放 eval。
+除现有私有宿主 URL
+fragment 会话能力外，不把文档、参数、秘密或能力写进 URL/日志；
+能力保存在同源 history entry，不能公开分享 URL。
+
+### 就绪、保存、取消和关闭
+
+CLI 只输出一次
+`{ok:true,data:{state:"listening",url,bundleCid,runtime:"browser"}}`，
+仅说明 HTTP 可连接，**不说明浏览器已执行 Task**。页面先显示 launching，默认导出完成且
+结果通过宿主验证后才显示 started；后续故障走页面与 stderr，不再追加 stdout 结果。
+失败退出 1，SIGINT/SIGTERM 为 130/143；帮助/版本仍为文本。
+`--no-open` 保留前台 HTTP，等待用户打开 URL。
+
+真实内容变化后立刻隐藏旧页面，在新 iframe 进行一次新的启动；普通保存、原子替换、
+暂时缺失、非法文件及纠错恢复由有界重读处理。只提交最新 revision，不让旧成功/错误覆盖新内容，
+稳定坏输入不重复拉包或刷屏。同内容保存不重复启动。
+**首版会重置应用和 router 状态**；不是永久更新协议，legacy
+renderer 仍走自己的 update。
+
+宿主按钮 **Cancel startup**
+只取消未完成的加载/启动；完成后的旧 cancel 无效，不关闭 app。
+**Close app**
+独立销毁页面会话，重复关闭幂等；改变并保存文档或重新打开宿主页可再次启动。
+启动返回不销毁 app、不返回可序列化函数 handle、不保持 Task 永久 running。
+CLI
+Ctrl+C 关闭自己持有的 HTTP/Store/会话/opener 并等待资源回收，是关闭宿主/apps，
+不是取消已经完成的 Task。销毁 realm 不等于承诺任意插件副作用全部可回滚。
+
+新回归在 `test/task.test.ts`、`task-frame.test.ts`、`task-browser.test.ts`
+与扩展的
+`cli.test.ts`；复用既有 viewer
+DAG/Markdown/mobile 回归。DOM-only 测试不替代父会话的
+真实桌面/mobile、准确 CAR/CID 和制品消费者验收；没有把历史制品或旧 RC 的通过当新 Task 证明。
 
 ## 薄入口稳定接口
 

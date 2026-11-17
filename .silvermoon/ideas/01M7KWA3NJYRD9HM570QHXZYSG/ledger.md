@@ -4,15 +4,15 @@
 
 ### Implementation steps
 
-- [ ] **I-S01:** 对齐上游 browser Task 契约
-- [ ] **I-S02:** 实现 ipfsaw 浏览器宿主
-- [ ] **I-S03:** 迁移首个 Check 示例并验证
+- [x] **I-S01:** 对齐上游 browser Task 契约
+- [x] **I-S02:** 实现 ipfsaw 浏览器宿主
+- [x] **I-S03:** 迁移首个 Check 示例并验证
 
 ### Implementation acceptance criteria
 
-- [ ] **I-AC01:** 标准 Bundle 与原 context 可用
-- [ ] **I-AC02:** CLI 与生命周期准确
-- [ ] **I-AC03:** 迁移与质量门禁成立
+- [x] **I-AC01:** 标准 Bundle 与原 context 可用
+- [x] **I-AC02:** CLI 与生命周期准确
+- [x] **I-AC03:** 迁移与质量门禁成立
 
 ## Deployment
 

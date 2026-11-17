@@ -91,6 +91,16 @@ export function parseDocument(
   bytes: Uint8Array,
   extension: string,
 ): { document: Record<string, unknown>; schema: string } {
+  const value = parseTaskDocument(bytes, extension);
+  if (!record(value) || typeof value.$schema !== "string")
+    throw new Error("Document root must be an object with a string $schema.");
+  return { document: value, schema: schemaUri(value.$schema) };
+}
+
+export function parseTaskDocument(
+  bytes: Uint8Array,
+  extension: string,
+): unknown {
   if (bytes.byteLength > limits.document)
     throw new Error("Document exceeds 1 MiB.");
   let value: unknown;
@@ -133,12 +143,17 @@ export function parseDocument(
     left: limits.document,
     bytes: limits.document,
   });
-  if (!record(value) || typeof value.$schema !== "string")
-    throw new Error("Document root must be an object with a string $schema.");
-  return { document: value, schema: schemaUri(value.$schema) };
+  return value;
 }
 
-export async function readDocument(path: string) {
+export function readDocument(
+  path: string,
+): Promise<{ document: Record<string, unknown>; schema: string }>;
+export function readDocument(
+  path: string,
+  task: boolean,
+): Promise<{ document: unknown; schema: string }>;
+export async function readDocument(path: string, task = false) {
   const extension = extname(path).toLowerCase();
   if (![".json", ".yaml", ".yml"].includes(extension))
     throw new InputError(
@@ -153,6 +168,8 @@ export async function readDocument(path: string) {
     );
   }
   try {
+    if (task)
+      return { document: parseTaskDocument(bytes, extension), schema: "" };
     return parseDocument(bytes, extension);
   } catch (error) {
     throw new DocumentError(

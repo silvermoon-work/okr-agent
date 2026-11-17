@@ -9,8 +9,14 @@ import {
   rootCid,
   writeConfiguration,
 } from "./configuration.js";
-import { DocumentError, InputError, schemaUri } from "./document.js";
+import {
+  boundedRead,
+  DocumentError,
+  InputError,
+  schemaUri,
+} from "./document.js";
 import { startPreview } from "./preview.js";
+import { taskBundleLimits } from "@silvermoon-work/task-protocol";
 
 interface Flags {
   dataDir?: string;
@@ -112,7 +118,7 @@ export async function main(
   const command = new Command()
     .name("ipfsaw")
     .description(
-      "Preview a local YAML/JSON document using an explicitly bound immutable renderer.",
+      "Run a browser Task with a local document, or preview using a legacy renderer binding.",
     )
     .argument("[document]", ".yaml, .yml or .json file to watch")
     .option(
@@ -140,7 +146,7 @@ export async function main(
     })
     .addHelpText(
       "after",
-      "\nExamples:\n  ipfsaw .\\check.yaml --no-open\n  ipfsaw registry list --data-dir .\\preview-state\n\nBusiness output is one JSON envelope; logs use stderr.\nApp directory: --data-dir > IPFSAW_DATA_DIR > ~/.silvermoon.work/ipfsaw.\nBindings are a startup snapshot. IPFS configuration is shared with Task.\n",
+      "\nExamples:\n  ipfsaw run --car .\\check.car --document .\\check.yaml --no-open\n  ipfsaw .\\check.yaml --no-open\n  ipfsaw registry list --data-dir .\\preview-state\n\nrun uses genuine browser Tasks; the root document/registry path retains the legacy renderer ABI.\nBusiness output is one JSON envelope; logs use stderr.\nApp directory: --data-dir > IPFSAW_DATA_DIR > ~/.silvermoon.work/ipfsaw.\nBindings are a startup snapshot. IPFS configuration is shared with Task.\n",
     )
     .action(async (document: string | undefined, flags: Flags) => {
       if (document === undefined) {
@@ -221,6 +227,121 @@ export async function main(
         throw failure instanceof Error
           ? failure
           : new OperationError("Preview failed.");
+    });
+  const once = (value: string, previous: unknown): string => {
+    if (previous !== undefined)
+      throw new InputError("Pass each source/document option once.");
+    if (!value) throw new InputError("Option values must not be empty.");
+    return value;
+  };
+  const run = command
+    .command("run")
+    .configureHelp({ showGlobalOptions: true })
+    .description(
+      "Launch a standard browser Task; saving replaces the app and resets its state/router.",
+    )
+    .option("--cid <cid>", "Immutable browser Task Bundle root CID", once)
+    .option(
+      "--car <path>",
+      "Complete local standard Task CAR (no upload)",
+      once,
+    )
+    .requiredOption(
+      "--document <path>",
+      "Local YAML/JSON Task parameters, without an implicit envelope",
+      once,
+    )
+    .addHelpText(
+      "after",
+      "\nChoose exactly one of --cid or --car. No registry binding is required.\nHTTP listening does not mean the browser startup Task completed.\nExamples:\n  ipfsaw run --cid <bundleCID> --document .\\document.yaml\n  ipfsaw run --car .\\check.car --document .\\check.json --no-open\n",
+    )
+    .action(async () => {
+      const flags = run.optsWithGlobals<
+        Flags & { cid?: string; car?: string; document: string }
+      >();
+      if (!!flags.cid === !!flags.car)
+        throw new InputError("Choose exactly one of --cid or --car.");
+      const source = flags.cid
+        ? { cid: rootCid(flags.cid) }
+        : {
+            car: await boundedRead(
+              resolve(flags.car!),
+              taskBundleLimits.archiveBytes,
+            ),
+          };
+      const configuration = await readConfiguration(configPath(flags.dataDir));
+      const store = await createConfiguredContent({
+        ...(flags.ipfsGateway !== undefined
+          ? { gateway: flags.ipfsGateway }
+          : {}),
+        ...(flags.contentDataDir !== undefined
+          ? { dataDir: resolve(flags.contentDataDir) }
+          : {}),
+      });
+      let preview: Awaited<ReturnType<typeof startPreview>> | undefined;
+      let failure: unknown;
+      try {
+        preview = await startPreview({
+          path: resolve(flags.document),
+          store,
+          configuration,
+          task: source,
+          signal: lifetime.signal,
+          diagnostic,
+        });
+        success({
+          state: "listening",
+          url: preview.url,
+          bundleCid: preview.bundleCid,
+          runtime: "browser",
+        });
+        diagnostic(
+          "HTTP listening; browser startup is pending. Saving resets app/router state. Ctrl+C closes the host/apps.",
+        );
+        if (flags.open !== false && configuration.openBrowser !== false) {
+          try {
+            await openBrowser(preview.url, lifetime.signal);
+          } catch {
+            if (!lifetime.signal.aborted)
+              diagnostic(
+                "Warning: could not open a browser. Open data.url from stdout.",
+              );
+          }
+        }
+        if (!lifetime.signal.aborted)
+          await new Promise<void>((resolve) => {
+            lifetime.signal.addEventListener(
+              "abort",
+              () => {
+                resolve();
+              },
+              { once: true },
+            );
+          });
+      } catch (error) {
+        failure = error;
+      }
+      const failures: unknown[] = [];
+      try {
+        await preview?.close();
+      } catch (error) {
+        failures.push(error);
+      }
+      try {
+        await store.close();
+      } catch (error) {
+        failures.push(error);
+      }
+      if (failures.length)
+        throw new OperationError(
+          "Browser host cleanup failed.",
+          "CLEANUP_FAILED",
+          { cause: new AggregateError(failures) },
+        );
+      if (failure)
+        throw failure instanceof Error
+          ? failure
+          : new OperationError("Browser host failed.");
     });
   const registry = command
     .command("registry")

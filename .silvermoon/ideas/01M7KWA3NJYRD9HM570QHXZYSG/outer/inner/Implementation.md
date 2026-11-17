@@ -2,6 +2,8 @@
 
 已确认方向与最初未决项见 [Design](./ideal/Design.md)，具体输入、操作、预期及证据见 [验收测试矩阵](./AcceptanceTests.md)。用户现已提供完整 browser Builder/runtime/ESM 配套发布通知；准确版本与 D01–D06 的受托接入决定见 [IntegrationDecisions](./IntegrationDecisions.md)。原先上游缺少构建入口的结论不再代表本次目标，实施仍须验证真实公共接口，不能把通知或测试计划当成新宿主已通过的证据。
 
+当前实现、主 Agent 独立检查、原生浏览器及准确制品消费者证据见 [Verification](./Verification.md)。控制请求错误处理已修复，保留主干 RC.1 / 工程及发布门卫更新后，最终完整根检查、125 项 ipfsaw 测试与隔离制品验证通过。已知的能力限制和保存重置策略明确记录；这些证据不自行接受实现或部署门限，不授权发布。
+
 ## Steps
 
 ### I-S01: 对齐上游 browser Task 契约

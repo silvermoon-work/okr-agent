@@ -22,13 +22,13 @@ catalog:
   jsdom: 26.1.0
   react-markdown: 10.1.0
   remark-gfm: 4.0.1
-  "@silvermoon-work/task-sdk": 0.2.0-rc.2
-  "@silvermoon-work/task-protocol": 0.2.0-rc.2
-  "@silvermoon-work/task-builder": 0.2.0-rc.4
-  "@silvermoon-work/task-builder-cli": 0.2.0-rc.4
-  "@silvermoon-work/task-engine": 0.2.0-rc.4
-  "@silvermoon-work/ipfs-store": 0.1.0-rc.3
-  "@silvermoon-work/ipfs-payload": 0.1.0-rc.0
+  "@silvermoon-work/task-sdk": 0.2.0
+  "@silvermoon-work/task-protocol": 0.2.1-rc.1
+  "@silvermoon-work/task-builder": 0.2.1-rc.0
+  "@silvermoon-work/task-builder-cli": 0.2.1-rc.0
+  "@silvermoon-work/task-engine": 0.2.1-rc.1
+  "@silvermoon-work/ipfs-store": 0.1.0
+  "@silvermoon-work/ipfs-payload": 0.1.0
   "@sinclair/typebox": 0.34.52
   commander: 14.0.2
   yaml: ^2.8.1
@@ -59,11 +59,17 @@ minimumReleaseAgeExclude:
   - "@turbo/windows-arm64@2.11.8"
   - turbo@2.11.8
   - github-ci-verify@0.1.0
-  - "@silvermoon-work/task-builder-cli@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.2"
-  - "@silvermoon-work/task-builder@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.2"
-  - "@silvermoon-work/task-engine@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.2"
-  - "@silvermoon-work/task-protocol@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.1"
-  - "@silvermoon-work/task-sdk@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.1"
-  - "@silvermoon-work/ipfs-store@0.1.0-rc.1"
+  - "@silvermoon-work/task-builder-cli@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.2 ||
+    0.2.1-rc.0"
+  - "@silvermoon-work/task-builder@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.2 ||
+    0.2.1-rc.0"
+  - "@silvermoon-work/task-engine@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.2 ||
+    0.2.1-rc.1"
+  - "@silvermoon-work/task-protocol@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.1 || 0.2.0
+    || 0.2.1-rc.1"
+  - "@silvermoon-work/task-sdk@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.1 || 0.2.0"
+  - "@silvermoon-work/ipfs-store@0.1.0-rc.1 || 0.1.0"
   - "@eslint/config-array@0.23.6"
   - eslint@10.15.0
+  - "@silvermoon-work/ipfs-access@0.1.0"
+  - "@silvermoon-work/ipfs-payload@0.1.0"
