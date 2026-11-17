@@ -28,9 +28,16 @@
   accepted or that this repository passes that Check. Do not copy the repository
   changes into Check author code, tests, references or assets to conceal the
   conflict.
-- Simple member commands call tsc, Vitest, ESLint and publint directly. Keep
-  scripts only for actual multi-step builds, development servers and integration
-  harnesses. Do not restore copied command/delivery libraries in every member.
+- Simple member commands call standard tools directly, including short fail-fast
+  command chains. SDK and ipfsaw builds use rimraf then tsc to remove stale
+  modules; the web host uses Vite's CLI with loopback host, port 4173 and strict
+  port selection. Vite uses standard config discovery rather than the former
+  wrappers' disabled config loading; no Vite config is currently present. Keep
+  scripts only for logic not adequately expressed by standard tool commands and
+  configuration. Do not restore copied command/delivery libraries in every
+  member. Extracting the fixed publisher into a shared development dependency is
+  deferred; leave its implementation and release entries unchanged in this
+  round.
 - Root `check` directly chains pnpm commands with `&&` and stops at the first
   failure: format-check, build, typecheck, whole-repository lint, package
   test-coverage, then npm package lint. Root configuration TypeScript is checked

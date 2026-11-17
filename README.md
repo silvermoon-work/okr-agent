@@ -178,6 +178,13 @@ verified.
 - Turbo discovers members and dependency order from pnpm workspace manifests for
   build, types, tests and coverage. Simple member commands call tools directly;
   the root runs ESLint and Prettier once across the repository.
+- Prefer standard tool commands and short fail-fast chains over custom wrappers.
+  SDK and ipfsaw builds clean stale output with
+  `rimraf dist && tsc --project tsconfig.build.json`. The web host uses the Vite
+  CLI, including standard config discovery, and keeps development on
+  `127.0.0.1:4173` with strict port selection. Custom scripts remain for builds
+  with artifact-generation logic and integration harnesses; publishing is
+  unchanged.
 
 Add a dependency from the repository root:
 
