@@ -8,6 +8,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -387,7 +388,7 @@ test("clean removes only declared workspace outputs and refuses redirected paths
   );
   assert.match(run(directory, ["clean"], false), /redirected output/);
   assert.ok(existsSync(join(directory, "unlisted/dist/sentinel")));
-  rmSync(join(directory, "packages/core/dist"));
+  unlinkSync(join(directory, "packages/core/dist"));
   mkdirSync(join(directory, "packages/core/coverage"));
   const result = spawnSync(
     process.execPath,
