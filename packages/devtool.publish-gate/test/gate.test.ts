@@ -63,10 +63,7 @@ beforeEach(async () => {
   cwd = join(root, "packages", "widget");
   await mkdir(cwd, { recursive: true });
   await mkdir(join(root, ".github", "workflows"), { recursive: true });
-  await writeFile(
-    join(root, "silvermoon.yaml"),
-    "deliverables:\n  - path: packages/widget\n    type: npm\n    packageId: widget\n  - path: packages/task\n    type: task-bundle\n",
-  );
+  await writeFile(join(cwd, "deliverable.yaml"), "type: npm\n");
   await writeFile(
     join(root, ".github", "workflows", "ci.yaml"),
     "jobs:\n  compatibility:\n    strategy:\n      matrix:\n        node-version: [22.15.0, 24.11.1]\n",
@@ -83,8 +80,8 @@ beforeEach(async () => {
     GITHUB_REPOSITORY: "silvermoon-work/okr-agent",
     GITHUB_EVENT_NAME: "push",
     GITHUB_REF_TYPE: "tag",
-    GITHUB_REF: `refs/tags/widget-v${version}`,
-    GITHUB_WORKFLOW_REF: `silvermoon-work/okr-agent/.github/workflows/publish-npm.yaml@refs/tags/widget-v${version}`,
+    GITHUB_REF: `refs/tags/${name}@${version}`,
+    GITHUB_WORKFLOW_REF: `silvermoon-work/okr-agent/.github/workflows/publish-npm.yaml@refs/tags/${name}@${version}`,
     GITHUB_SHA: sha,
     GITHUB_TOKEN: "test-github-token",
     ACTIONS_ID_TOKEN_REQUEST_URL: "https://oidc.invalid/",
@@ -176,7 +173,6 @@ afterEach(async () => {
 describe("authorized release context", () => {
   it("checks a tagged package and exact CI evidence without building, packing or publishing", async () => {
     expect(await checkPublishContext(cwd, env)).toEqual({
-      packageId: "widget",
       name,
       version,
       channel: "rc",
@@ -207,11 +203,45 @@ describe("authorized release context", () => {
 
   it("permits explicitly selected manual dry runs but never a manual real publication", async () => {
     env.GITHUB_EVENT_NAME = "workflow_dispatch";
-    env.PACKAGE_INPUT = "widget";
+    env.PACKAGE_INPUT = name;
     env.npm_config_dry_run = "true";
     expect(await checkPublishContext(cwd, env)).toMatchObject({ dryRun: true });
     delete env.npm_config_dry_run;
     await expect(checkPublishContext(cwd, env)).rejects.toThrow("dry-run only");
+  });
+
+  it("supports a single package at the Git root without workspace configuration", async () => {
+    cwd = root;
+    await saveManifest();
+    await writeFile(join(cwd, "deliverable.yaml"), "type: npm\n");
+    await expect(checkPublishContext(cwd, env)).resolves.toEqual({
+      name,
+      version,
+      channel: "rc",
+      sha,
+      dryRun: false,
+    });
+  });
+
+  it("does not inherit a root declaration or accept the legacy root registry", async () => {
+    await rm(join(cwd, "deliverable.yaml"));
+    await writeFile(join(root, "deliverable.yaml"), "type: npm\n");
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow("ENOENT");
+    await writeFile(join(root, "silvermoon.yaml"), "deliverables: []");
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow("Migrate");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("rejects short manual selectors and legacy release tags", async () => {
+    env.GITHUB_REF = `refs/tags/widget-v${version}`;
+    env.GITHUB_WORKFLOW_REF = `${env.GITHUB_REPOSITORY}/.github/workflows/publish-npm.yaml@${env.GITHUB_REF}`;
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow("Release tag");
+    env.GITHUB_EVENT_NAME = "workflow_dispatch";
+    env.npm_config_dry_run = "true";
+    env.PACKAGE_INPUT = "widget";
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "full npm package name",
+    );
   });
 
   it.each([
@@ -290,18 +320,18 @@ describe("authorized release context", () => {
   });
 
   it.each([
+    "{}",
+    "type: task-bundle",
+    "type: npm\npath: .",
+    "type: npm\npackageId: widget",
     "deliverables: []",
-    "deliverables:\n - {path: packages/widget, type: npm, packageId: widget}\n - {path: packages/widget, type: npm, packageId: other}",
-    "deliverables:\n - {path: packages/widget, type: npm, packageId: widget}\n - {path: packages/other, type: npm, packageId: widget}",
-    "deliverables:\n - {path: ../outside, type: npm, packageId: widget}",
-    "deliverables:\n - {path: packages/widget, type: npm, packageId: Bad}",
-    "deliverables: [",
-    "deliverables: []\ndeliverables: []",
-    "deliverables: [null]",
+    "type: [",
+    "type: npm\ntype: npm",
+    "null",
   ])(
     "requires an unambiguous valid delivery declaration: %s",
     async (source) => {
-      await writeFile(join(root, "silvermoon.yaml"), source);
+      await writeFile(join(cwd, "deliverable.yaml"), source);
       await expect(checkPublishContext(cwd, env)).rejects.toThrow();
       expect(fetcher).not.toHaveBeenCalled();
     },
@@ -388,7 +418,7 @@ describe("registry eligibility and trustworthy responses", () => {
     manifest.optionalDependencies = { semver: "^7.0.0" };
     manifest.peerDependencies = { semver: "^7.0.0" };
     metadata = published(["0.0.0", "0.1.0-rc.1", "0.1.0-rc.0"]);
-    env.GITHUB_REF = "refs/tags/widget-v0.1.0-rc.2";
+    env.GITHUB_REF = `refs/tags/${name}@0.1.0-rc.2`;
     env.GITHUB_WORKFLOW_REF = `${env.GITHUB_REPOSITORY}/.github/workflows/publish-npm.yaml@${env.GITHUB_REF}`;
     await saveManifest();
     await expect(checkPublishContext(cwd, env)).resolves.toMatchObject({
@@ -401,7 +431,7 @@ describe("registry eligibility and trustworthy responses", () => {
     manifest.version = "1.0.0";
     delete manifest.dependencies;
     env.npm_config_tag = "latest";
-    env.GITHUB_REF = "refs/tags/widget-v1.0.0";
+    env.GITHUB_REF = "refs/tags/widget@1.0.0";
     env.GITHUB_WORKFLOW_REF = `${env.GITHUB_REPOSITORY}/.github/workflows/publish-npm.yaml@${env.GITHUB_REF}`;
     await saveManifest();
     responder = (url) => {
@@ -461,7 +491,7 @@ describe("registry eligibility and trustworthy responses", () => {
 
   it("requires rc.0 for a new package", async () => {
     manifest.version = "0.1.0-rc.1";
-    env.GITHUB_REF = "refs/tags/widget-v0.1.0-rc.1";
+    env.GITHUB_REF = `refs/tags/${name}@0.1.0-rc.1`;
     env.GITHUB_WORKFLOW_REF = `${env.GITHUB_REPOSITORY}/.github/workflows/publish-npm.yaml@${env.GITHUB_REF}`;
     await saveManifest();
     await expect(checkPublishContext(cwd, env)).rejects.toThrow("First RC");

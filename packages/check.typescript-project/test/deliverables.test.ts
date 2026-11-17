@@ -7,6 +7,7 @@ import {
   loadDeliverables,
   npmMappings,
   parseDeliverables,
+  validateDeliveryPaths,
 } from "../assets/deliverables.mjs";
 import { projectDeliverables } from "../src-legacy/deliverables.js";
 import { Files, Unconfirmed } from "../src-legacy/files.js";
@@ -15,7 +16,9 @@ import { fixture, npmFixture, put, testEvidence } from "./fixture.js";
 import type { Project } from "../src-legacy/commands.js";
 
 let root: string;
+let declaredDirectories: string[];
 beforeEach(async () => {
+  declaredDirectories = ["."];
   root = resolve("dist", `.deliverables-${randomUUID()}`);
   await mkdir(root, { recursive: true });
   await fixture(root);
@@ -34,8 +37,12 @@ async function observe() {
   );
   return problems;
 }
-async function declaration(deliverables: unknown) {
-  await put(root, "silvermoon.yaml", { deliverables });
+async function declaration(deliverables: { path: string; type: string }[]) {
+  for (const directory of declaredDirectories)
+    await rm(join(root, directory, "deliverable.yaml"), { force: true });
+  declaredDirectories = deliverables.map((entry) => entry.path);
+  for (const { path, type } of deliverables)
+    await put(root, `${path}/deliverable.yaml`, { type });
 }
 async function readProjects(projects?: Project[]) {
   const files = new Files(root, new AbortController().signal);
@@ -56,40 +63,34 @@ async function readProjects(projects?: Project[]) {
 }
 it.each([
   [undefined, []],
-  ["deliverables: []", []],
+  ["type: none", [{ path: ".", type: "none" }]],
   [
-    "deliverables:\n - path: .\n   type: my-target\n   command: DO-NOT-EXECUTE",
+    "type: my-target\ncommand: DO-NOT-EXECUTE",
     [{ path: ".", type: "my-target", command: "DO-NOT-EXECUTE" }],
   ],
 ])("keeps an absent or open-type declaration inert", (source, expected) => {
   expect(parseDeliverables(source)).toEqual(expected);
 });
 it.each([
-  ["deliverables: [", "mismatch"],
+  ["type: [", "mismatch"],
   ["null", "mismatch"],
   ["{}", "missing"],
-  ["schemaVersion: 1\ndeliverables: []", "mismatch"],
-  ["deliverables: {}\n", "mismatch"],
-  ["deliverables: []\ndeliverables: []", "mismatch"],
-  ['deliverables: ["x"]', "mismatch"],
-  ["deliverables: [{type: npm}]", "missing"],
-  ["deliverables: [{path: .}]", "missing"],
-  ["deliverables: [{path: ., type: npm}]", "missing"],
-  ["deliverables: [{path: ., type: npm, packageId: bad_id}]", "mismatch"],
-  ['deliverables: [{path: ., type: "Cloudflare"}]', "mismatch"],
-  ["deliverables: [{path: ., type: a--b}]", "mismatch"],
-  ["deliverables: [{path: ., type: a}, {path: ., type: b}]", "mismatch"],
-  [
-    "deliverables: [{path: a, type: npm, packageId: x}, {path: b, type: npm, packageId: x}]",
-    "mismatch",
-  ],
+  ["deliverables: []", "mismatch"],
+  ["type: {}\n", "mismatch"],
+  ["type: npm\ntype: npm", "mismatch"],
+  ['["x"]', "mismatch"],
+  ["path: .", "mismatch"],
+  ["type: npm\npath: .", "mismatch"],
+  ["type: npm\npackageId: library", "mismatch"],
+  ['type: "Cloudflare"', "mismatch"],
+  ["type: a--b", "mismatch"],
 ])(
   "rejects malformed or ambiguous declarations: %s",
   async (source, status) => {
-    await put(root, "silvermoon.yaml", source);
+    await put(root, "deliverable.yaml", source);
     expect((await readProjects()).problems).toContainEqual({
       status,
-      brief: expect.stringContaining("silvermoon.yaml") as unknown,
+      brief: expect.stringContaining("deliverable.yaml") as unknown,
     });
   },
 );
@@ -108,35 +109,36 @@ it.each([
   "apps/[ab]",
   "apps/{a,b}",
   "bad\npath",
-])("rejects noncanonical path %s", async (path) => {
-  await declaration([{ path, type: "custom" }]);
-  expect((await readProjects()).problems[0]?.status).toBe("mismatch");
+])("rejects noncanonical discovery path %s", (path) => {
+  expect(() => parseDeliverables("type: custom", path)).toThrow(
+    "root-relative directory",
+  );
 });
-it("validates existing directories and nested identities without recursive inheritance", async () => {
+it("requires package-local declarations without recursive inheritance", async () => {
   await mkdir(join(root, "internal", "nested"), { recursive: true });
   await declaration([
     { path: "internal", type: "custom" },
-    { path: "internal/nested", type: "other", extra: {} },
+    { path: "internal/nested", type: "other" },
   ]);
-  expect(loadDeliverables(root)).toHaveLength(2);
-  expect((await readProjects()).problems).toEqual([]);
-  await declaration([{ path: "internal/nested", type: "cloudflare" }]);
+  expect(loadDeliverables(root, ["internal", "internal/nested"])).toHaveLength(
+    2,
+  );
+  expect(loadDeliverables(root)).toEqual([]);
   expect((await readProjects()).problems[0]?.status).toBe("mismatch");
-  await declaration([{ path: "missing", type: "custom" }]);
-  expect((await readProjects()).problems[0]?.status).toBe("missing");
-  await declaration([{ path: "README.md", type: "custom" }]);
-  expect((await readProjects()).problems[0]?.status).toBe("mismatch");
+  expect(() => {
+    validateDeliveryPaths(root, [{ path: "missing", type: "custom" }]);
+  }).toThrow("directory unavailable");
+  expect(() => {
+    validateDeliveryPaths(root, [{ path: "README.md", type: "custom" }]);
+  }).toThrow("existing directory");
 });
 it("does not follow redirected directories or declaration files", async () => {
   await mkdir(join(root, "internal"));
   await symlink(join(root, "internal"), join(root, "redirect"), "junction");
-  await declaration([{ path: "redirect", type: "custom" }]);
-  expect((await readProjects()).problems[0]?.status).toBe("unconfirmed");
-  expect(() => loadDeliverables(root)).toThrow("redirected");
-  await rm(join(root, "silvermoon.yaml"));
+  expect(() => loadDeliverables(root, ["redirect"])).toThrow("redirected");
   await symlink(
     join(root, "internal"),
-    join(root, "silvermoon.yaml"),
+    join(root, "deliverable.yaml"),
     "junction",
   );
   expect((await readProjects()).problems[0]?.status).toBe("unconfirmed");
@@ -144,30 +146,39 @@ it("does not follow redirected directories or declaration files", async () => {
 });
 it("classifies supported read uncertainty but preserves unexpected I/O failures", async () => {
   const files = new Files(root, new AbortController().signal);
+  const project: Project = {
+    directory: "",
+    manifest: {},
+    sources: [],
+    tests: [],
+  };
   const optionalText = vi
     .spyOn(files, "optionalText")
     .mockRejectedValueOnce(new Unconfirmed("read limit"));
   const problems: string[] = [];
   expect(
-    await projectDeliverables(files, [], (_status, brief) =>
+    await projectDeliverables(files, [project], (_status, brief) =>
       problems.push(brief),
     ),
   ).toEqual([]);
   expect(problems).toEqual(["read limit"]);
   optionalText.mockRejectedValueOnce(new Error("I/O"));
-  await expect(projectDeliverables(files, [], () => {})).rejects.toThrow("I/O");
+  await expect(projectDeliverables(files, [project], () => {})).rejects.toThrow(
+    "I/O",
+  );
 });
 it("bounds alias expansion and runtime declaration size", async () => {
   await put(
     root,
-    "silvermoon.yaml",
-    `deliverables: [&entry {path: ., type: custom}, ${Array.from({ length: 40 }, () => "*entry").join(", ")}]`,
+    "deliverable.yaml",
+    `type: custom\nentries: [&entry {value: x}, ${Array.from({ length: 40 }, () => "*entry").join(", ")}]`,
   );
   expect((await readProjects()).problems[0]?.status).toBe("unconfirmed");
-  await put(root, "silvermoon.yaml", " ".repeat(1_048_577));
+  await put(root, "deliverable.yaml", " ".repeat(1_048_577));
   expect(() => loadDeliverables(root)).toThrow("1MiB");
 });
 it.each([
+  "silvermoon.yaml",
   "scripts/lib/release-packages.mjs",
   "scripts/release-packages.js",
   "release.config.json",
@@ -180,7 +191,7 @@ it("uses explicit npm identity, rejects private/core targets, and never infers f
   await npmFixture(root);
   const { entries, projects } = await readProjects();
   expect(npmMappings(entries, projects)).toEqual([
-    { id: "library", name: "@acme/library", directory: "." },
+    { id: "@acme/library", name: "@acme/library", directory: "." },
   ]);
   expect(npmMappings([], projects)).toEqual([]);
   expect(() => npmMappings(entries, [])).toThrow("one declared package");
@@ -194,7 +205,7 @@ it("uses explicit npm identity, rejects private/core targets, and never infers f
     name: "@acme/core",
     private: true,
   });
-  await declaration([{ path: ".", type: "npm", packageId: "library" }]);
+  await declaration([{ path: ".", type: "npm" }]);
   const core: Project = {
     directory: "packages/core",
     manifest: { name: "@acme/core", private: true },
@@ -205,11 +216,14 @@ it("uses explicit npm identity, rejects private/core targets, and never infers f
   expect(core.delivery).toBeUndefined();
   expect(npmMappings(result.entries, result.projects)).toHaveLength(1);
   await declaration([
-    { path: ".", type: "npm", packageId: "library" },
-    { path: "packages/core", type: "npm", packageId: "core" },
+    { path: ".", type: "npm" },
+    { path: "packages/core", type: "npm" },
   ]);
   expect(() =>
-    npmMappings(loadDeliverables(root), [...projects, core]),
+    npmMappings(loadDeliverables(root, [".", "packages/core"]), [
+      ...projects,
+      core,
+    ]),
   ).toThrow("private");
 });
 it("explicitly rejects npm intent for a private package instead of silently exempting it", async () => {
@@ -232,6 +246,24 @@ it("explicitly rejects npm intent for a private package instead of silently exem
     }),
   );
 });
+it("rejects duplicate full npm identities but distinguishes scopes", () => {
+  const entries = [
+    { path: "packages/a", type: "npm" },
+    { path: "packages/b", type: "npm" },
+  ];
+  const projects = [
+    { directory: "packages/a", manifest: { name: "@first/widget" } },
+    { directory: "packages/b", manifest: { name: "@second/widget" } },
+  ];
+  expect(npmMappings(entries, projects).map((mapping) => mapping.id)).toEqual([
+    "@first/widget",
+    "@second/widget",
+  ]);
+  projects[1]!.manifest.name = "@first/widget";
+  expect(() => npmMappings(entries, projects)).toThrow(
+    "duplicate npm package name",
+  );
+});
 it("does not apply npm delivery to Cloudflare, custom types or undeclared public-looking packages; common strictness remains", async () => {
   const manifest = JSON.parse(
     await readFile(join(root, "package.json"), "utf8"),
@@ -243,7 +275,7 @@ it("does not apply npm delivery to Cloudflare, custom types or undeclared public
   });
   await put(root, "wrangler.jsonc", '{ "main": "src/index.ts" }');
   for (const type of [undefined, "cloudflare", "custom"]) {
-    await declaration(type ? [{ path: ".", type }] : []);
+    await declaration([{ path: ".", type: type ?? "none" }]);
     const problems = await observe();
     if (type === "cloudflare")
       expect(
@@ -274,7 +306,7 @@ it.each([
       {
         status: "missing",
         brief: expect.stringContaining(
-          "未声明 deliverables，但观察到交付迹象 .github/workflows/release.yaml:release",
+          "未声明交付类型，但观察到交付迹象 .github/workflows/release.yaml:release",
         ) as unknown,
       },
     ]);
@@ -289,7 +321,7 @@ it("reports platform configuration as delivery evidence only without any declara
       brief: expect.stringContaining("wrangler.toml") as unknown,
     },
   ]);
-  await declaration([]);
+  await declaration([{ path: ".", type: "none" }]);
   expect((await readProjects()).problems).toEqual([]);
 });
 it("leaves direct publication directories to the release domain once declared", async () => {
@@ -310,7 +342,7 @@ it("accepts a registered release selection and ignores inert non-publishing step
   await put(root, ".github/workflows/extra.yaml", {
     jobs: {
       extra: {
-        env: { PACKAGE_INPUT: "library" },
+        env: { PACKAGE_INPUT: "@acme/library" },
         steps: [{ name: "no command" }, { run: "pnpm release" }],
       },
     },
@@ -335,7 +367,7 @@ it("accepts a registered release selection and ignores inert non-publishing step
         problem.status === "missing" && problem.brief.includes("core"),
     ),
   ).toBe(true);
-  await declaration([]);
+  await declaration([{ path: ".", type: "none" }]);
   expect(
     (await readProjects()).problems.some(
       (problem) => problem.status === "missing",
@@ -365,29 +397,27 @@ it("honors inherited workflow selectors without treating echo text as invocation
   expect((await readProjects()).problems).toEqual([]);
 });
 it("protects the declaration from formatting and Git exclusions", async () => {
-  await declaration([]);
-  await put(root, ".prettierignore", "silvermoon.yaml");
+  await declaration([{ path: ".", type: "none" }]);
+  await put(root, ".prettierignore", "deliverable.yaml");
   await put(
     root,
     ".gitignore",
-    `${await readFile(join(root, ".gitignore"), "utf8")}silvermoon.yaml\n`,
+    `${await readFile(join(root, ".gitignore"), "utf8")}deliverable.yaml\n`,
   );
   const problems = await observe();
   expect(problems).toContainEqual(
     expect.objectContaining({
       code: "formatting-mismatch",
-      brief: expect.stringContaining("silvermoon.yaml") as unknown,
+      brief: expect.stringContaining("deliverable.yaml") as unknown,
     }),
   );
   expect(problems).toContainEqual(
     expect.objectContaining({
       code: "document-mismatch",
-      brief: expect.stringContaining("silvermoon.yaml") as unknown,
+      brief: expect.stringContaining("deliverable.yaml") as unknown,
     }),
   );
 });
 it("keeps schema failures identifiable to runtime consumers", () => {
-  expect(() => parseDeliverables("deliverables: false")).toThrow(
-    DeliverablesError,
-  );
+  expect(() => parseDeliverables("type: false")).toThrow(DeliverablesError);
 });

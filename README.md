@@ -268,8 +268,8 @@ functions, lines and statements. Tests use the shared Vitest configuration with
 each member's explicit working root. `pnpm lint-package` directly runs Turbo's
 member `lint-package` tasks after their builds. Only npm delivery members
 currently declare that script (`publint`); daily checks do not cross-check
-`silvermoon.yaml`. The unchanged release publisher separately validates the
-delivery list and runs publint on the exact selected tarball.
+package-local `deliverable.yaml`. The release publisher separately validates
+those declarations and runs publint on the exact selected tarball.
 
 For dependency-aware targeted work:
 
@@ -309,23 +309,25 @@ release workflow below; examples remain private until deliberately configured.
 Publishing is opt-in. The root and example workspaces remain private. There is
 no automatic batch release or automatic version bumping.
 
-Root [`silvermoon.yaml`](silvermoon.yaml) is the only delivery-intent source;
-all external applications and libraries are listed, not just apps. Only `npm`
-entries are publisher/publint candidates. The current npm entries are
+Each delivery package owns a `deliverable.yaml` containing its `type`; for
+example [the SDK declaration](packages/check-task-sdk/deliverable.yaml).
+Single-package repositories place it beside the root `package.json`; workspace
+members declare it in their own directories, without inheritance. Only `npm`
+declarations are publisher/publint candidates. The current npm deliveries are
 `check-task-sdk`, `check-task-builder`, `ipfsaw` and the publish-gate candidate;
 preset core stays private and is not registered. `task-bundle` classifies the
 existing private Check authors' local Bundle/CAR deliverables without defining
-IPFS/Pinboard distribution. Open types, paths and migration rules are documented
-in
+IPFS/Pinboard distribution. Open types and migration rules are documented in
 [explicit deliverables](packages/check.typescript-project/src-legacy/references/deliverables.md).
 Cloudflare intent does not certify platform configuration or deployment.
 
 ### Configure a derived repository
 
 1. Replace the deliberately selected library's name and metadata. Register its
-   exact `packages/<directory>` in root `silvermoon.yaml` with `type: npm` and
-   its existing unique tag ID as `packageId`; name/version are read from its
-   manifest. Do not copy historical example mappings or keep an independent
+   delivery in its own `deliverable.yaml` with `type: npm`; the directory is
+   implicit and name/version are read from its manifest. No `path` or
+   `packageId` is configured. Remove root `silvermoon.yaml`; do not copy
+   historical example mappings or keep an independent
    `release-packages`/`release.config.json` target list. Update workspace
    consumers when renaming the library.
 2. Only for a library ready to publish, remove `private: true`, add
@@ -348,20 +350,23 @@ commit's main push CI, including **Release verification (v1)**, to succeed. Then
 explicitly create and push its package-specific tag:
 
 ```sh
-git tag library-v1.2.3 <verified-main-commit>
-git push origin library-v1.2.3
+git tag @acme/library@1.2.3 <verified-main-commit>
+git push origin @acme/library@1.2.3
 ```
 
 The tag publishes only the mapped package. Both the tagged manifest and the
 tarball must match its exact name and version; the root version is irrelevant.
-Unknown package IDs, private/placeholder names, invalid versions, mismatches,
+Unknown package names, private/placeholder names, invalid versions, mismatches,
 unresolved local dependencies, and already-published versions block release.
 Canonical stable SemVer versions and `x.y.z-rc.n` prerelease versions are
 supported (without build metadata). Stable versions use npm's `latest` tag;
 prereleases use `rc`. For each target `x.y.z` version, start `n` at `0` and
 increment it by one for each subsequent prerelease: `1.2.3-rc.0`, `1.2.3-rc.1`,
 and so on. Use matching package-specific Git tags, for example
-`library-v1.2.3-rc.0` for an explicitly registered `packageId: library`.
+`@acme/library@1.2.3-rc.0` for the explicitly declared package `@acme/library`.
+Unscoped packages use `library@1.2.3`. The workflow uses `tags: ["**@*"]` so
+scoped package names containing `/` also trigger it. Historical `-v` tags are
+not renamed or reused; this is an intentional release-interface change.
 
 The fixed `scripts/lib/npm-publish.mjs` requires the latest `ci.yaml` main push
 run for the exact full checked-out SHA, every required default/matrix job, and
@@ -383,7 +388,7 @@ same artifact through npm OIDC.
 After the configured commit's main push CI succeeds:
 
 ```sh
-gh workflow run publish-npm.yaml --ref main -f package=library
+gh workflow run publish-npm.yaml --ref main -f package=@acme/library
 ```
 
 Manual runs only perform an npm dry run, never an actual publish or dist-tag

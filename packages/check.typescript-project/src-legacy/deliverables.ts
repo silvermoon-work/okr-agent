@@ -38,11 +38,30 @@ export async function deliverableDeclaration(
     if (files.exists(path))
       report(
         "mismatch",
-        `${path}: 旧交付来源须迁移到 silvermoon.yaml；不回退或并行选择`,
+        `${path}: 旧交付来源须迁移到包内 deliverable.yaml；不回退或并行选择`,
       );
   try {
-    const declared = await files.optionalText("silvermoon.yaml");
-    const entries = parseDeliverables(declared);
+    const entries: Deliverable[] = [];
+    for (const project of projects) {
+      const path = files.path(project.directory, "deliverable.yaml");
+      entries.push(
+        ...parseDeliverables(
+          await files.optionalText(path),
+          project.directory || ".",
+        ),
+      );
+    }
+    for (const path of files.paths.filter((path) =>
+      /(?:^|\/)deliverable\.yaml$/.test(path),
+    )) {
+      const directory =
+        path.slice(0, -"deliverable.yaml".length).replace(/\/$/, "") || ".";
+      if (
+        !projects.some((project) => (project.directory || ".") === directory) &&
+        !unavailableMembers.has(directory)
+      )
+        report("mismatch", `${path}: 交付声明必须位于根包或工作区成员内`);
+    }
     validateDeliveryPaths(files.root, entries);
     for (const entry of entries) {
       const project = projects.find(
@@ -55,7 +74,7 @@ export async function deliverableDeclaration(
       )
         report(
           "mismatch",
-          `silvermoon.yaml: ${entry.path}: ${entry.type} 交付项必须精确匹配根包或工作区成员`,
+          `${entry.path}/deliverable.yaml: ${entry.type} 交付项必须精确匹配根包或工作区成员`,
         );
     }
     const signs: string[] = [];
@@ -95,11 +114,11 @@ export async function deliverableDeclaration(
           if (release || publish) signs.push(`${path}:${name}`);
           // A direct publish is always a release-domain violation; its
           // directory is irrelevant until it uses the fixed release entry.
-          if (!release || declared === undefined) continue;
+          if (!release || entries.length === 0) continue;
           if (!entries.some((entry) => entry.type === "npm")) {
             report(
               "missing",
-              `${path}:${name}: 明确 npm 发布入口缺少 silvermoon.yaml npm 交付声明`,
+              `${path}:${name}: 明确 npm 发布入口缺少包内 deliverable.yaml npm 交付声明`,
             );
             continue;
           }
@@ -112,7 +131,13 @@ export async function deliverableDeclaration(
             typeof selected === "string" &&
             !selected.includes("${{") &&
             !entries.some(
-              (entry) => entry.type === "npm" && entry.packageId === selected,
+              (entry) =>
+                entry.type === "npm" &&
+                projects.some(
+                  (project) =>
+                    (project.directory || ".") === entry.path &&
+                    project.manifest.name === selected,
+                ),
             )
           )
             report(
@@ -122,10 +147,10 @@ export async function deliverableDeclaration(
         }
       }
     }
-    if (declared === undefined && signs.length) {
+    if (entries.length === 0 && signs.length) {
       report(
         "missing",
-        `silvermoon.yaml: 未声明 deliverables，但观察到交付迹象 ${[...new Set(signs)].join(", ")}；先声明每个交付单元（npm 包或 cloudflare 部署单元，不交付则写 deliverables: []），之后才检查发布工作流、npm 交付元数据和平台配置`,
+        `deliverable.yaml: 未声明交付类型，但观察到交付迹象 ${[...new Set(signs)].join(", ")}；先在每个交付包内声明 type（不交付可写 type: none），之后才检查发布工作流、npm 交付元数据和平台配置`,
       );
       return { entries, blocked: true };
     }

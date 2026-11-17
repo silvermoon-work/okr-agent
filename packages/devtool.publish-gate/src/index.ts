@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import semver from "semver";
 import { parseDocument } from "yaml";
@@ -251,7 +251,6 @@ function unpublished(
 }
 
 export interface PublishContext {
-  readonly packageId: string;
   readonly name: string;
   readonly version: string;
   readonly channel: "latest" | "rc";
@@ -320,36 +319,27 @@ export async function checkPublishContext(
       semver.valid(version) === version,
     "Expected a public npm package with a canonical stable or rc version.",
   );
-  const entries = list(yaml(join(root, "silvermoon.yaml")).deliverables)
-    .map(object)
-    .filter((entry) => entry.type === "npm");
-  const paths = new Set();
-  const ids = new Set();
-  for (const entry of entries) {
-    requireValue(
-      typeof entry.path === "string" &&
-        (entry.path === "." ||
-          entry.path
-            .split("/")
-            .every(
-              (part) =>
-                /^[A-Za-z0-9._-]+$/.test(part) && part !== "." && part !== "..",
-            )) &&
-        typeof entry.packageId === "string" &&
-        /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.packageId) &&
-        !paths.has(entry.path) &&
-        !ids.has(entry.packageId),
-      "npm deliverables must have explicit unique paths and package IDs.",
-    );
-    paths.add(entry.path);
-    ids.add(entry.packageId);
-  }
-  const selected = entries.filter((entry) => entry.path === directory);
   requireValue(
-    selected.length === 1,
-    "Current package must be registered once as an npm deliverable.",
+    !existsSync(join(root, "silvermoon.yaml")),
+    "Migrate root silvermoon.yaml to per-package deliverable.yaml; legacy delivery declarations are not supported.",
   );
-  const packageId = String(selected[0]!.packageId);
+  const declarationPath = join(cwd, "deliverable.yaml");
+  const declarationInfo = lstatSync(declarationPath);
+  requireValue(
+    declarationInfo.isFile() &&
+      !declarationInfo.isSymbolicLink() &&
+      realpathSync(declarationPath) === declarationPath &&
+      declarationInfo.size <= 1_048_576,
+    "deliverable.yaml must be a regular non-redirected file of at most 1MiB.",
+  );
+  const declaration = yaml(declarationPath);
+  requireValue(
+    declaration.type === "npm" &&
+      !Object.hasOwn(declaration, "path") &&
+      !Object.hasOwn(declaration, "packageId") &&
+      !Object.hasOwn(declaration, "deliverables"),
+    "Declare type: npm in this package's deliverable.yaml; path and packageId are derived, not configurable.",
+  );
   const channel = version.includes("-rc.") ? "rc" : "latest";
   const config = object(manifest.publishConfig);
   requireValue(
@@ -390,19 +380,19 @@ export async function checkPublishContext(
   }
   const dryRun = env.npm_config_dry_run === "true";
   if (env.GITHUB_EVENT_NAME === "push") {
-    const tag = `${packageId}-v${version}`;
+    const tag = `${name}@${version}`;
     requireValue(
       env.GITHUB_REF_TYPE === "tag" &&
         env.GITHUB_REF === `refs/tags/${tag}` &&
         git(root, "rev-parse", `refs/tags/${tag}^{commit}`) === sha,
-      "Release tag must match the package ID, manifest version and checkout SHA.",
+      "Release tag must be <full-package-name>@<version> and match the checkout SHA.",
     );
   } else {
     requireValue(
       env.GITHUB_EVENT_NAME === "workflow_dispatch" &&
         dryRun &&
-        env.PACKAGE_INPUT === packageId,
-      "Manual dispatch is dry-run only and must select this package ID.",
+        env.PACKAGE_INPUT === name,
+      "Manual dispatch is dry-run only and must select this full npm package name.",
     );
   }
   await verifyCi(root, sha, repo, env.GITHUB_TOKEN);
@@ -447,5 +437,5 @@ export async function checkPublishContext(
       );
     }
   }
-  return { packageId, name, version, channel, sha, dryRun };
+  return { name, version, channel, sha, dryRun };
 }

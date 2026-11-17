@@ -1038,7 +1038,7 @@ export function maintenanceRegistry(
           for (const path of files.paths.filter(
             (p) =>
               /\.(?:[cm]?ts|tsx)$/.test(p) ||
-              /(?:^|\/)(?:silvermoon\.yaml|package\.json|pnpm-lock\.yaml|.*config\.[^/]+)$/.test(
+              /(?:^|\/)(?:deliverable\.yaml|package\.json|pnpm-lock\.yaml|.*config\.[^/]+)$/.test(
                 p,
               ) ||
               p.startsWith(".github/workflows/"),

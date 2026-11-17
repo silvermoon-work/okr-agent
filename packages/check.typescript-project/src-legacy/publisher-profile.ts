@@ -71,7 +71,7 @@ export async function publisherProfile(
         mappings.length
       )
         throw new Unconfirmed(`发布映射 ${key} 不唯一`);
-    const source = "silvermoon.yaml";
+    const source = "deliverable.yaml";
     const project = targets[0]!;
     if (
       topology === "workspace" &&

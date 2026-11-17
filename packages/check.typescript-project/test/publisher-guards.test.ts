@@ -44,7 +44,7 @@ afterEach(() => {
 });
 const config = {
   schemaVersion: 1,
-  package: { id: "library", name: "@acme/library", directory: "." },
+  package: { id: "@acme/library", name: "@acme/library", directory: "." },
   ci: { nodeVersions: ["22.15.0", "24.11.0"] },
 };
 const manifest = {
@@ -59,7 +59,7 @@ it("requires explicit mappings even for a single target and binds workspace sele
       [],
       config.ci.nodeVersions,
       "push",
-      "library-v1.2.0-rc.0",
+      "@acme/library@1.2.0-rc.0",
     ),
   ).toThrow("No non-private npm publishing target");
   expect(
@@ -68,7 +68,7 @@ it("requires explicit mappings even for a single target and binds workspace sele
       [config.package],
       config.ci.nodeVersions,
       "push",
-      "library-v1.2.0-rc.0",
+      "@acme/library@1.2.0-rc.0",
     ),
   ).toEqual(config);
   const projects = [
@@ -91,14 +91,14 @@ it("requires explicit mappings even for a single target and binds workspace sele
       [{ ...config.package, directory: "packages/library" }],
       nodes,
       "push",
-      "library-v1.2.0-rc.0",
+      "@acme/library@1.2.0-rc.0",
     ),
   ).toEqual({
     ...config,
     package: { ...config.package, directory: "packages/library" },
   });
   const mappings = publisher.releaseMappings(
-    'export const releasePackages = [{id:"lib",name:"@acme/library",directory:"packages/library"}, {id:"core",name:"@acme/core",directory:"packages/core"}];',
+    'export const releasePackages = [{id:"@acme/library",name:"@acme/library",directory:"packages/library"}, {id:"@acme/core",name:"@acme/core",directory:"packages/core"}];',
   );
   projects.push({
     directory: "packages/core",
@@ -121,11 +121,15 @@ it("requires explicit mappings even for a single target and binds workspace sele
       nodes,
       "workflow_dispatch",
       undefined,
-      "lib",
+      "@acme/library",
     ),
   ).toEqual({
     ...config,
-    package: { id: "lib", name: manifest.name, directory: "packages/library" },
+    package: {
+      id: manifest.name,
+      name: manifest.name,
+      directory: "packages/library",
+    },
   });
   for (const input of ["", "all", "lib,core"])
     expect(() =>
@@ -153,7 +157,7 @@ it("requires explicit mappings even for a single target and binds workspace sele
       [...mappings, mappings[0]],
       nodes,
       "push",
-      "lib-v1.2.0-rc.0",
+      "@acme/library@1.2.0-rc.0",
     ),
   ).toThrow("Ambiguous");
   expect(() => publisher.workflowMatrix("jobs: {}")).toThrow("structure");
@@ -241,13 +245,31 @@ it("binds stable/rc channels to exact tag/package/version, private rejection and
     "tag push",
   );
   expect(publisher.configuration(config)).toEqual(config);
-  expect(
+  expect(() =>
+    publisher.configuration({
+      ...config,
+      package: { ...config.package, id: "library" },
+    }),
+  ).toThrow("full npm package name");
+  expect(() =>
+    publisher.releaseIdentity(config, manifest, "push", "library-v1.2.0-rc.0"),
+  ).toThrow("Tag");
+  expect(() =>
     publisher.releaseIdentity(
       config,
       manifest,
       "workflow_dispatch",
       undefined,
       "library",
+    ),
+  ).toThrow();
+  expect(
+    publisher.releaseIdentity(
+      config,
+      manifest,
+      "workflow_dispatch",
+      undefined,
+      "@acme/library",
     ).channel,
   ).toBe("rc");
   expect(
@@ -255,7 +277,7 @@ it("binds stable/rc channels to exact tag/package/version, private rejection and
       config,
       { ...manifest, version: "1.2.0" },
       "push",
-      "library-v1.2.0",
+      "@acme/library@1.2.0",
     ).channel,
   ).toBe("latest");
   expect(() =>
@@ -263,18 +285,18 @@ it("binds stable/rc channels to exact tag/package/version, private rejection and
       config,
       { ...manifest, private: true },
       "push",
-      "library-v1.2.0-rc.0",
+      "@acme/library@1.2.0-rc.0",
     ),
   ).toThrow("private");
   expect(() =>
-    publisher.releaseIdentity(config, manifest, "push", "library-v1.2.0"),
+    publisher.releaseIdentity(config, manifest, "push", "@acme/library@1.2.0"),
   ).toThrow("Tag");
   expect(() =>
     publisher.releaseIdentity(
       config,
       { ...manifest, version: "1.2.0-beta.0" },
       "push",
-      "library-v1.2.0-beta.0",
+      "@acme/library@1.2.0-beta.0",
     ),
   ).toThrow("canonical");
   expect(() => {

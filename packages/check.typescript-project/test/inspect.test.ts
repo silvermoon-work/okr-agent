@@ -207,12 +207,7 @@ it("keeps eligible npm checks reachable without repeating an unavailable sibling
   });
   await put(root, "packages/bad/package.json", "{");
   await put(root, "packages/bad/src/index.ts", "export const bad = 1;");
-  await put(root, "silvermoon.yaml", {
-    deliverables: [
-      { path: ".", type: "npm", packageId: "library" },
-      { path: "packages/bad", type: "npm", packageId: "bad" },
-    ],
-  });
+  await put(root, "packages/bad/deliverable.yaml", { type: "npm" });
   const packageManifest = await new Files(
     root,
     new AbortController().signal,

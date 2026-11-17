@@ -189,9 +189,7 @@ export async function fixture(root: string): Promise<void> {
 
 export async function npmFixture(root: string): Promise<void> {
   await fixture(root);
-  await put(root, "silvermoon.yaml", {
-    deliverables: [{ path: ".", type: "npm", packageId: "library" }],
-  });
+  await put(root, "deliverable.yaml", { type: "npm" });
   const assets = await testEvidence();
   await put(root, "package.json", {
     ...manifest,
@@ -295,9 +293,7 @@ export async function npmFixture(root: string): Promise<void> {
 
 export async function cloudflareFixture(root: string): Promise<void> {
   await fixture(root);
-  await put(root, "silvermoon.yaml", {
-    deliverables: [{ path: ".", type: "cloudflare" }],
-  });
+  await put(root, "deliverable.yaml", { type: "cloudflare" });
   const versions = {
     wrangler: "4.162.0",
     "@cloudflare/vitest-plugin": "1.8.2",

@@ -64,7 +64,7 @@
 - Root `lint-package` directly runs `turbo run lint-package`; each member
   declaring the command runs it after its own build. Only npm delivery members
   currently declare `lint-package: publint`. Daily package lint deliberately
-  does not enumerate or cross-check `silvermoon.yaml`. The unchanged fixed
+  does not enumerate or cross-check package-local `deliverable.yaml`. The fixed
   release publisher separately validates the delivery list and runs publint on
   the exact selected tarball; this simplification does not change release scope.
 - Member commands operate in their own working directory. Shared Vitest is
@@ -107,12 +107,14 @@
 
 - Keep repository release knowledge here, not in a project skill. See
   [README](../README.md#publish-one-package) for setup and commands.
-- Release one explicitly mapped package with `<package-id>-v<version>` tags.
+- Release one explicitly declared package with `<full-npm-name>@<version>` tags.
   Never batch-publish workspaces or automatically release dependencies.
-- Register each actual npm delivery in root `silvermoon.yaml` with its exact
-  `path`, `type: npm` and existing `packageId`; read name/version from the
-  manifest. Keep the root, apps, and preset core example private and
-  unregistered for npm. Historical example mappings do not authorize delivery.
+- Register each actual npm delivery in its own `deliverable.yaml` with
+  `type: npm`; derive its path from the package location and name/version from
+  its manifest. Manual `PACKAGE_INPUT` uses the full npm name including scope.
+  Remove legacy root `silvermoon.yaml`; do not maintain parallel target sources.
+  Keep the root, apps, and preset core example private and unregistered for npm.
+  Historical example mappings do not authorize delivery.
 - Require the tag's package identity and exact version to match both the tagged
   commit's manifest and the packed manifest, including prerelease suffixes.
 - Publish stable versions to `latest` and prerelease versions to `rc`.
@@ -202,3 +204,9 @@
   consumer migration. This supersedes the earlier normalization-only source
   freeze for that change, not the quality or publishing protections. Cloudflare
   platform checks and deployment remain a separate phase.
+- The user subsequently authorized migrating that root delivery list to each
+  package's `deliverable.yaml`, containing its delivery `type`, across the gate,
+  fixed publisher, workflow, Check standard and consumers. Full manifest npm
+  names replace separately configured IDs, and new release tags use
+  `<name>@<version>`. This supersedes the root-list location and old tag format;
+  historical tags and published artifacts remain unchanged.

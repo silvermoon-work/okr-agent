@@ -1,11 +1,11 @@
 name: Publish one verified npm package
 on:
   push:
-    tags: ["*-v*"]
+    tags: ["**@*"]
   workflow_dispatch:
     inputs:
       package:
-        description: Explicit package ID for dry run only
+        description: Full npm package name (including scope), for dry run only
         required: true
         type: string
 permissions: {}

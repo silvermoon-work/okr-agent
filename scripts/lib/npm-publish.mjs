@@ -37,9 +37,8 @@ export function configuration(value) {
   assert(value.schemaVersion === 1, "Unsupported publisher profile");
   keys(value.package, ["id", "name", "directory"]);
   assert(
-    typeof value.package.id === "string" &&
-      /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value.package.id),
-    "Invalid package ID",
+    value.package.id === value.package.name,
+    "Package ID must equal the full npm package name",
   );
   assert(
     typeof value.package.name === "string" &&
@@ -237,13 +236,13 @@ export function resolveConfiguration(
       ? projects.some(
           (project) =>
             project.directory === mapping.directory &&
-            ref === `${mapping.id}-v${project.manifest.version}`,
+            ref === `${mapping.name}@${project.manifest.version}`,
         )
-      : event === "workflow_dispatch" && input === mapping.id,
+      : event === "workflow_dispatch" && input === mapping.name,
   );
   assert(
     selected.length === 1,
-    "Release event must explicitly select exactly one package ID/tag",
+    "Release event must explicitly select exactly one full npm package name or name@version tag",
   );
   const config = configuration({
     schemaVersion: 1,
@@ -278,12 +277,12 @@ export function releaseIdentity(config, manifest, event, ref, input) {
   );
   if (event === "push")
     assert(
-      ref === `${config.package.id}-v${manifest.version}`,
+      ref === `${config.package.name}@${manifest.version}`,
       "Tag identity/version mismatch",
     );
   else
     assert(
-      input === config.package.id,
+      input === config.package.name,
       "Manual dry run must select the mapped package",
     );
   return {
@@ -648,7 +647,13 @@ export async function publish(mode) {
   const nodes = workflowMatrix(
     readFileSync(".github/workflows/ci.yaml", "utf8"),
   );
-  const mappings = npmMappings(loadDeliverables(process.cwd()), projects);
+  const mappings = npmMappings(
+    loadDeliverables(
+      process.cwd(),
+      projects.map((project) => project.directory),
+    ),
+    projects,
+  );
   const config = resolveConfiguration(
     projects,
     mappings,

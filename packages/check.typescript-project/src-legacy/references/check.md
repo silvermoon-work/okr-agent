@@ -11,7 +11,8 @@
    lockfile
    importer 的 specifier/version。major>=1 追同 major，0.minor 追同 minor 的 patch，0.0.patch 精确锁定；声明及已解析版本都检查。校验工具 Node 与已解析 peer 兼容；其他 snapshot 不能替代本 importer。
 3. 规范与交付：独立检查 strict、五项 safety、源码与测试类型感知 lint、格式配置和忽略范围、测试发现、未触达文件 coverage.include；四项全局覆盖率门限须明确声明为有限的 0..100 百分比，数值由项目决定，不设统一最低值；显式 watch/passWithNoTests 不得放宽。实际 npm
-   ESM 职责由根 silvermoon.yaml 的 npm 项明确选择，附加检查身份/许可/链接、exports、files、已声明的构建/映射配置及 build/lint-package 接口。声明 npm 而 private:true 明确拒绝，未登记的 private 示例不被旧映射机械启用；通用质量及适用构建配置仍检查，不强迫解除 private。[交付描述](deliverables.md)说明开放类型、安全路径和单一来源迁移。
+   ESM 职责由各包 deliverable.yaml 的 type:
+   npm 明确选择，附加检查身份/许可/链接、exports、files、已声明的构建/映射配置及 build/lint-package 接口。声明 npm 而 private:true 明确拒绝，未登记的 private 示例不被旧映射机械启用；通用质量及适用构建配置仍检查，不强迫解除 private。[交付描述](deliverables.md)说明开放类型、安全路径和单一来源迁移。
 4. Agent 接口：根 typecheck、lint、format-check、format、test、test-coverage、check 仍必需；成员按职责提供动作，不要求机械复制根接口。所有 package
    scripts（含可选动作与生命周期动作）名称均禁止冒号，只允许无参数的
    `node scripts/<同名>.mjs`。scripts 顶层文件与 package
@@ -57,7 +58,7 @@ token 配置；根 packageManager 使用 pnpm，自动 npm 缓存不适用，显
   snapshot 和 packages 记录。不会拿其他 importer、共享声明或全局可匹配版本代替实际上下文；缺项、冲突、散列后缀及未知协议无法确认。Vite 自动安装为 Vitest
   peer 时不强制添加未直接使用的 devDependency；检查所选版本及其 Node 兼容性。后缀最多 8192 字符、64 个直接绑定、32 层，不做任意依赖图遍历。
 
-发布只从根 silvermoon.yaml 的显式 npm 项选择，再核对真实 manifest、workspace、workflow，不推导交付意图或复制矩阵。单目标也要求声明，旧 release.config.json/release-packages 数据必须迁移并移除。由既有 CI
+发布只从各包 deliverable.yaml 的显式 npm 声明选择，再核对真实 manifest、workspace、workflow，不推导交付意图或复制矩阵。单目标也要求声明，旧根清单及 release.config.json/release-packages 数据必须迁移并移除。tag 使用完整名称@版本，手动参数使用完整名称。由既有 CI
 package
 input/PACKAGE_INPUT 或准确 tag 每次唯一选择，不批量发布。未知或冲突的映射 fail-closed，不以任意 JavaScript 或自定义 verifier 代替证明。固定 release/release-dry-run 顶层入口共用 scripts/lib/npm-publish.mjs；CI 仅通过 pnpm
 release/pnpm

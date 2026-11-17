@@ -96,9 +96,7 @@ it("uses the canonical declaration and rejects legacy sources without inferring 
   );
   expect(report).not.toHaveBeenCalled();
   const declared = memory({
-    "silvermoon.yaml": JSON.stringify({
-      deliverables: [{ path: ".", type: "npm", packageId: "root" }],
-    }),
+    "deliverable.yaml": JSON.stringify({ type: "npm" }),
   });
   await mappingEvidence(declared, [project], report);
   expect(report).toHaveBeenCalledWith(

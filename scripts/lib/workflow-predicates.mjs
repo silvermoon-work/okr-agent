@@ -539,9 +539,9 @@ export function workflowPredicates(workflow, kind = "quality", native = []) {
     const events = obj(workflow.on);
     expect(
       Array.isArray(obj(events.push).tags) &&
-        obj(events.push).tags.includes("*-v*"),
+        obj(events.push).tags.includes("**@*"),
       "on.push.tags",
-      "package-id version release tags covered",
+      "full npm package name@version release tags covered, including scoped names",
       events.push,
     );
     expect(

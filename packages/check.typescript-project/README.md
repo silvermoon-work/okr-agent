@@ -4,6 +4,11 @@
 并在 monorepo 中检查 pnpm workspace 配置。single repo 暂为通过叶节点。
 不会执行旧实现中的工具、scripts 或交付规则。
 
+随包交付的发布标准资产采用各包 `deliverable.yaml` 的 `type` 声明，
+发布 tag 使用 `<完整 npm 包名>@<版本>`，手动选择使用完整 npm 包名。
+这些资产及旧实现回归已同步迁移；当前生产检查树仍不执行交付规则，
+不能将资产更新视为新增了生产检查能力。
+
 ## 当前规则
 
 - 根 `package.json` 必须是可解析的 JSON 对象。

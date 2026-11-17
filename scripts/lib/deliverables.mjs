@@ -4,19 +4,31 @@ import { parseDocument } from "yaml";
 
 export class DeliverablesError extends Error {
   constructor(status, message) {
-    super(`silvermoon.yaml: ${message}`);
+    super(`deliverable.yaml: ${message}`);
     this.status = status;
   }
 }
 function requireValue(condition, status, message) {
   if (!condition) throw new DeliverablesError(status, message);
 }
+function canonicalDirectory(directory) {
+  return (
+    typeof directory === "string" &&
+    (directory === "." ||
+      (!/[:\\*?[\]{}<>|]/.test(directory) &&
+        ![...directory].some((character) => character.charCodeAt(0) < 32) &&
+        directory
+          .split("/")
+          .every((part) => part && part !== "." && part !== "..")))
+  );
+}
 export const legacyDeliveryPaths = [
+  "silvermoon.yaml",
   "scripts/lib/release-packages.mjs",
   "scripts/release-packages.js",
   "release.config.json",
 ];
-export function parseDeliverables(source) {
+export function parseDeliverables(source, directory = ".") {
   if (source === undefined) return [];
   const document = parseDocument(source, { uniqueKeys: true });
   requireValue(
@@ -39,81 +51,40 @@ export function parseDeliverables(source) {
     "expected an object",
   );
   requireValue(
-    Object.keys(value).every((key) => key === "deliverables"),
+    !["path", "packageId", "deliverables"].some((key) =>
+      Object.hasOwn(value, key),
+    ),
     "mismatch",
-    "only deliverables is supported at the root",
+    "path, packageId and root deliverables are not supported; declare type in each package",
   );
-  requireValue(
-    Object.hasOwn(value, "deliverables"),
-    "missing",
-    "deliverables is required",
-  );
-  requireValue(
-    Array.isArray(value.deliverables),
-    "mismatch",
-    "deliverables must be a list",
-  );
-  const paths = new Set();
-  const ids = new Set();
-  return value.deliverables.map((item) => {
-    requireValue(
-      item && typeof item === "object" && !Array.isArray(item),
-      "mismatch",
-      "each deliverable must be an object",
-    );
-    for (const field of ["path", "type"])
+  return [value].map((item) => {
+    for (const field of ["type"])
       requireValue(
         Object.hasOwn(item, field),
         "missing",
         `${field} is required`,
       );
     requireValue(
-      typeof item.path === "string" &&
-        (item.path === "." ||
-          (!/[:\\*?[\]{}<>|]/.test(item.path) &&
-            ![...item.path].some((character) => character.charCodeAt(0) < 32) &&
-            item.path
-              .split("/")
-              .every((part) => part && part !== "." && part !== ".."))),
+      canonicalDirectory(directory),
       "mismatch",
       "path must be an explicit root-relative directory",
     );
     requireValue(
-      !paths.has(item.path),
-      "mismatch",
-      `duplicate path ${item.path}`,
-    );
-    paths.add(item.path);
-    requireValue(
       typeof item.type === "string" &&
         /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(item.type),
       "mismatch",
-      `invalid type for ${item.path}`,
+      `invalid type for ${directory}`,
     );
-    if (item.type === "npm") {
-      requireValue(
-        Object.hasOwn(item, "packageId"),
-        "missing",
-        `${item.path}: npm packageId is required`,
-      );
-      requireValue(
-        typeof item.packageId === "string" &&
-          /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(item.packageId),
-        "mismatch",
-        `${item.path}: invalid npm packageId`,
-      );
-      requireValue(
-        !ids.has(item.packageId),
-        "mismatch",
-        `duplicate npm packageId ${item.packageId}`,
-      );
-      ids.add(item.packageId);
-    }
-    return item;
+    return { ...item, path: directory };
   });
 }
 export function validateDeliveryPaths(root, entries) {
   for (const entry of entries) {
+    requireValue(
+      canonicalDirectory(entry.path),
+      "mismatch",
+      "path must be an explicit root-relative directory",
+    );
     let path = resolve(root);
     for (const part of [
       "",
@@ -144,6 +115,7 @@ export function validateDeliveryPaths(root, entries) {
   }
 }
 export function npmMappings(entries, projects) {
+  const names = new Set();
   return entries
     .filter((entry) => entry.type === "npm")
     .map((entry) => {
@@ -162,39 +134,57 @@ export function npmMappings(entries, projects) {
         `${entry.path}: private npm target is forbidden`,
       );
       requireValue(
-        typeof manifest.name === "string",
+        typeof manifest.name === "string" &&
+          /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(
+            manifest.name,
+          ),
         "missing",
-        `${entry.path}: npm manifest name is required`,
+        `${entry.path}: valid npm manifest name is required`,
       );
+      requireValue(
+        !names.has(manifest.name),
+        "mismatch",
+        `duplicate npm package name ${manifest.name}`,
+      );
+      names.add(manifest.name);
       return {
-        id: entry.packageId,
+        id: manifest.name,
         name: manifest.name,
         directory: entry.path,
       };
     });
 }
-export function loadDeliverables(root) {
+export function loadDeliverables(root, directories = ["."]) {
   for (const path of legacyDeliveryPaths)
     requireValue(
       !existsSync(resolve(root, path)),
       "mismatch",
       `legacy delivery source conflicts with the new standard: ${path}`,
     );
-  const file = resolve(root, "silvermoon.yaml");
-  let source;
-  try {
-    const info = lstatSync(file);
-    requireValue(
-      info.isFile() && !info.isSymbolicLink() && realpathSync(file) === file,
-      "unconfirmed",
-      "expected a regular non-redirected file",
-    );
-    requireValue(info.size <= 1_048_576, "unconfirmed", "file exceeds 1MiB");
-    source = readFileSync(file, "utf8");
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-  }
-  const entries = parseDeliverables(source);
-  validateDeliveryPaths(root, entries);
-  return entries;
+  return [...new Set(directories.map((directory) => directory || "."))].flatMap(
+    (directory) => {
+      const file = resolve(root, directory, "deliverable.yaml");
+      validateDeliveryPaths(root, [{ path: directory }]);
+      let source;
+      try {
+        const info = lstatSync(file);
+        requireValue(
+          info.isFile() &&
+            !info.isSymbolicLink() &&
+            realpathSync(file) === file,
+          "unconfirmed",
+          `${directory}: expected a regular non-redirected file`,
+        );
+        requireValue(
+          info.size <= 1_048_576,
+          "unconfirmed",
+          "file exceeds 1MiB",
+        );
+        source = readFileSync(file, "utf8");
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+      return parseDeliverables(source, directory);
+    },
+  );
 }

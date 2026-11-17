@@ -13,7 +13,18 @@ environment；配置 Trusted Publisher 不等于授权任意版本发布。
 首次发布后，在消费仓库根包的 devDependencies 中固定已发布的准确版本。
 不要在本工具包自己的依赖中添加自己，也不要让发布自动使用同仓尚未发布的候选实现。
 
-将以下生命周期脚本添加到**实际发布的成员包**，不是仅添加到私有根包：
+在**实际发布包**的目录（单包仓库即根目录）创建 `deliverable.yaml`：
+
+```yaml
+type: npm
+```
+
+包名和版本从同目录的 `package.json` 读取，不配置 `path` 或 `packageId`，
+不继承父目录声明，也不再读取根 `silvermoon.yaml`
+交付清单；旧清单存在时明确拒绝。
+monorepo 每个交付包各自声明，私有聚合根无需声明。
+
+将以下生命周期脚本添加到**实际发布包**，不是仅添加到私有聚合根包：
 
 ```json
 {
@@ -57,8 +68,8 @@ publish-gate --version
 ## 首版固定约定
 
 - 当前目录是被发布包的非重定向目录，Git 根是受信任的工作区；
-  根 `silvermoon.yaml` 的 `deliverables` 中以准确路径、唯一 `packageId`
-  显式登记为 `type: npm`。
+  当前目录的 `deliverable.yaml` 显式声明 `type: npm`。
+  不要求 pnpm workspace，根目录单包与成员包使用同一检查流程。
 - 使用当前 manifest 的包名和规范 `x.y.z` / `x.y.z-rc.n`，禁止 private 包和
   placeholder 身份。`publishConfig` 只支持 `registry`、`access` 和可选 `tag`，
   且必须与发布选项一致；scope registry 不得重定向到其他 registry。
@@ -67,8 +78,10 @@ publish-gate --version
   `refs/remotes/origin/main` 的历史。workflow 必须完整获取历史与 main 引用，
   不在门禁中 fetch、切分支或修复工作区。
 - 发布 workflow 的身份必须是当前仓库的 `publish-npm.yaml`。
-  tag push 使用 `<packageId>-v<version>`，tag 解引用后等于当前 SHA；
-  手动 dispatch 必须 `--dry-run` 且 `PACKAGE_INPUT` 等于选中包的 ID。
+  tag push 使用 `<完整 npm 包名>@<version>`，例如
+  `@silvermoon-work/widget@0.1.0-rc.0`，tag 解引用后等于当前 SHA；
+  手动 dispatch 必须 `--dry-run` 且 `PACKAGE_INPUT` 等于选中包的完整 npm 包名。
+  发布 workflow 的 tag 过滤需覆盖 scope 中的 `/`，例如 `tags: ["**@*"]`。
 - GitHub API 上该准确 SHA 最新的 `ci.yaml` main push run 必须成功，
   `Quality default`、兼容矩阵中每个 `Node.js <version>`、
   `Release verification (v1)` 和其中的

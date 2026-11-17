@@ -178,7 +178,7 @@ it("reports an undeclared delivery once and resumes derived release checks after
   expect(undeclared[0]?.brief).toContain(
     ".github/workflows/publish.yaml:publish",
   );
-  await put(root, "silvermoon.yaml", { deliverables: [] });
+  await put(root, "deliverable.yaml", { type: "none" });
   const declared = (await check()).filter(
     (p) => p.code.startsWith("delivery-") || p.code.startsWith("release-"),
   );
@@ -194,7 +194,7 @@ it("rejects direct publication precisely instead of speculating about custom gua
       registry: "https://registry.npmjs.org/",
     },
   });
-  await put(root, "silvermoon.yaml", { deliverables: [] });
+  await put(root, "deliverable.yaml", { type: "none" });
   await put(
     root,
     ".github/workflows/release.yaml",
@@ -877,7 +877,7 @@ it("rejects known unsafe release configuration without accepting guard keywords 
     },
     exports: { ".": { import: "./dist/index.js", types: "./dist/index.d.ts" } },
   });
-  await put(root, "silvermoon.yaml", { deliverables: [] });
+  await put(root, "deliverable.yaml", { type: "none" });
   await put(
     root,
     ".github/workflows/release.yaml",

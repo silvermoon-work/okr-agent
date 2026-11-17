@@ -49,11 +49,14 @@ aggregate-root or artificial maintenance-package suite. Add or update package
 tests for package behavior changes. Keep public exports in `src/index.ts`, and
 treat changes to those exports as API changes.
 
-Register actual external deliverables in root `silvermoon.yaml`; npm items use
-their existing `packageId` for tag identity. Do not infer delivery from private
-flags, Wrangler files or old preset mappings. Keep the core example private and
-unregistered for npm. Daily `pnpm lint-package` uses member script declarations
-through Turbo, not the delivery list; only npm delivery members should declare
+Register each external deliverable in its package's `deliverable.yaml` with
+`type: npm` (or its other delivery type). Read identity from `package.json`;
+release tags use `<full-npm-name>@<version>` and manual selectors use the full
+npm name, including scope. Do not infer delivery from private flags, Wrangler
+files or old preset mappings. Keep the core example private and unregistered for
+npm. Daily `pnpm lint-package` uses member script declarations through Turbo,
+not the delivery list; only npm delivery members should declare
 `lint-package: publint`. The unchanged release publisher separately validates
-`silvermoon.yaml` and the exact selected tarball. Do not copy command/delivery
-libraries into each member.
+package-local declarations and the exact selected tarball. Legacy root
+`silvermoon.yaml` and separate release mappings must be removed, not used as
+fallbacks. Do not copy command/delivery libraries into each member.

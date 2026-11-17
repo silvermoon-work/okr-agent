@@ -14,9 +14,7 @@ beforeEach(async () => {
   root = resolve("dist", `.cloudflare-${randomUUID()}`);
   await mkdir(root, { recursive: true });
   await fixture(root);
-  await put(root, "silvermoon.yaml", {
-    deliverables: [{ path: ".", type: "cloudflare" }],
-  });
+  await put(root, "deliverable.yaml", { type: "cloudflare" });
   const manifest = record(
     JSON.parse(await readFile(join(root, "package.json"), "utf8")) as unknown,
   );

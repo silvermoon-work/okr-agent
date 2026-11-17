@@ -1038,7 +1038,7 @@ export function projectRegistry(
               ...projects.flatMap((p) => [...p.sources, ...p.tests]),
               ...configurationPaths.filter(
                 (path) =>
-                  /(?:^|\/)(?:silvermoon\.yaml|package\.json|pnpm-workspace\.yaml|turbo\.json|release\.config\.json|tsconfig[^/]*\.json|(?:eslint|vitest|vite|prettier)\.config\.[cm]?[jt]s|\.prettierrc(?:\.[^/]+)?)$/.test(
+                  /(?:^|\/)(?:deliverable\.yaml|package\.json|pnpm-workspace\.yaml|turbo\.json|release\.config\.json|tsconfig[^/]*\.json|(?:eslint|vitest|vite|prettier)\.config\.[cm]?[jt]s|\.prettierrc(?:\.[^/]+)?)$/.test(
                     path,
                   ) || /^\.github\/workflows\/[^/]+\.ya?ml$/.test(path),
               ),

@@ -56,7 +56,7 @@ it("reports legacy mapping migration without importing or using it to select tar
       },
     );
     expect(issues).toEqual([
-      "scripts/lib/release-packages.mjs: 旧交付来源须迁移到 silvermoon.yaml；不回退或并行选择",
+      "scripts/lib/release-packages.mjs: 旧交付来源须迁移到包内 deliverable.yaml；不回退或并行选择",
     ]);
   } finally {
     await rm(root, { recursive: true, force: true });

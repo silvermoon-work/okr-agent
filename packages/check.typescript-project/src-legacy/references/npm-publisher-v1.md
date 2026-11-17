@@ -2,22 +2,25 @@
 
 这是一个有限的固定发布 profile，不是对任意发布脚本的关键词评审。适用于明确的 TypeScript
 ESM npm 交付包及 GitHub
-origin/main；支持根/唯一代码包和 monorepo 显式选中的一个成员。仅根交付清单的 npm 项适用此 profile；声明 npm 但 private:true 明确拒绝，其他 private 包不因 manifest 特征被推定为 npm。聚合根可为明确非私有成员提供发布入口。workflow 不得绕过 private 保护。多格式、JSX、自定义发布器及不能确认的配置仍准确报告证据不足。
+origin/main；支持根/唯一代码包和 monorepo 显式选中的一个成员。仅包内 deliverable.yaml 声明 type:
+npm 的项目适用此 profile；声明 npm 但 private:true 明确拒绝，其他 private 包不因 manifest 特征被推定为 npm。聚合根可为明确非私有成员提供发布入口。workflow 不得绕过 private 保护。多格式、JSX、自定义发布器及不能确认的配置仍准确报告证据不足。
 
 ## single-package
 
-唯一 npm 目标也须由根 `silvermoon.yaml` 显式登记，`path: .`
-表示根包，`packageId`
-保留既有标签 ID，不从 manifest 或目录推测。只有 catalog 或 workspace 声明不改变根包发布职责。唯一代码包位于声明成员时使用其真实目录，不用聚合根身份/版本冒充。使用下列同一套入口/核心，不要求额外 workspace
+唯一 npm 目标也须在自身 `deliverable.yaml` 声明 `type: npm`，文件与
+`package.json`
+同目录，不配置路径或独立 ID。只有 catalog 或 workspace 声明不改变根包发布职责。唯一代码包位于声明成员时使用其真实目录，不用聚合根身份/版本冒充。使用下列同一套入口/核心，不要求额外 workspace
 adapter。根包 build 在根执行，成员 build 通过明确包名选择，pack 始终限定映射目录。
 
 ## workspace
 
-存在多个 npm 目标时同样只从根 `silvermoon.yaml`
-的 npm 项生成 ID/name/directory 映射，名称读取真实成员 manifest，路径精确对应成员。旧 release-packages 模块与 release.config.json 必须移除，不能并行或回退；详见[迁移规则](deliverables.md#迁移)。不重复版本或矩阵。每次由准确
-`<id>-v<manifest.version>` tag 或已有 workflow_dispatch 的 package
-input（PACKAGE_INPUT）显式选择唯一目标，不能省略、猜测或选择 all。根提供无参数 release/release-dry-run；构建使用 pnpm
---filter "<准确包名>..." run
+存在多个 npm 目标时只读取各成员 `deliverable.yaml`
+的 npm 声明，名称读取真实成员 manifest，路径精确对应成员；内部映射 ID 与完整名称相同，不可单独配置。旧根清单、release-packages 模块与 release.config.json 必须移除，不能并行或回退；详见[迁移规则](deliverables.md#发布身份与迁移)。不重复版本或矩阵。每次由准确
+`<完整 npm 名称>@<manifest.version>` tag 或 workflow_dispatch 的 package
+input（PACKAGE_INPUT，完整 npm 名称）显式选择唯一目标，不能省略、猜测或选择 all。workflow 使用
+`tags: ["**@*"]` 覆盖 scope 中的
+`/`。根提供无参数 release/release-dry-run；构建使用 pnpm --filter
+"<准确包名>..." run
 build，可涵盖依赖，只对选中目录 pack/校验/publish 一次。其他成员不会因依赖关系自动发布。无需另一份 adapter 或复制保护核心；问题 brief 按实际职责链接本节及准确资产。
 
 ## 配置入口
@@ -43,7 +46,7 @@ release-dry-run，不接受内部 Node 调用、裸 publish 或额外发布命�
 `.github/workflows/ci.yaml`，不维护复制列表。所有 package
 script 名称禁止冒号，命令严格为 node scripts/<同名>.mjs 且无参数。
 
-不新增另一份发布描述。根交付清单同时服务固定命令和 publisher；stable/RC 版本始终由选中包 manifest 唯一决定。根 devDependencies 明确声明公开 semver、publint 以及固定核心所用的 yaml/acorn 数据解析库；规定开发工具引用根 pnpm-workspace.yaml 默认/named
+不新增另一份发布描述。包内交付声明同时服务固定命令和 publisher；stable/RC 版本始终由选中包 manifest 唯一决定。根 devDependencies 明确声明公开 semver、publint 以及固定核心所用的 yaml/acorn 数据解析库；规定开发工具引用根 pnpm-workspace.yaml 默认/named
 catalog，并按准确 importer、新鲜度和兼容性规则验证，非规定工具不扩展版本政策。没有目标
 `.npmrc`、`.npmignore` 覆盖；`.release-artifacts/`
 明确加入 gitignore。未知认证/文件选择覆盖不被假定安全。
@@ -63,7 +66,7 @@ catalog，并按准确 importer、新鲜度和兼容性规则验证，非规定�
 标准程序沿用仓库已有逐包 identity、manifest/artifact、SemVer 和 registry
 fail-closed 的实现方式，并将有限 profile 的完整门卫保存在单一可审查资源中：
 
-1. 从根交付清单的 npm 项、实际 manifest/workspace 和事件唯一选择真实根包或一个声明成员；未登记目标不可选择，必要事实歧义即阻断。拒绝 private/占位身份、非 stable/rc、错包和 tag 版本不一致。stable 只选择 latest，RC 只选择 rc。
+1. 从包内 npm 声明、实际 manifest/workspace 和事件唯一选择真实根包或一个声明成员；未登记目标不可选择，必要事实歧义即阻断。拒绝 private/占位身份、非 stable/rc、错包和 tag 版本不一致。stable 只选择 latest，RC 只选择 rc。
 2. release tag 触发固定发布 CI，明确解引用 tag 的完整 commit
    SHA 并核对实际 HEAD，对 main 可达。查询同仓库已有固定 ci.yaml 的 main/push/相同完整 SHA 最新 run，不回退旧成功；核对 completed/success、run
    attempt，完整必需 job/矩阵及版本化聚合 step，再读 run 确认 attempt 未变化。没结果、运行中、PR、其他 workflow/SHA/分支、缺项、失败/取消/跳过、分页不完整或查询失败均直接阻断，不补跑 check、不派发补跑质量 CI。发布复用其成绩，不重复 pnpm
@@ -76,8 +79,8 @@ fail-closed 的实现方式，并将有限 profile 的完整门卫保存在单�
    OIDC 能力，拒绝 npm 长效 token。job 明确 npm environment、contents/actions
    read 与 id-token:write。npm 网站上的 Trusted
    Publisher 登记和线上权限仍需独立验证。
-6. workflow_dispatch 只接受明确 package
-   ID，按真实 manifest 选 latest/rc，以同一 tarball 执行 --dry-run；不发布、不改 dist-tag/版本。只有显式 push 的准确 tag 才走发布分支。
+6. workflow_dispatch 只接受明确的完整 npm 包名，按真实 manifest 选 latest/rc，
+   以同一 tarball 执行 --dry-run；不发布、不改 dist-tag/版本。只有显式 push 的准确 tag 才走发布分支。
 
 远程发布器只在 GitHub Actions 主入口实际运行，其 canonical npm/GitHub
 API 端点属于该明确远程发布职责；Check 在本机仅比较资源字节，绝不执行此程序。作者测试只导入作者资源的纯守卫函数并传入确定性数据，不执行 CLI 或发包。

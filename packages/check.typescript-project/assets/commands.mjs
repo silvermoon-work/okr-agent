@@ -323,7 +323,7 @@ export function discover(root, list = execFileSync) {
     }
     return found;
   };
-  const entries = loadDeliverables(root);
+  const entries = loadDeliverables(root, directories);
   const projects = configuration(
     directories.map((directory) => {
       const manifest = JSON.parse(
