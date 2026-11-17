@@ -4,7 +4,11 @@ import { afterEach, expect, it, vi } from "vitest";
 import { main } from "../src/cli.js";
 
 const check = vi.hoisted(() => vi.fn());
-vi.mock("../src/index.js", () => ({ checkPublishContext: check }));
+const target = vi.hoisted(() => vi.fn());
+vi.mock("../src/index.js", () => ({
+  checkPublishContext: check,
+  selectPublishTarget: target,
+}));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -42,13 +46,14 @@ it.each([
   ["-h"],
   ["check", "--help"],
   ["check", "-h"],
+  ["target", "--help"],
   ["--version"],
 ])(
   "provides help/version without touching Git or services: %j",
   async (...args) => {
     const output = streams();
     expect(await main(args)).toBe(0);
-    expect(output.out).toMatch(/publish-gate|0\.1\.0-rc\.0/);
+    expect(output.out).toMatch(/publish-gate|0\.1\.0-rc\.1/);
     expect(output.err).toBe("");
     expect(check).not.toHaveBeenCalled();
   },
@@ -78,6 +83,26 @@ it.each([false, true])("reports gate success, dryRun=%s", async (dryRun) => {
   );
   expect(output.err).toBe("");
 });
+
+it.each([false, true])(
+  "prints the selected target without running the publication gate, JSON=%s",
+  async (json) => {
+    const output = streams();
+    const selected = {
+      directory: "packages/widget",
+      name: "@silvermoon-work/widget",
+      version: "1.0.0",
+      channel: "latest",
+      packageId: "widget",
+    };
+    target.mockReturnValue(selected);
+    expect(await main(json ? ["target", "--json"] : ["target"])).toBe(0);
+    if (json) expect(JSON.parse(output.out)).toEqual(selected);
+    else expect(output.out).toContain("@silvermoon-work/widget@1.0.0");
+    expect(output.err).toBe("");
+    expect(check).not.toHaveBeenCalled();
+  },
+);
 
 it("reports failures on stderr without stack traces or success output", async () => {
   const output = streams();

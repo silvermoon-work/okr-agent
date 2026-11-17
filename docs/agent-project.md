@@ -13,11 +13,13 @@
 - Name every workspace package, including the private root, under
   `@silvermoon-work/*`. Keep imports, workspace dependencies, release mappings,
   and documentation consistent when renaming packages.
-- Development-tool packages use `@silvermoon-work/devtool.<name>`.
-  `devtool.publish-gate` is an independent npm candidate, not yet a replacement
-  for the fixed publisher or a root dependency. First publish it through the
-  existing workflow; only then adopt a pinned published development dependency.
-  Keep publication authorization separate from Trusted Publisher setup.
+- Development-tool packages use `@silvermoon-work/devtool.<name>`. The root pins
+  the published `devtool.publish-gate` rc.0 as a registry development
+  dependency, never a workspace link to its candidate source. Candidate rc.1
+  adds native pnpm context/protocol support and a read-only target selector;
+  bootstrap it through the existing publisher before switching the workflow to
+  the published fix. Keep publication authorization separate from Trusted
+  Publisher setup.
 - Keep workspace build, test, test-coverage, lint-package and typecheck
   responsibilities aligned with `turbo.json`. Turbo reads workspace membership
   and dependency order; do not duplicate that graph in a custom scheduler. Run
@@ -41,9 +43,9 @@
   uses standard config discovery rather than the former wrappers' disabled
   config loading; no Vite config is currently present. Keep scripts only for
   logic not adequately expressed by standard tool commands and configuration. Do
-  not restore copied command/delivery libraries in every member. Extracting the
-  fixed publisher into a shared development dependency is deferred; leave its
-  implementation and release entries unchanged in this round.
+  not restore copied command/delivery libraries in every member. Publisher
+  migration is staged: retain the fixed implementation for bootstrapping the
+  pnpm-capable gate, then consume the published fix before removing the copies.
 - Root `check` directly chains pnpm commands with `&&` and stops at the first
   failure: format-check, build, typecheck, whole-repository lint, package
   test-coverage, then npm package lint. Root configuration TypeScript is checked

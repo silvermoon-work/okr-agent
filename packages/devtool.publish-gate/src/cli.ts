@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { Command, CommanderError } from "commander";
-import { checkPublishContext } from "./index.js";
+import { checkPublishContext, selectPublishTarget } from "./index.js";
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const manifest = JSON.parse(
@@ -15,6 +15,20 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     .exitOverride()
     .showHelpAfterError()
     .addHelpText("after", '\nHook: "prepublishOnly": "publish-gate check"');
+  program
+    .command("target")
+    .description(
+      "Select the declared package for this event; this does not approve publication.",
+    )
+    .option("--json", "write the target as JSON for workflow orchestration")
+    .action((options: { json?: boolean }) => {
+      const result = selectPublishTarget();
+      process.stdout.write(
+        options.json
+          ? `${JSON.stringify(result)}\n`
+          : `${result.name}@${result.version} (${result.directory}, ${result.channel})\n`,
+      );
+    });
   program
     .command("check")
     .description(

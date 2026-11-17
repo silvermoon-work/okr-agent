@@ -6,8 +6,9 @@
 
 [`@silvermoon-work/devtool.publish-gate`](packages/devtool.publish-gate/README.md)
 是只读的 npm `prepublishOnly` 发布上下文门禁，检查准确提交的 CI、Git/tag、
-交付声明和 registry 状态，不接管构建、打包和发布。当前为未迁移的独立候选，
-首次发布仍使用现有发布器；根包尚不依赖它，后续固定消费已发布版本。
+交付声明和 registry 状态，不接管构建、打包和发布。rc.0 已发布且由根包固定消费，
+不是 workspace 链接。当前源码 rc.1 补齐 native pnpm 上下文和依赖协议支持；
+发布 workflow 尚未迁移，修复版先由现有发布器引导发布。
 组织内开发工具包使用 `@silvermoon-work/devtool.<name>` 命名。
 
 ## Check Task 作者入口

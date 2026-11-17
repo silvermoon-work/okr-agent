@@ -131,6 +131,9 @@ importers:
       '@eslint/js':
         specifier: 'catalog:'
         version: 10.0.1(eslint@10.15.0(supports-color@10.2.2))
+      '@silvermoon-work/devtool.publish-gate':
+        specifier: 0.1.0-rc.0
+        version: 0.1.0-rc.0
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.6
@@ -977,6 +980,11 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
+
+  '@silvermoon-work/devtool.publish-gate@0.1.0-rc.0':
+    resolution: {integrity: sha512-vVvJlWQ2BMZpUOkHrCbXjMXcSjnfgZmsrsqtbyLhg7oc3k2jEQyjOJ0hv08bgz3Bk/jDMNbLL2sBjSXjQ0atZQ==}
+    engines: {node: '>=22.15.0'}
+    hasBin: true
 
   '@silvermoon-work/ipfs-access@0.1.0':
     resolution: {integrity: sha512-Wrwo2z7Fr2rAql238VHBtQDyxlZ4GZjKQKGZSw11V+W5QkUylbaltg8PpnyjE2CM6ZmNyJ2bUANj99l8tfcIOw==}
@@ -3392,6 +3400,12 @@ snapshots:
     optional: true
 
   '@rolldown/pluginutils@1.0.1': {}
+
+  '@silvermoon-work/devtool.publish-gate@0.1.0-rc.0':
+    dependencies:
+      commander: 14.0.2
+      semver: 7.8.6
+      yaml: 2.9.1
 
   '@silvermoon-work/ipfs-access@0.1.0':
     dependencies:
