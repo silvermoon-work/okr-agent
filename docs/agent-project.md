@@ -70,11 +70,11 @@
   gate and standard pnpm publishing.
 - Root `lint-package` directly runs `turbo run lint-package`; each member
   declaring the command runs it after its own build. Only npm delivery members
-  currently declare `lint-package: publint`. Daily package lint deliberately
-  does not enumerate or cross-check package-local `deliverable.yaml`. The
-  installed release gate separately validates delivery intent and context.
-  Publint remains in CI; release-time exact-tarball verification is deliberately
-  no longer retained.
+  currently declare `lint-package: publint --strict`, so warnings fail the
+  check. Daily package lint deliberately does not enumerate or cross-check
+  package-local `deliverable.yaml`. The installed release gate separately
+  validates delivery intent and context. Publint remains in CI; release-time
+  exact-tarball verification is deliberately no longer retained.
 - Member commands operate in their own working directory. Shared Vitest is
   passed explicitly with `--root . --config ../../vitest.config.ts`; no hidden
   root discovery or graph reconstruction occurs inside a member command. Direct

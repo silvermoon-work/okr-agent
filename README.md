@@ -274,10 +274,11 @@ Coverage still includes untested source and enforces 90% for each of branches,
 functions, lines and statements. Tests use the shared Vitest configuration with
 each member's explicit working root. `pnpm lint-package` directly runs Turbo's
 member `lint-package` tasks after their builds. Only npm delivery members
-currently declare that script (`publint`); daily checks do not cross-check
-package-local `deliverable.yaml`. The installed publish gate separately
-validates delivery intent and publication context. Publint remains a CI quality
-check; publication does not repeat exact-tarball validation.
+currently declare that script (`publint --strict`, so warnings fail the check);
+daily checks do not cross-check package-local `deliverable.yaml`. The installed
+publish gate separately validates delivery intent and publication context.
+Publint remains a CI quality check; publication does not repeat exact-tarball
+validation.
 
 For dependency-aware targeted work:
 

@@ -35,7 +35,7 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
     "lint": "eslint . --max-warnings=0",
-    "lint-package": "publint",
+    "lint-package": "publint --strict",
     "prepublishOnly": "publish-gate check",
     "smoke": "node scripts/smoke.mjs",
     "test": "vitest run --root . --config ../../vitest.config.ts",

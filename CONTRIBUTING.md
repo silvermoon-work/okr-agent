@@ -56,11 +56,12 @@ npm name, including scope. Do not infer delivery from private flags, Wrangler
 files or old preset mappings. Keep the core example private and unregistered for
 npm. Daily `pnpm lint-package` uses member script declarations through Turbo,
 not the delivery list; only npm delivery members should declare
-`lint-package: publint`. Legacy root `silvermoon.yaml` and separate release
-mappings must be removed, not used as fallbacks. Each npm delivery member has
-`prepublishOnly: publish-gate check`, using the root's exact published registry
-development dependency rather than candidate workspace source. The workflow
-selects one registered package, builds its dependencies and uses standard
-`pnpm publish` with the gate's explicit native configuration. The gate checks
-release context, not tarball bytes; the former custom publisher is removed. Do
-not copy command/delivery libraries into each member.
+`lint-package: publint --strict` (warnings fail the check). Legacy root
+`silvermoon.yaml` and separate release mappings must be removed, not used as
+fallbacks. Each npm delivery member has `prepublishOnly: publish-gate check`,
+using the root's exact published registry development dependency rather than
+candidate workspace source. The workflow selects one registered package, builds
+its dependencies and uses standard `pnpm publish` with the gate's explicit
+native configuration. The gate checks release context, not tarball bytes; the
+former custom publisher is removed. Do not copy command/delivery libraries into
+each member.

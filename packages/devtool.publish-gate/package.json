@@ -32,7 +32,7 @@
   "scripts": {
     "build": "tsc --project tsconfig.build.json",
     "lint": "eslint . --max-warnings=0",
-    "lint-package": "publint",
+    "lint-package": "publint --strict",
     "prepublishOnly": "publish-gate check",
     "test": "vitest run --root . --config ../../vitest.config.ts",
     "test-coverage": "vitest run --root . --config ../../vitest.config.ts --coverage",
