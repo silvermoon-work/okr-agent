@@ -134,7 +134,7 @@ export async function main(
       "--content-data-dir <directory>",
       "Existing Task local content-store directory override",
     )
-    .version("0.1.0-rc.1")
+    .version("0.1.0-rc.2")
     .exitOverride()
     .configureOutput({
       writeOut: (text) => {

@@ -1,6 +1,6 @@
 {
   "name": "@silvermoon-work/ipfsaw",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "description": "Bounded local YAML/JSON preview with explicitly bound immutable browser renderers.",
   "type": "module",
   "sideEffects": false,
