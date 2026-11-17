@@ -14,11 +14,14 @@ environment；配置 Trusted Publisher 不等于授权任意版本发布。
 **两阶段发布衔接**：rc.3 已发布，tag 为
 `devtool-publish-gate-v0.1.0-rc.3`。根依赖及 lockfile 现固定到 rc.3，
 根 `silvermoon.yaml` 已移除，workflow 启用 `**@*` 过滤。
-本次 rc.4 仅递增版本、更新接入说明，运行时代码与 rc.3 相同，
+rc.4 仅递增版本、更新接入说明，运行时代码与 rc.3 相同，已完成真实发布，
 由已安装的 rc.3 检查发布，tag 为
 `@silvermoon-work/devtool.publish-gate@0.1.0-rc.4`。
 每阶段都需准确提交的 main-push CI 成功，并另行确认版本和 SHA 后才推 tag；
 不绕过生命周期，不以同仓候选源码替代固定的已发布门禁。
+
+`0.1.0` 正式版保持 rc.4 的运行时代码不变，继续由已安装的 rc.3 门禁检查，
+使用 `@silvermoon-work/devtool.publish-gate@0.1.0` tag 发布到 `latest`。
 
 ## 接入方式
 
