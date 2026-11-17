@@ -1,3 +1,4 @@
 {"type":"setLanguage","payload":{"language":"zh-CN"}}
 {"type":"setAlias","timestamp":"2026-11-17T15:32:57.846Z","payload":{"alias":"silvermoon-rebuild"}}
 {"type":"submitIdeal","timestamp":"2026-11-17T15:34:30.107Z","payload":{"idealRevision":"2ce96a1a6d0c035b8c64f18ffb8184f6dca1fbcf"}}
+{"type":"submitIdeal","timestamp":"2026-11-17T15:51:02.222Z","payload":{"idealRevision":"231c438b68402aaf305e08f7d477d0e08e7a04ce"}}
