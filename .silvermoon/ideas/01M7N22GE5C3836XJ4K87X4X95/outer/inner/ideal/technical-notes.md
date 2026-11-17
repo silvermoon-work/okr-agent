@@ -145,6 +145,8 @@ Check 作者包与 npm CLI 分别构建，CLI 打包准确 CAR 与 CID 绑定文
 
 旧 ULID 探针中 4,096 个连续毫秒的标准编码按 ASCII 正确排序；ICU numeric collation 找到一组相反排序。这不是 Windows Explorer 的实测，不能据此断定用户观察到的具体排序原因。
 
+最终 Hex 格式也做了 numeric collation 反例探针：`2026111716090000` 与 `202611171610a000` 的 ASCII 顺序正确，但数字感知比较相反。分钟时间可读不等于任意文件管理器都按时间显示；`list-ideas` 应使用解析后的时间和固定 tie-break，文件管理器自然排序若成为硬要求则需另定表示并实测。
+
 文档 35 个本地链接已验证存在。根 `pnpm check` 已运行，在 lint 阶段因既有临时测试内容报 6,720 个错误，包括 `packages/ipfsaw/.test-work/rc-preflight/preflight.mjs`；本次只修改旧 ideal 层 Markdown，不修改、删除或忽略这些无关文件，也不将失败称为通过。该根门禁未执行到覆盖率和包检查，不能声称全量质量门禁成功。
 
 仍需实现期覆盖的场景包括：新 ID 解析/碰撞/回拨、旧归档不读取、config 并存、无 guidance、语言独立、草稿准确签字、事件并发及故障恢复、旧证据失效、Task 取消释放、离线 CAR/CID、实际全局 bin 与个人 skill 发现。完整目录和用例应在 Test Spec 阶段与人对齐。
