@@ -31,9 +31,9 @@
 - Simple member commands call tsc, Vitest, ESLint and publint directly. Keep
   scripts only for actual multi-step builds, development servers and integration
   harnesses. Do not restore copied command/delivery libraries in every member.
-- Root `check` stops at the first failure: format-check, build, typecheck,
-  whole-repository lint, test-coverage (including JavaScript release/engineering
-  regressions), then npm package lint. Root configuration TypeScript is checked
+- Root `check` directly chains pnpm commands with `&&` and stops at the first
+  failure: format-check, build, typecheck, whole-repository lint, package
+  test-coverage, then npm package lint. Root configuration TypeScript is checked
   explicitly, in addition to Turbo's member typechecks. Whole-repository ESLint
   covers root configuration, remaining maintenance scripts, member source and
   tests; there is no separate duplicate `check-scripts` pass.
@@ -48,18 +48,25 @@
   smoke, dev and demo tasks are not cached. Release commands are not Turbo tasks
   and remain explicit single-package entries using the unchanged fixed publisher
   and its dependencies.
-- Root `lint-package` resolves only `type: npm` entries from `silvermoon.yaml`
-  against pnpm's actual workspace list, validates their scripts and invokes
-  Turbo for those targets. Do not create a second publishable-package list.
+- Root `lint-package` directly runs `turbo run lint-package`; each member
+  declaring the command runs it after its own build. Only npm delivery members
+  currently declare `lint-package: publint`. Daily package lint deliberately
+  does not enumerate or cross-check `silvermoon.yaml`. The unchanged fixed
+  release publisher separately validates the delivery list and runs publint on
+  the exact selected tarball; this simplification does not change release scope.
 - Member commands operate in their own working directory. Shared Vitest is
   passed explicitly with `--root . --config ../../vitest.config.ts`; no hidden
   root discovery or graph reconstruction occurs inside a member command. Direct
   `pnpm --filter <package> test` does not build dependencies. Use
   `pnpm exec turbo run test --filter=<package>` for dependency-aware execution.
-- Root `clean` removes only `dist`, `coverage` and `.turbo` under this
-  worktree's root and pnpm-declared members. It validates redirected
-  member/output paths before deleting anything. It does not remove dependencies,
-  pnpm stores, undeclared directories or other worktrees.
+- Root `clean` calls rimraf with quoted, opt-in globs for `dist`, `coverage` and
+  `.turbo` at the root and directly under `apps/*` and `packages/*`. This fixed
+  layout includes children without package manifests; it does not enumerate pnpm
+  membership or recursively match nested outputs. Output directory links are
+  removed without deleting their targets, not rejected in a preflight. The
+  layout itself must be trusted: redirected `apps`, `packages` or member
+  directories are not validated. Dependency directories, pnpm stores and other
+  worktrees outside the matched layout are not cleanup targets.
 - CI continues to call `pnpm check` after frozen installation. Required jobs,
   compatibility matrix and publisher verification identities are unchanged. The
   existing consumer-minimum/full-development-tool matrix mismatch remains a
@@ -122,9 +129,15 @@
 - The previous root guidance was moved here before restoring the complete
   standard AGENTS.md; its project-specific conventions remain in force.
 - `pnpm test` is a single non-coverage run; use `pnpm test-coverage` for
-  coverage. Both include `test/*.test.js` through `pnpm test-release`. Migration
-  regressions execute the real Turbo graph and root gate in isolated fixtures,
-  including ordering, cache restoration/invalidation, failures and clean safety.
+  coverage. Both aggregate only real workspace package tests through Turbo. The
+  root has no independent test suite: the user explicitly approved deleting its
+  engineering and synthetic legacy-release regressions, their runner and the
+  now-unused legacy validator. Automated root graph/cache/failure/cleanup
+  regressions and synthetic legacy-validator coverage are no longer retained. Do
+  not recreate them in an artificial maintenance workspace or move them into
+  Check author packages. Existing package tests and coverage gates remain.
+  Validate root cleanup changes with isolated manual fixtures, including output
+  directory link-target safety, without deleting real build outputs.
 - Default toolchain tests use controlled tools and isolated configuration, not
   ambient npm/pnpm/nrm installations. Real installed-tool checks are explicit
   `native-test`/`smoke` actions and the manual cross-platform native workflow.
@@ -140,12 +153,6 @@
   supervising session owns the separate Check revision and supplies its new CID
   for independent validation; do not modify this worktree's author source or
   standard assets to simulate that integration.
-- `pnpm test-release` preserves the original JavaScript release regressions.
-  `scripts/lib/legacy-release.mjs` is historical metadata/artifact validation,
-  not a publishing entry or the trusted publisher. No workflow invokes it.
-- The only publishing entries are `pnpm release` and `pnpm release-dry-run`,
-  used by `.github/workflows/publish-npm.yaml`. Their shared fixed core reads
-  the root deliverables list; it never batch-publishes.
 - The publisher workflow filename is `publish-npm.yaml`, not `npm-publish.yaml`.
   `npm-publish.mjs` is only the shared implementation library name. npm Trusted
   Publisher bindings are configured per package against the exact workflow
@@ -159,8 +166,8 @@
   not change the project's development Node or consumer compatibility matrix.
 - For a focused TypeScript test, run
   `pnpm --filter <package> exec vitest run --root . --config ../../vitest.config.ts test/<file>.test.ts`.
-  Direct member commands accept tool arguments; root test commands also run
-  release regressions, so prefer a member command for a focused selection.
+  Direct member commands accept tool arguments; prefer a member command for a
+  focused selection rather than the aggregate root test commands.
 - The user explicitly authorized raising the SDK's consumer minimum in this
   normalization round: `>=22.13` became `>=22.15.0`, matching the parsed minimum
   of the other applicable code packages. This intentionally tightens the SDK's

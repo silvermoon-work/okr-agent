@@ -73,12 +73,6 @@ applications or aggregate roots.
   not proof that a version is absent.
 - Use npm Trusted Publishing with an explicit environment and id-token
   permission, never stored npm tokens.
-- Use the supplied fixed release/release-dry-run entries and fixed shared
-  publisher implementation without changes. Read identity/version from the
-  selected manifest, topology from the workspace and matrix from the real CI.
-  Reuse an existing explicit package ID/tag mapping for multiple targets; never
-  introduce duplicate release descriptions. CI invokes pnpm release or pnpm
-  release-dry-run, never an internal Node file or naked npm publish.
 - Explicitly build the selected package and dependencies, pack the selected
   package once with lifecycle hooks disabled, validate its exact name/version
   and publish that same tarball. Never mutate the tarball after validation.

@@ -216,20 +216,25 @@ cache，
 | `pnpm build`         | Build every workspace in dependency order                        |
 | `pnpm lint`          | Lint root config, maintenance scripts and all workspaces         |
 | `pnpm typecheck`     | Type-check root configuration and every workspace                |
-| `pnpm test`          | Run workspace tests and release regressions once                 |
-| `pnpm test-coverage` | Run workspace coverage and release regressions                   |
+| `pnpm test`          | Run workspace package tests once                                 |
+| `pnpm test-coverage` | Run workspace package coverage                                   |
 | `pnpm format-check`  | Check formatting without modifying files                         |
-| `pnpm lint-package`  | Validate public npm package delivery with publint                |
+| `pnpm lint-package`  | Build and run declared member package checks with publint        |
 | `pnpm check`         | Ordered, fail-fast format/build/types/lint/coverage/package gate |
-| `pnpm clean`         | Remove only declared workspace outputs and local Turbo state     |
+| `pnpm clean`         | Remove root and direct apps/packages outputs and Turbo state     |
 
-`pnpm test` and `pnpm test-coverage` also run `test/*.test.js`, including
-release regressions and real execution-graph/cache/cleanup tests. Coverage still
-includes untested source and enforces 90% for each of branches, functions, lines
-and statements. Tests use the shared Vitest configuration with each member's
-explicit working root. `pnpm lint-package` selects npm deliveries from
-`silvermoon.yaml`, then builds and validates only those packages with
-Turbo/publint.
+`pnpm test` and `pnpm test-coverage` aggregate only workspace package tests; the
+root has no independent test suite. The user-approved removal of the root
+engineering and synthetic legacy-release regressions also removes their
+automated graph/cache/cleanup and legacy-validator coverage; those regressions
+were not migrated into another package. Existing package tests remain unchanged.
+Coverage still includes untested source and enforces 90% for each of branches,
+functions, lines and statements. Tests use the shared Vitest configuration with
+each member's explicit working root. `pnpm lint-package` directly runs Turbo's
+member `lint-package` tasks after their builds. Only npm delivery members
+currently declare that script (`publint`); daily checks do not cross-check
+`silvermoon.yaml`. The unchanged release publisher separately validates the
+delivery list and runs publint on the exact selected tarball.
 
 For dependency-aware targeted work:
 
@@ -239,9 +244,18 @@ pnpm exec turbo run test --filter=@silvermoon-work/check-task-builder
 
 Direct member commands (for example `pnpm --filter @silvermoon-work/core test`)
 run only that member's tool; build dependencies first if needed. Build and
-coverage outputs are cached; native/smoke/dev/demo actions are not. `clean`
-never touches dependency stores or other worktrees. Publishing remains outside
-Turbo.
+coverage outputs are cached; native/smoke/dev/demo actions are not. Root `check`
+directly chains its pnpm commands with `&&`, preserving order and stopping on
+the first failure.
+
+`clean` uses rimraf's quoted `--glob` patterns for `dist`, `coverage` and
+`.turbo` at the root and under direct `apps/*` and `packages/*` children,
+including children without a package manifest. It does not recursively match
+nested outputs or target dependency directories, stores or other worktrees
+outside this layout. Output directory links are removed, leaving their targets
+intact; there is no preflight rejection or validation of redirected
+parent/member directories. Use it only with a trusted workspace layout.
+Publishing remains outside Turbo.
 
 本轮只简化消费仓库工程配置，不同步改写 TypeScript Check 标准资产。
 直接命令与标准 `AGENTS.md` 中旧固定入口要求的冲突，记录于
