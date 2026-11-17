@@ -44,6 +44,10 @@ Silvermoon CLI 是专用 Checker 的 Wrapper / Host：
 
 CLI 不维护独立于 Checker 的阶段和完成判断；不同 audience 不能得到不同业务结论。
 
+命令设计原则上参考旧 Silvermoon，以既有命令职责、命名、参数和使用习惯为基线，而不是从零另造一套命令体系。调研时先盘点旧命令，再明确哪些沿用、哪些因新 Spec / Checker 模型需要调整，以及调整理由；参考旧接口不等于保留已取消的世界术语、结果型 sign off 或旧 Guide 内部架构，也不预先承诺所有旧协议完全兼容。
+
+多语言支持主要面向 Agent 编写的 Idea 文档内容。向 Agent 明确提供有效的内容语言，不把 Check 问题或 CLI 输出的语言当作内容语言来源。当前 Checker 问题不支持多语言，不要求为此扩展通用 Check 结果或增加问题翻译层。
+
 创建 Idea、追加 Events、记录 sign off 等属于配套写入能力：只记录事实，再检查，不自行宣告阶段通过。
 
 复用本仓库现有 Check Task SDK、Builder 和上游 Task Engine 能力，不把旧 Potential Guide / Objective Guide 包一层后冒充迁移。具体模块及包拆分由技术设计决定。
