@@ -34,6 +34,8 @@ Engine / IPFS Store 的接口同时核对了当前安装包 README；它们不�
 
 一个注册 Checker 名称与 canonical target 定义图内节点身份；跨 Bundle 的长期检查对象还要包括准确 Check CID。每次执行有独立的去重和预算，不把 Run ID 当 Idea ID。
 
+新版 Idea 在创建时记录准确 Check CID，以后观察不随 CLI 默认值变化；CLI 的默认 CAR 只决定新 Idea 的初始规则。既有旧工具 Idea 无 CID，不补记录、不迁移。规则选择记录必须可在执行前确定；缺失固定内容或不支持其协议应明确阻断，不偷偷换 CID。
+
 Idea 的正常 Target 建议为本机规范化项目定位加新 Idea ID；alias 先解析到 ID，不作为持久身份。绝对路径移动和多机 clone 不天然是同一 Target，应明确这是不同执行定位下的同一仓库 Idea，不能声称跨机物理 target 完全一致。
 
 `check --staged` 等 snapshot 校验是另一种观测意图，不应默默改变同一 Idea 的生命周期身份。可在同一 Bundle 中显式区分 snapshot target 与 lifecycle target，复用底层验证器；保持 snapshot-valid 与 idea-completed 两种含义分离。
@@ -50,7 +52,7 @@ Task Engine 可以共享完整 Run，不能仅凭“提交了新 Request ID”�
 
 单次自然耗尽可以使用 `drain()`，但其完成不代表所有 Task 成功。Engine 结束后由创建方关闭内容 store，借用者不关闭共享 store。命令级 preparation 等待也要有预算；Engine 的 preparing 本身没有整体截止，不能误把 Task timeout 当下载截止。
 
-宿主仅信任随准确版本交付的 Check CID。CID 证明内容身份，不证明权限或安全；Worker 不是 OS 沙箱。不要从目标项目配置中执行任意 hooks、JS 或技能脚本来完成只读检查。
+宿主仅执行获授权的准确 Check CID，包括随包默认值和新版 Idea 已固定且受信任的历史值；不是记录了任意 CID 就自动授予执行权限。CID 证明内容身份，不证明权限或安全；Worker 不是 OS 沙箱。不要从目标项目配置中执行任意 hooks、JS 或技能脚本来完成只读检查。
 
 设备运行时身份要验证真正的 CLI 安装/入口和个人 skill，而不是把 Worker 的 `import.meta.url` 当本地包路径；新 Bundle 地址是 `ipfs://.../main.mjs`。这一跨宿主边界需要实现期真实进程测试，不能用用户可伪造的 ready 布尔值代替整备。
 
@@ -66,6 +68,8 @@ assets: 作者选择交付时的 ContentRef
 ```
 
 过程进入 Task log，不把整张图塞进结果。问题含 code、brief、documentation、nodeKey 和 source；没有旧 Guide 的 levels、动态 instructions 或通用 metadata。
+
+这个限制只针对通用 Check 的结果契约，不取消 Silvermoon 领域状态。Events playback 可推导含 level 的 state，Checker 据此判断当前缺口及回退，CLI 复用该归约；不得为了避免两个状态机而把所有阶段事实抹掉。
 
 Task / Run 当前直接暴露 `result: {data,cidPaths}`，不是历史 `output.result`。仓库个别历史 README 仍保留旧写法，集成以当前公共 API、类型及实际测试为准。
 
@@ -83,7 +87,7 @@ Task / Run 当前直接暴露 `result: {data,cidPaths}`，不是历史 `output.r
 
 建议定义受控对象 revision，绑定对应的 Git 内容树以及必要的上游 revision；使用 Git 对象格式，不固定 40 位 SHA-1。Events 和 Evidence 不进入 Spec revision，避免记录一次确认就把被确认对象改掉。
 
-技术问题目录、测试场景目录应有可单独确认的内容边界，避免稍后写结论或具体用例就使此前的范围确认失效。可采用固定入口/固定索引文件加明确资源范围，最终文件清单需在 schema 阶段定稿；不能仅靠 Markdown 任意链接推断整套批准范围。
+技术问题索引、测试 case 索引分别单列文件、单独计算 revision，各自需要人的 sign off，避免稍后写结论或具体用例就使此前的范围确认失效。完整 Technical / Test Spec 则绑定正文与相应补充内容，是否先向人展示不改变其签字范围。可采用固定入口/固定索引文件加明确资源范围，最终文件清单需在 schema 阶段定稿；不能仅靠 Markdown 任意链接推断整套批准范围。
 
 暂存区、worktree 和 primary 的版本来自各自真实内容。worktree 的读取和 hash 必须检查读取期间的并发变化；仅“读两次 hash 一样”不是通用严格原子快照证明。跨进程写入通过锁与重校验协调，外部编辑器并发变化要阻断操作，不声称 OS 级全局隔离。
 
@@ -91,7 +95,7 @@ Task / Run 当前直接暴露 `result: {data,cidPaths}`，不是历史 `output.r
 
 验收证据只证明它绑定的对象。测试全通过但指向旧提交、不同部署环境或不同标准，应作为不适用证据处理；旧批次保留，不覆盖历史。自动化日志、人工操作截图及摘要都需有来源，不把时间戳或 Event 名称当真实性证明。
 
-首版可对上游变更保守地要求下游复核；对明显不影响标准的补充修改是否允许显式沿用，应作为策略决策，而不是 Agent 自动认定旧签字有效。
+用户已明确：已签署内容的补充细化同样在签字范围内，实现/部署中修改计划细节也回退重签，不设“只是补充所以自动沿用”的豁免。未变化的独立索引保留自身 revision；它或其他签字的上游依赖变化时，仍需按依赖规则复核，不因文件 hash 未变就假定完整批准继续有效。
 
 ## Events 读写边界
 

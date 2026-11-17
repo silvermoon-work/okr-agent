@@ -10,6 +10,8 @@
 
 同一检查对象可以反复运行。修改 Spec 后，检查可能重新发现共识或验收缺口。升级 Check CID 属于检查规则变更，必须显式处理，不能悄悄替换规则并沿用旧结论。
 
+仅新版 Silvermoon 创建的 Idea 记录其创建时使用的 Check CID。之后调用使用该固定值，CLI 升级不自动替换；新创建的 Idea 可使用新版默认 CID。现在旧 Silvermoon 的 Idea 不涉及 Task Engine / CID，不补 CID、不迁移。
+
 具体 Target schema、仓库定位方式和规则升级机制在技术阶段确定。
 
 ## 前置条件与缺口推进
@@ -26,7 +28,7 @@
 | --- | --- |
 | Requirement Spec 尚无人确认 | 需求共识未形成 |
 | 需求已确认，调研问题未对齐 | 调研范围未确认 |
-| Technical Spec 关键决策待审 | 技术方案未确认 |
+| 完整 Technical Spec（含补充设计）待签署 | 技术方案未确认 |
 | 场景或用例尚未确认 | 验收约定未形成 |
 | 实现未满足 Test Spec | Implementation 验收未完成 |
 | 部署未满足 Test Spec | Deployment 验收未完成 |
@@ -57,6 +59,10 @@ CLI 不维护独立于 Checker 的阶段和完成判断；不同 audience 不能
 ## Events 与证据的权威边界
 
 保留 Events 记录过程事实、据此推导进展的思路。Spec 定义约定，Evidence 支撑验证，Events 记录明确确认、修订、验收等事实，Checker 综合判断。
+
+Events playback 推导的 state 仍可包含 level，表达当前阶段与修订后的回退。通用 Check 不增加领域 level 机制；CLI 复用同一领域归约，不维护另一套判断。
+
+五次 sign off 分别对应三套完整 Spec、技术问题索引和测试 case 索引。两个索引单列文件并各自计算 revision；补充文档属于相应 Spec 的签字范围，不因默认折叠或不要求人先读而免于重签。实现/部署中修改已签署内容，也应回退重新 sign off。
 
 事件不得凭空制造批准或真实性：一个“完成”事件本身不足以证明当前对象已通过验收。机械检查可以判断结构、引用、版本和确认关系；语义正确性需要 Agent review 和真实证据，不能仅检查标题是否存在。
 

@@ -9,6 +9,9 @@
 - 需求、方案、测试约定、Events 与可提交证据留在 Git，方便长期追溯。
 - 本次不保留新模型的三层世界术语、层层嵌套和必备 ledger。
 - 人在 ideation 中分轮确认需求、关键技术方案、验收约定；实现与部署完成后的结果验收由 Agent 执行举证。
+- 五次独立 revision 的 sign off：Requirement Spec、技术问题索引、完整 Technical Spec、测试 case 索引、完整 Test Spec；两个索引单列文件，补充内容属于相应 Spec 的签字范围。
+- 实现/部署中修改已签署的计划或补充细节，同样回退重签；Events playback 的 state 可保留 level，通用 Check 不建模具体 level。
+- 仅新版创建的 Idea 记录创建时的 Check CID 并持续固定，CLI 升级不自动替换；当前旧 Idea 不补 CID、不迁移。
 - 最新 ID 为分钟级 `YYYYMMDDHHmm` 加 4 位 Hex 随机码，共 16 位，不再沿用 ULID；此前 33 位方案被替代，先前“Base64”已由用户更正为 Hex。
 - 新 Idea 只放在 `.silvermoon/i`；旧 `.silvermoon/ideas` 原样留档，新 CLI 不消费、不迁移旧 Idea。
 - config 尽量延续旧版；取消 guidance 读取与注入，由项目自行用 `.agents/skills` 指导 Spec 写作。
@@ -30,10 +33,10 @@
 
 以下是待调研项目，不是假定已决定的实现方案：
 
-1. Check CID 如何选择、固定和升级？Target 如何稳定定位仓库中的 Idea？
+1. 已确定新版 Idea 固定创建时 CID、旧 Idea 不补 CID；记录形式、历史 Check 内容可用性和显式升级如何设计？Target 如何稳定定位仓库中的 Idea？
 2. 盘点旧 Silvermoon 命令后，哪些职责、命名、参数与用法沿用，哪些需调整及其理由是什么？human / agent 呈现、结构化输出与 skill 协作契约如何适配？
-3. 新 Spec 目录和引用如何计算版本？调研问题、关键结论、测试目录与具体用例分别如何确认？
-4. 哪些变化使哪些确认或验收失效？如何处理只改补充文档、修订方案和变更需求的不同影响？
+3. 如何分别计算两个独立索引与三套完整 Spec 的版本，并记录五次 sign off 及其依赖？
+4. 已确定补充内容变化同样需回退重签；如何准确推导相应 level、受影响的下游确认和验收范围？
 5. 未提交草稿审核与设备、项目整备如何划界？何时要求提交、同步、primary 可达，如何防止跨草稿偷偷推进？
 6. Events 的新 schema、追加约束、并发与主分支同步如何设计？如何明确记录人的确认而不推断授权？
 7. Agent 的语义 review 如何成为可检查事实？验收证据如何绑定当前用例、准确制品与环境，并处理故障、缺失、陈旧和重试？
