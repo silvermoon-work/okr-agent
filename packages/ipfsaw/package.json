@@ -48,6 +48,7 @@
     "demo": "node scripts/demo.mjs",
     "lint": "eslint . --max-warnings=0",
     "lint-package": "publint",
+    "prepublishOnly": "publish-gate check",
     "test": "vitest run --root . --config ../../vitest.config.ts",
     "test-coverage": "vitest run --root . --config ../../vitest.config.ts --coverage",
     "typecheck": "tsc --noEmit --project tsconfig.json"

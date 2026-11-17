@@ -132,17 +132,14 @@ importers:
         specifier: 'catalog:'
         version: 10.0.1(eslint@10.15.0(supports-color@10.2.2))
       '@silvermoon-work/devtool.publish-gate':
-        specifier: 0.1.0-rc.0
-        version: 0.1.0-rc.0
+        specifier: 0.1.0-rc.1
+        version: 0.1.0-rc.1
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.6
       '@vitest/coverage-v8':
         specifier: 'catalog:'
         version: 5.1.0(vitest@5.1.0)
-      acorn:
-        specifier: 'catalog:'
-        version: 8.19.0
       eslint:
         specifier: 'catalog:'
         version: 10.15.0(supports-color@10.2.2)
@@ -158,9 +155,6 @@ importers:
       rimraf:
         specifier: 'catalog:'
         version: 6.1.4
-      semver:
-        specifier: 'catalog:'
-        version: 7.8.6
       turbo:
         specifier: 'catalog:'
         version: 2.11.11
@@ -173,9 +167,6 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 5.1.0(@types/node@26.6.6)(@vitest/coverage-v8@5.1.0)(jsdom@26.1.0(supports-color@10.2.2))(vite@8.3.4(@types/node@26.6.6)(yaml@2.9.1))
-      yaml:
-        specifier: 'catalog:'
-        version: 2.9.1
 
   apps/check-bundle-web:
     dependencies:
@@ -981,8 +972,8 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
-  '@silvermoon-work/devtool.publish-gate@0.1.0-rc.0':
-    resolution: {integrity: sha512-vVvJlWQ2BMZpUOkHrCbXjMXcSjnfgZmsrsqtbyLhg7oc3k2jEQyjOJ0hv08bgz3Bk/jDMNbLL2sBjSXjQ0atZQ==}
+  '@silvermoon-work/devtool.publish-gate@0.1.0-rc.1':
+    resolution: {integrity: sha512-h9x7xkFmHa+V6I/jyiSJeFJDTw5ECSRvtJ0ZkHZUH2udkQkZykWT2jmlJxLDJW6R7V2Rryo2vmY+YQqfaWgsgQ==}
     engines: {node: '>=22.15.0'}
     hasBin: true
 
@@ -3401,7 +3392,7 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@silvermoon-work/devtool.publish-gate@0.1.0-rc.0':
+  '@silvermoon-work/devtool.publish-gate@0.1.0-rc.1':
     dependencies:
       commander: 14.0.2
       semver: 7.8.6

@@ -36,8 +36,24 @@ jobs:
         with:
           node-version-file: .node-version
       - run: pnpm install --frozen-lockfile
-      - run: npm install --global npm@11.21.0
-      - if: github.event_name == 'push'
-        run: pnpm release
-      - if: github.event_name == 'workflow_dispatch'
-        run: pnpm release-dry-run
+      - name: Select one registered npm package
+        id: target
+        run: |
+          target="$(pnpm exec publish-gate target --json)"
+          printf '%s\n' "$target" | jq -r '"directory=\(.directory)\nname=\(.name)\nchannel=\(.channel)"' >> "$GITHUB_OUTPUT"
+          directory="$(printf '%s\n' "$target" | jq -r '.directory')"
+          jq -e '.scripts.prepublishOnly == "publish-gate check"' "$directory/package.json" > /dev/null
+      - name: Build selected package and dependencies
+        env:
+          PACKAGE_NAME: ${{ steps.target.outputs.name }}
+        run: pnpm --filter "$PACKAGE_NAME..." run build
+      - name: Publish through the installed lifecycle gate
+        env:
+          PACKAGE_DIRECTORY: ${{ steps.target.outputs.directory }}
+          PNPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+          PNPM_CONFIG_ACCESS: public
+          PNPM_CONFIG_TAG: ${{ steps.target.outputs.channel }}
+          PNPM_CONFIG_PROVENANCE: "true"
+          PNPM_CONFIG_DRY_RUN:
+            ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
+        run: pnpm --dir "$PACKAGE_DIRECTORY" publish --no-git-checks

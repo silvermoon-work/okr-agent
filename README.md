@@ -6,9 +6,10 @@
 
 [`@silvermoon-work/devtool.publish-gate`](packages/devtool.publish-gate/README.md)
 是只读的 npm `prepublishOnly` 发布上下文门禁，检查准确提交的 CI、Git/tag、
-交付声明和 registry 状态，不接管构建、打包和发布。rc.0 已发布且由根包固定消费，
-不是 workspace 链接。当前源码 rc.1 补齐 native pnpm 上下文和依赖协议支持；
-发布 workflow 尚未迁移，修复版先由现有发布器引导发布。
+交付声明和 registry 状态，不接管构建、打包和发布。根包固定消费已发布的 rc.1，
+不是 workspace 链接。workflow 通过门禁选择单个目标、构建依赖，再使用标准
+`pnpm publish` 调用成员的 `prepublishOnly`；旧发布器副本已移除。
+源码 rc.2 是用已发布 rc.1 验证自托管发布的候选，不会自动替换根依赖。
 组织内开发工具包使用 `@silvermoon-work/devtool.<name>` 命名。
 
 ## Check Task 作者入口
@@ -212,8 +213,8 @@ verified.
   `rimraf dist && tsc --project tsconfig.build.json`. The web host uses the Vite
   CLI, including standard config discovery, and keeps development on
   `127.0.0.1:4173` with strict port selection. Custom scripts remain for builds
-  with artifact-generation logic and integration harnesses; publishing is
-  unchanged.
+  with artifact-generation logic and integration harnesses. Publishing uses a
+  pinned registry gate and standard pnpm lifecycle commands.
 
 Add a dependency from the repository root:
 
@@ -230,9 +231,9 @@ pnpm --filter @silvermoon-work/core test
 
 ## Commands
 
-### CI 谓词与扩展
+### CI 身份与扩展
 
-质量 workflow 使用显式保护谓词，不把标准 YAML 当全量相等白名单。
+质量 workflow 保留稳定的保护身份，不把标准 YAML 当全量相等白名单。
 无关通知 job、workflow 名称、metadata、无害步骤可扩展；稳定质量/矩阵/聚合身份、
 完整 main push 与 PR 覆盖、根工具选择、冻结安装 → check 与失败传播不可绕过。
 每个标准 job 显式指定 1..360 整数分钟 timeout；质量及兼容矩阵使用一个 pnpm store
@@ -241,7 +242,9 @@ cache，
 并发按 workflow/event/PR 分组并取消同 PR 过期运行，main 以 run_id 隔离，
 避免 cancel:false 仍替换同组 pending 主干验证。
 详情见
-[Check 与发布器共享谓词](packages/check.typescript-project/src-legacy/references/npm-publisher-v1.md#ci-与事实边界)。
+[Check 历史标准中的谓词说明](packages/check.typescript-project/src-legacy/references/npm-publisher-v1.md#ci-与事实边界)。
+当前发布门禁信任准确提交已经完成的 main CI，只读取矩阵和运行结果，
+不重新证明 workflow 全文的全部语义。
 
 `toolchain-native.yaml` 现在独立自动覆盖 main push、所有 PR 并支持手动执行，
 在 Ubuntu/Windows 冻结安装后 build → native-test → smoke；无路径过滤以覆盖源码、
@@ -269,8 +272,9 @@ functions, lines and statements. Tests use the shared Vitest configuration with
 each member's explicit working root. `pnpm lint-package` directly runs Turbo's
 member `lint-package` tasks after their builds. Only npm delivery members
 currently declare that script (`publint`); daily checks do not cross-check
-`silvermoon.yaml`. The unchanged release publisher separately validates the
-delivery list and runs publint on the exact selected tarball.
+`silvermoon.yaml`. The installed publish gate separately validates delivery
+intent and publication context. Publint remains a CI quality check; publication
+does not repeat exact-tarball validation.
 
 For dependency-aware targeted work:
 
@@ -294,7 +298,8 @@ parent/member directories. Use it only with a trusted workspace layout.
 Publishing remains outside Turbo.
 
 本轮只简化消费仓库工程配置，不同步改写 TypeScript Check 标准资产。
-直接命令与标准 `AGENTS.md` 中旧固定入口要求的冲突，记录于
+直接命令及发布门禁与标准 `AGENTS.md` /
+Check 中旧固定入口、发布器要求的冲突，记录于
 [项目说明](docs/agent-project.md#engineering-simplification-and-check-policy-boundary)，
 留待用户讨论；本轮工程验证不代表 Check Idea 已验收。
 
@@ -313,7 +318,7 @@ no automatic batch release or automatic version bumping.
 Root [`silvermoon.yaml`](silvermoon.yaml) is the only delivery-intent source;
 all external applications and libraries are listed, not just apps. Only `npm`
 entries are publisher/publint candidates. The current npm entries are
-`check-task-sdk`, `check-task-builder`, `ipfsaw` and the publish-gate candidate;
+`check-task-sdk`, `check-task-builder`, `ipfsaw` and `devtool-publish-gate`;
 preset core stays private and is not registered. `task-bundle` classifies the
 existing private Check authors' local Bundle/CAR deliverables without defining
 IPFS/Pinboard distribution. Open types, paths and migration rules are documented
@@ -336,10 +341,14 @@ Cloudflare intent does not certify platform configuration or deployment.
 3. Configure an `npm` GitHub environment and an npm Trusted Publisher for each
    package, using the exact owner, repository, `publish-npm.yaml` workflow, and
    `npm` environment. Do not configure an `NPM_TOKEN`.
-4. Keep each library's `build` script aligned with Turborepo. Publishing builds
-   the selected library and its workspace dependencies, then packs only that
-   library with lifecycle hooks disabled. Put required generation in `build`,
-   not in `prepack`, `prepare`, or publishing hooks.
+4. Keep each library's `build` script aligned with Turborepo. Add
+   `"prepublishOnly": "publish-gate check"` to each npm delivery member. The
+   workflow requires this hook, builds the selected library and its workspace
+   dependencies, then runs standard `pnpm publish` for that directory. Put
+   required generation in `build`, not in publishing hooks.
+5. Pin the gate's exact published version as a root development dependency. Do
+   not use a workspace link to its candidate source. The tool's own publication
+   is checked by the previously published version.
 
 ### Release a version
 
@@ -353,8 +362,8 @@ git tag library-v1.2.3 <verified-main-commit>
 git push origin library-v1.2.3
 ```
 
-The tag publishes only the mapped package. Both the tagged manifest and the
-tarball must match its exact name and version; the root version is irrelevant.
+The tag publishes only the mapped package. The tag and source manifest must
+match the exact package identity/version; the root version is irrelevant.
 Unknown package IDs, private/placeholder names, invalid versions, mismatches,
 unresolved local dependencies, and already-published versions block release.
 Canonical stable SemVer versions and `x.y.z-rc.n` prerelease versions are
@@ -364,20 +373,33 @@ increment it by one for each subsequent prerelease: `1.2.3-rc.0`, `1.2.3-rc.1`,
 and so on. Use matching package-specific Git tags, for example
 `library-v1.2.3-rc.0` for an explicitly registered `packageId: library`.
 
-The fixed `scripts/lib/npm-publish.mjs` requires the latest `ci.yaml` main push
-run for the exact full checked-out SHA, every required default/matrix job, and
-the successful versioned aggregate job and step. Missing, pending, skipped,
-failed, or inaccessible evidence blocks publication without rerunning or
-dispatching quality checks. Keep CI and the supplied fixed core aligned. The
-current candidate consumer-minimum matrix remains blocked by the known
-development-tool/profile boundary; it is not evidence of compatibility.
+The pinned `@silvermoon-work/devtool.publish-gate` requires the latest `ci.yaml`
+main push run for the exact full checked-out SHA, every required default/matrix
+job, and the successful versioned aggregate job and step. Missing, pending,
+skipped, failed or inaccessible evidence blocks publication. The hook neither
+reruns CI nor builds, packs or publishes anything.
 
-`pnpm pack` converts `workspace:*` to registry versions. Internal runtime,
-optional, and peer dependency ranges must already resolve to published npm
-versions. Missing dependencies must be released with their own tags first;
-building dependencies never publishes them. The workflow packs once, verifies
-the tarball's manifest and dependencies, runs publint on it, and publishes that
-same artifact through npm OIDC.
+The workflow keeps its Trusted Publisher filename and `npm` environment. It
+selects one target with `publish-gate target --json`, builds its dependency
+closure, and supplies explicit `PNPM_CONFIG_REGISTRY`, `ACCESS`, `TAG`,
+`PROVENANCE` and `DRY_RUN` settings to `pnpm publish --no-git-checks`. The gate
+replaces pnpm's default branch restriction with exact event/tag/SHA, clean-tree,
+main-ancestry and CI checks. Do not override these environment options with
+conflicting command-line flags.
+
+Native pnpm handles workspace/catalog manifest conversion and npm OIDC upload.
+The gate resolves this repository's default `catalog:` and `workspace:*`
+declarations read-only and requires matching runtime, optional and peer
+dependency versions to exist on npm. Missing dependencies must be released
+separately; building never publishes them. Named catalogs, other workspace
+ranges and local-path/alias protocols are unsupported by the current gate.
+
+This model trusts verified source and the controlled standard toolchain, not the
+final tarball's bytes. There is no custom pack-once/fingerprint verifier.
+Lifecycle hooks can be bypassed; publishing authorization remains a GitHub
+environment/Trusted Publisher responsibility. The old fixed publisher, its
+wrappers and root-only dependencies have been removed. Historical Check assets
+remain unchanged and may report this intentional policy conflict.
 
 ### Validate without publishing
 
@@ -387,10 +409,11 @@ After the configured commit's main push CI succeeds:
 gh workflow run publish-npm.yaml --ref main -f package=library
 ```
 
-Manual runs only perform an npm dry run, never an actual publish or dist-tag
-update. All metadata, exact-commit CI, unpublished-version, artifact, channel,
-RC-history and dependency checks still apply. A dry run is not proof of a
-successful real OIDC publication.
+Manual runs only perform a pnpm dry run, never an actual publish or dist-tag
+update. All metadata, exact-commit CI, unpublished-version, channel, RC-history
+and dependency checks still apply. Use an unpublished candidate version; an
+already-published version must fail even in dry-run mode. A dry run is not proof
+of a successful real OIDC publication.
 
 Release tags are immutable. If CI has not completed, wait and retry the failed
 workflow without moving the tag. Do not retry an already-successful publication;
