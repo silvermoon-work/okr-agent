@@ -175,8 +175,9 @@ verified.
   `pnpm-workspace.yaml`.
 - Internal dependencies use `workspace:*`.
 - Each workspace owns its build, lint, test, and typecheck scripts.
-- Fixed root quality commands discover members and dependency order from pnpm
-  workspace manifests. The root build command uses Turborepo for cached builds.
+- Turbo discovers members and dependency order from pnpm workspace manifests for
+  build, types, tests and coverage. Simple member commands call tools directly;
+  the root runs ESLint and Prettier once across the repository.
 
 Add a dependency from the repository root:
 
@@ -210,17 +211,42 @@ cache，
 在 Ubuntu/Windows 冻结安装后 build → native-test → smoke；无路径过滤以覆盖源码、
 内部依赖、根锁文件、工具配置与 workflow 自身。
 
-| Command              | Purpose                                                 |
-| -------------------- | ------------------------------------------------------- |
-| `pnpm build`         | Build every workspace in dependency order               |
-| `pnpm lint`          | Lint release scripts and every workspace                |
-| `pnpm typecheck`     | Type-check every workspace                              |
-| `pnpm test`          | Run workspace tests and release regressions once        |
-| `pnpm test-coverage` | Run workspace coverage and release regressions          |
-| `pnpm format-check`  | Check formatting without modifying files                |
-| `pnpm lint-package`  | Validate public npm package delivery with publint       |
-| `pnpm check`         | Format, build, types, lint, coverage and package checks |
-| `pnpm clean`         | Remove workspace outputs and Turborepo state            |
+| Command              | Purpose                                                          |
+| -------------------- | ---------------------------------------------------------------- |
+| `pnpm build`         | Build every workspace in dependency order                        |
+| `pnpm lint`          | Lint root config, maintenance scripts and all workspaces         |
+| `pnpm typecheck`     | Type-check root configuration and every workspace                |
+| `pnpm test`          | Run workspace tests and release regressions once                 |
+| `pnpm test-coverage` | Run workspace coverage and release regressions                   |
+| `pnpm format-check`  | Check formatting without modifying files                         |
+| `pnpm lint-package`  | Validate public npm package delivery with publint                |
+| `pnpm check`         | Ordered, fail-fast format/build/types/lint/coverage/package gate |
+| `pnpm clean`         | Remove only declared workspace outputs and local Turbo state     |
+
+`pnpm test` and `pnpm test-coverage` also run `test/*.test.js`, including
+release regressions and real execution-graph/cache/cleanup tests. Coverage still
+includes untested source and enforces 90% for each of branches, functions, lines
+and statements. Tests use the shared Vitest configuration with each member's
+explicit working root. `pnpm lint-package` selects npm deliveries from
+`silvermoon.yaml`, then builds and validates only those packages with
+Turbo/publint.
+
+For dependency-aware targeted work:
+
+```sh
+pnpm exec turbo run test --filter=@silvermoon-work/check-task-builder
+```
+
+Direct member commands (for example `pnpm --filter @silvermoon-work/core test`)
+run only that member's tool; build dependencies first if needed. Build and
+coverage outputs are cached; native/smoke/dev/demo actions are not. `clean`
+never touches dependency stores or other worktrees. Publishing remains outside
+Turbo.
+
+本轮只简化消费仓库工程配置，不同步改写 TypeScript Check 标准资产。
+直接命令与标准 `AGENTS.md` 中旧固定入口要求的冲突，记录于
+[项目说明](docs/agent-project.md#engineering-simplification-and-check-policy-boundary)，
+留待用户讨论；本轮工程验证不代表 Check Idea 已验收。
 
 ## Adding a workspace
 

@@ -45,13 +45,12 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "clean": "node scripts/clean.mjs",
     "demo": "node scripts/demo.mjs",
-    "lint": "node scripts/lint.mjs",
-    "lint-package": "node scripts/lint-package.mjs",
-    "test": "node scripts/test.mjs",
-    "test-coverage": "node scripts/test-coverage.mjs",
-    "typecheck": "node scripts/typecheck.mjs"
+    "lint": "eslint . --max-warnings=0",
+    "lint-package": "publint",
+    "test": "vitest run --root . --config ../../vitest.config.ts",
+    "test-coverage": "vitest run --root . --config ../../vitest.config.ts --coverage",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
   },
   "dependencies": {
     "@ipld/car": "catalog:",

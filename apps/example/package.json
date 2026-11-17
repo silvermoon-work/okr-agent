@@ -9,12 +9,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "clean": "node scripts/clean.mjs",
-    "lint": "node scripts/lint.mjs",
-    "test": "node scripts/test.mjs",
-    "test-coverage": "node scripts/test-coverage.mjs",
-    "typecheck": "node scripts/typecheck.mjs"
+    "build": "tsc --project tsconfig.build.json",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run --root . --config ../../vitest.config.ts",
+    "test-coverage": "vitest run --root . --config ../../vitest.config.ts --coverage",
+    "typecheck": "tsc --noEmit --project tsconfig.json"
   },
   "dependencies": {
     "@silvermoon-work/core": "workspace:*"

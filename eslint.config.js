@@ -9,6 +9,7 @@ export default tseslint.config(
       "**/dist/**",
       "**/.check-task-builder-*/**",
       ".turbo/**",
+      ".silvermoon/**",
     ],
   },
   eslint.configs.recommended,
