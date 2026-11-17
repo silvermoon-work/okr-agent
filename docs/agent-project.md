@@ -14,12 +14,10 @@
   `@silvermoon-work/*`. Keep imports, workspace dependencies, release mappings,
   and documentation consistent when renaming packages.
 - Development-tool packages use `@silvermoon-work/devtool.<name>`. The root pins
-  the published `devtool.publish-gate` rc.0 as a registry development
-  dependency, never a workspace link to its candidate source. Candidate rc.1
-  adds native pnpm context/protocol support and a read-only target selector;
-  bootstrap it through the existing publisher before switching the workflow to
-  the published fix. Keep publication authorization separate from Trusted
-  Publisher setup.
+  published `devtool.publish-gate` rc.1 as a registry development dependency,
+  never a workspace link to its candidate source. Candidate rc.2 exercises
+  self-hosted publishing through the already-published rc.1 gate. Keep
+  publication authorization separate from Trusted Publisher setup.
 - Keep workspace build, test, test-coverage, lint-package and typecheck
   responsibilities aligned with `turbo.json`. Turbo reads workspace membership
   and dependency order; do not duplicate that graph in a custom scheduler. Run
@@ -29,12 +27,12 @@
 
 - This consuming repository deliberately uses direct package commands rather
   than the old fixed `node scripts/<same-name>.mjs` interface. The user
-  explicitly approved this engineering experiment. The unchanged standard
-  `AGENTS.md` and TypeScript Check assets still describe the older interface:
-  this is an open policy conflict, not a claim that the Check Idea has been
-  accepted or that this repository passes that Check. Do not copy the repository
-  changes into Check author code, tests, references or assets to conceal the
-  conflict.
+  explicitly approved this engineering experiment, including the lifecycle gate
+  replacing the copied publisher. The unchanged standard `AGENTS.md` and
+  TypeScript Check assets still describe the older interface and publisher: this
+  is an open policy conflict, not a claim that the Check Idea has been accepted
+  or that this repository passes that Check. Do not copy the repository changes
+  into Check author code, tests, references or assets to conceal the conflict.
 - Simple member commands call standard tools directly, including short fail-fast
   command chains. SDK and ipfsaw builds use rimraf then tsc to remove stale
   modules; ipfsaw then runs its functional browser-runtime and Task/CAR build
@@ -43,9 +41,9 @@
   uses standard config discovery rather than the former wrappers' disabled
   config loading; no Vite config is currently present. Keep scripts only for
   logic not adequately expressed by standard tool commands and configuration. Do
-  not restore copied command/delivery libraries in every member. Publisher
-  migration is staged: retain the fixed implementation for bootstrapping the
-  pnpm-capable gate, then consume the published fix before removing the copies.
+  not restore copied command/delivery libraries in every member. The installed
+  published gate replaces the copied publisher, its predicates/delivery parser,
+  root release wrappers and publisher-only root dependencies.
 - Root `check` directly chains pnpm commands with `&&` and stops at the first
   failure: format-check, build, typecheck, whole-repository lint, package
   test-coverage, then npm package lint. Root configuration TypeScript is checked
@@ -61,14 +59,14 @@
   process/timing-sensitive tests while retaining dependency ordering and
   caching. Build/typecheck remain parallel where dependencies permit. Native,
   smoke, dev and demo tasks are not cached. Release commands are not Turbo tasks
-  and remain explicit single-package entries using the unchanged fixed publisher
-  and its dependencies.
+  and remain explicit single-package workflow operations using the installed
+  gate and standard pnpm publishing.
 - Root `lint-package` directly runs `turbo run lint-package`; each member
   declaring the command runs it after its own build. Only npm delivery members
   currently declare `lint-package: publint`. Daily package lint deliberately
-  does not enumerate or cross-check `silvermoon.yaml`. The unchanged fixed
-  release publisher separately validates the delivery list and runs publint on
-  the exact selected tarball; this simplification does not change release scope.
+  does not enumerate or cross-check `silvermoon.yaml`. The installed release
+  gate separately validates delivery intent and context. Publint remains in CI;
+  release-time exact-tarball verification is deliberately no longer retained.
 - Member commands operate in their own working directory. Shared Vitest is
   passed explicitly with `--root . --config ../../vitest.config.ts`; no hidden
   root discovery or graph reconstruction occurs inside a member command. Direct
@@ -122,9 +120,15 @@
   increasing by one for each subsequent prerelease of the same target version.
 - Publish only commits reachable from main with successful exact-commit main
   push CI. Keep the versioned CI aggregate and verifier arguments aligned.
-- Build the selected package and its dependencies, then pack the selected
-  package once with lifecycle hooks disabled. Validate and publish that same
-  tarball.
+- Use the installed gate's `target --json` to select one mapped package. Require
+  its `prepublishOnly` to be exactly `publish-gate check`, build the selected
+  package and dependencies, then invoke native `pnpm publish --no-git-checks`.
+  Explicit `PNPM_CONFIG_REGISTRY/ACCESS/TAG/PROVENANCE/DRY_RUN` options are the
+  supported profile; do not override them with conflicting CLI flags. Trust
+  verified source and the standard toolchain instead of exact tarball bytes.
+  Default `catalog:` and `workspace:*` resolve read-only for registry checks;
+  pnpm itself transforms the published manifest. Gate checks replace pnpm's
+  default branch restriction, not main ancestry or exact-SHA CI protection.
 - Internal runtime and peer dependencies must have matching versions already on
   npm. Publish missing dependencies separately before tagging the dependent
   package.
@@ -169,12 +173,13 @@
   for independent validation; do not modify this worktree's author source or
   standard assets to simulate that integration.
 - The publisher workflow filename is `publish-npm.yaml`, not `npm-publish.yaml`.
-  `npm-publish.mjs` is only the shared implementation library name. npm Trusted
+  `npm-publish.mjs` is the historical fixed implementation name. npm Trusted
   Publisher bindings are configured per package against the exact workflow
   filename, so a rename silently breaks previously authorized packages even
   though the workflow body still passes locally and in a manual dispatch dry
-  run. A release tag push validates that binding for real; keep the repository
-  workflow, the Check standard asset and its enforced path identical.
+  run. A release tag push validates that binding for real. Preserve that
+  filename when changing the consuming workflow; leave Check standard assets
+  unchanged until the separate policy revision is authorized.
 - Workflow standards use `actions/checkout@v7`, `actions/setup-node@v7` and
   `pnpm/action-setup@v6`, whose own Action runtime is Node 24. Keep the Check
   assets, actual workflows and publisher's exact CI verifier aligned. This does

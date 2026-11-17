@@ -4,9 +4,9 @@
 `prepublishOnly`，成功退出 0，任何无法确认的条件退出非 0。真正的打包、上传、
 OIDC 认证和 provenance 由标准 npm / pnpm 完成。
 
-`0.1.0-rc.0` 已通过 Trusted Publishing 发布；当前源码为补齐 native pnpm 支持的
-`0.1.0-rc.1` 候选。本仓库根包固定依赖已发布的 rc.0，而不是同仓候选源码；
-发布 workflow 尚未迁移，修复版仍由原发布器引导发布。
+`0.1.0-rc.1` 已通过原发布器和 Trusted Publishing 发布。本仓库根包固定依赖这个
+已发布版本，而不是同仓候选源码；源码 `0.1.0-rc.2` 用于验证标准 pnpm 发布的
+自托管接入。所有 npm 成员通过 `prepublishOnly` 调用已发布的根开发依赖。
 Trusted Publisher 必须绑定 `.github/workflows/publish-npm.yaml` 和 `npm`
 environment；配置 Trusted Publisher 不等于授权任意版本发布。
 

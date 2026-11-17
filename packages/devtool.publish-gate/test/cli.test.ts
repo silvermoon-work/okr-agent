@@ -53,7 +53,7 @@ it.each([
   async (...args) => {
     const output = streams();
     expect(await main(args)).toBe(0);
-    expect(output.out).toMatch(/publish-gate|0\.1\.0-rc\.1/);
+    expect(output.out).toMatch(/publish-gate|0\.1\.0-rc\.2/);
     expect(output.err).toBe("");
     expect(check).not.toHaveBeenCalled();
   },
