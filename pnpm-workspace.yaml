@@ -73,4 +73,4 @@ minimumReleaseAgeExclude:
   - eslint@10.15.0
   - "@silvermoon-work/ipfs-access@0.1.0"
   - "@silvermoon-work/ipfs-payload@0.1.0"
-  - "@silvermoon-work/devtool.publish-gate@0.1.0-rc.3"
+  - "@silvermoon-work/devtool.publish-gate@0.1.0"
