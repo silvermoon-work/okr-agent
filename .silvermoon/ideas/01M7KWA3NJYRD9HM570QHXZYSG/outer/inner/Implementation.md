@@ -1,6 +1,6 @@
 # Implementation
 
-已确认方向与未决项见 [Design](./ideal/Design.md)，具体输入、操作、预期及证据见 [验收测试矩阵](./AcceptanceTests.md)。当前仅补充验收规格，未实施 browser 宿主、未运行新目标测试；上游 browser Task 支持仍由用户协调，已安装公共版本不能直接执行该目标。
+已确认方向与最初未决项见 [Design](./ideal/Design.md)，具体输入、操作、预期及证据见 [验收测试矩阵](./AcceptanceTests.md)。用户现已提供完整 browser Builder/runtime/ESM 配套发布通知；准确版本与 D01–D06 的受托接入决定见 [IntegrationDecisions](./IntegrationDecisions.md)。原先上游缺少构建入口的结论不再代表本次目标，实施仍须验证真实公共接口，不能把通知或测试计划当成新宿主已通过的证据。
 
 ## Steps
 
