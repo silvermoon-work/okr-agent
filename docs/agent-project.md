@@ -16,11 +16,15 @@
 - Development-tool packages use `@silvermoon-work/devtool.<name>`. The root pins
   published `devtool.publish-gate` rc.1 as a registry development dependency,
   never a workspace link to its candidate source. The
-  local-declaration/name@version migration is incompatible with pinned rc.1;
-  publication stays blocked until a separately authorized bootstrap releases a
-  compatible version and the exact root dependency/lockfile are updated. Do not
-  silently use candidate source or restore legacy declarations as a bridge. Keep
-  publication authorization separate from Trusted Publisher setup.
+  local-declaration/name@version migration is incompatible with pinned rc.1. The
+  user authorized a two-release transition: prepare rc.3 with the legacy root
+  declaration/workflow for installed rc.1, then pin published rc.3, remove
+  legacy configuration and release rc.4 with name@version tags. This temporary
+  first-stage configuration is consumed only by rc.1; the candidate still
+  rejects it, with no fallback. Exact version/SHA authorization and successful
+  main-push CI are required separately before each tag push. Never use candidate
+  source as its own gate. Keep publication authorization separate from Trusted
+  Publisher setup.
 - Keep workspace build, test, test-coverage, lint-package and typecheck
   responsibilities aligned with `turbo.json`. Turbo reads workspace membership
   and dependency order; do not duplicate that graph in a custom scheduler. Run

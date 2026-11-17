@@ -10,8 +10,9 @@
 不是 workspace 链接。workflow 通过门禁选择单个目标、构建依赖，再使用标准
 `pnpm publish` 调用成员的 `prepublishOnly`；旧发布器副本已移除。
 源码已迁移到包内声明与完整名称 tag，不会自动替换根依赖。
-rc.1 不支持新协议；在另行授权 bootstrap 发布兼容版本并固定根依赖前，
-发布流程保持阻断，此草稿迁移不能视为可发布。
+rc.1 不支持新协议。本次先以 rc.1、临时保留的根清单和旧 tag 发布 rc.3；
+再固定消费 rc.3、移除旧配置，以新协议发布 rc.4。
+每次都须确认准确版本和 SHA，并取得对应 main-push CI 成绩。
 组织内开发工具包使用 `@silvermoon-work/devtool.<name>` 命名。
 
 ## Check Task 作者入口
@@ -355,6 +356,14 @@ Cloudflare intent does not certify platform configuration or deployment.
    is checked by the previously published version.
 
 ### Release a version
+
+Bootstrap transition: the current workflow deliberately still uses `*-v*` and
+the root `silvermoon.yaml` for the installed rc.1 gate only. Release rc.3 with
+`devtool-publish-gate-v0.1.0-rc.3` after exact-SHA authorization and main-push
+CI. Then pin published rc.3, remove that legacy declaration, switch the workflow
+filter to `**@*`, and release rc.4 with the new protocol below. The candidate
+gate does not accept or fall back to the legacy declaration. Do not use the new
+tag examples until that second-stage commit is active.
 
 Manually update the selected library's version and any affected internal
 dependency versions. Commit these changes to main and wait for that exact

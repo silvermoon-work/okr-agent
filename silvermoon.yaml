@@ -1,0 +1,17 @@
+deliverables:
+  - path: packages/check-task-sdk
+    type: npm
+    packageId: check-task-sdk
+  - path: packages/check-task-builder
+    type: npm
+    packageId: check-task-builder
+  - path: packages/ipfsaw
+    type: npm
+    packageId: ipfsaw
+  - path: packages/devtool.publish-gate
+    type: npm
+    packageId: devtool-publish-gate
+  - path: packages/check.nodejs-toolchain
+    type: task-bundle
+  - path: packages/check.typescript-project
+    type: task-bundle

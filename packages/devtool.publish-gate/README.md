@@ -11,10 +11,15 @@ OIDC 认证和 provenance 由标准 npm / pnpm 完成。
 Trusted Publisher 必须绑定 `.github/workflows/publish-npm.yaml` 和 `npm`
 environment；配置 Trusted Publisher 不等于授权任意版本发布。
 
-**发布衔接尚未完成**：本次 PR 仅验证实现和 CI，不授权发布或更换固定依赖。
-在明确授权的新门禁版本经独立 bootstrap 流程发布、并将根依赖及 lockfile 固定到
-该版本前，新协议的发布 workflow 必须保持阻断。不得回退根清单、绕过生命周期，
-或改用同仓候选源码冒充已安装门禁；因此本次 PR 不应在衔接完成前标为可发布。
+**两阶段发布衔接**：rc.2 已发布，本次源码候选为 rc.3。
+第一阶段暂时保留根 `silvermoon.yaml` 和旧 `*-v*` workflow 过滤，仅由固定的
+已发布 rc.1 使用，tag 为 `devtool-publish-gate-v0.1.0-rc.3`。
+新源码仍拒绝根清单，不添加回退，也不参与自身这次发布的门禁判断。
+第二阶段待 rc.3 确认发布后，将根依赖及 lockfile 固定到 rc.3，移除根清单，
+启用 `**@*` 过滤，并由 rc.3 检查发布 rc.4，tag 为
+`@silvermoon-work/devtool.publish-gate@0.1.0-rc.4`。
+每阶段都需准确提交的 main-push CI 成功，并另行确认版本和 SHA 后才推 tag；
+不绕过生命周期，不以同仓候选源码替代固定的已发布门禁。
 
 ## 接入方式
 

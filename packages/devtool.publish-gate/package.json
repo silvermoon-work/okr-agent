@@ -1,6 +1,6 @@
 {
   "name": "@silvermoon-work/devtool.publish-gate",
-  "version": "0.1.0-rc.2",
+  "version": "0.1.0-rc.3",
   "description": "Read-only npm prepublishOnly context checks for Silvermoon GitHub Actions releases.",
   "type": "module",
   "sideEffects": false,
