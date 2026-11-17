@@ -56,6 +56,8 @@ fab2ec25fd0f5b2730fdbb894b0895e18eb250866186aa0877235137a1f2befc
 2. 源码或准确消费者保持同一 CAR 根；Started 后仍可导航，完成后 cancel 不关闭，独立 close 成功。
 3. 停止本次启动的服务和浏览器，检查端口及源码状态；不终止用户已有服务。
 
+上述复核已在部署契约同步后完成：先确认产品源码与交付代码提交无差异，再从准确隔离消费者启动，同一 CAR 根在原生 Chrome 显示 Started；32px 桌面树、叶节点 / Parents、完成后 cancel 不关闭、reload 和独立 close 均再次通过。公共 main 的受控 SIGTERM 返回 143，返回时端口已关闭且只有一个 stdout 业务结果。测试浏览器及本次服务已停止，没有终止用户其他服务。
+
 这些是本地使用验收，不把源码单元测试或上游发布 CI 替代为浏览器证明。未验证 Cloudflare 部署；旧 registry renderer 与 Node Worker 仍有各自语义，不把通用运行目标扩大到它们。
 
 ## 已知使用限制
