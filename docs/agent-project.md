@@ -14,10 +14,10 @@
   `@silvermoon-work/*`. Keep imports, workspace dependencies, release mappings,
   and documentation consistent when renaming packages.
 - Development-tool packages use `@silvermoon-work/devtool.<name>`. The root pins
-  published `devtool.publish-gate` rc.3 as a registry development dependency,
+  published `devtool.publish-gate` 0.1.0 as a registry development dependency,
   never a workspace link to its candidate source. The user authorized the
   two-release transition: rc.3 was published with installed rc.1 and the legacy
-  framework; the root now pins rc.3, removes the legacy declaration and uses
+  framework; the root now pins 0.1.0, removes the legacy declaration and uses
   name@version tags. The rc.4 validation release keeps rc.3 runtime source
   unchanged and verifies the installed rc.3 gate. Exact version/SHA
   authorization and successful main-push CI are required before each tag push.

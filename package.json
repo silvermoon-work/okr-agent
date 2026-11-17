@@ -37,7 +37,7 @@
   },
   "devDependencies": {
     "@eslint/js": "catalog:",
-    "@silvermoon-work/devtool.publish-gate": "0.1.0-rc.3",
+    "@silvermoon-work/devtool.publish-gate": "0.1.0",
     "@types/node": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "eslint": "catalog:",

@@ -6,7 +6,7 @@
 
 [`@silvermoon-work/devtool.publish-gate`](packages/devtool.publish-gate/README.md)
 是只读的 npm `prepublishOnly` 发布上下文门禁，检查准确提交的 CI、Git/tag、
-交付声明和 registry 状态，不接管构建、打包和发布。根包固定消费已发布的 rc.3，
+交付声明和 registry 状态，不接管构建、打包和发布。根包固定消费已发布的 `0.1.0`，
 不是 workspace 链接。workflow 通过门禁选择单个目标、构建依赖，再使用标准
 `pnpm publish` 调用成员的 `prepublishOnly`；旧发布器副本已移除。
 rc.3 已通过旧框架和固定的 rc.1 门禁发布；现已移除根清单和旧 tag 过滤，
@@ -360,9 +360,9 @@ Cloudflare intent does not certify platform configuration or deployment.
 ### Release a version
 
 The bootstrap transition published rc.3 through the installed rc.1 gate. The
-root now pins published rc.3, the legacy root declaration is removed, and the
+root now pins published `0.1.0`, the legacy root declaration is removed, and the
 workflow uses `**@*` tags. The rc.4 validation release keeps rc.3 runtime source
-unchanged and uses the installed rc.3 gate, not its own candidate code.
+unchanged and used the installed rc.3 gate, not its own candidate code.
 
 Manually update the selected library's version and any affected internal
 dependency versions. Commit these changes to main and wait for that exact

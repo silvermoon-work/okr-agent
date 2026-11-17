@@ -5,14 +5,14 @@
 OIDC 认证和 provenance 由标准 npm / pnpm 完成。
 
 `0.1.0-rc.3` 已通过旧框架、已安装的 rc.1 门禁和 Trusted Publishing 发布。
-本仓库根包固定依赖已发布的 rc.3，而不是同仓候选源码。
+本仓库根包固定依赖已发布的 `0.1.0`，而不是同仓候选源码。
 源码与当前 workflow 均采用包内声明与完整名称 tag。
 所有 npm 成员仍通过 `prepublishOnly` 调用已发布的根开发依赖。
 Trusted Publisher 必须绑定 `.github/workflows/publish-npm.yaml` 和 `npm`
 environment；配置 Trusted Publisher 不等于授权任意版本发布。
 
 **两阶段发布衔接**：rc.3 已发布，tag 为
-`devtool-publish-gate-v0.1.0-rc.3`。根依赖及 lockfile 现固定到 rc.3，
+`devtool-publish-gate-v0.1.0-rc.3`。根依赖及 lockfile 当时固定到 rc.3，
 根 `silvermoon.yaml` 已移除，workflow 启用 `**@*` 过滤。
 rc.4 仅递增版本、更新接入说明，运行时代码与 rc.3 相同，已完成真实发布，
 由已安装的 rc.3 检查发布，tag 为
