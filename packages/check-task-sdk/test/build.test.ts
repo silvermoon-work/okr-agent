@@ -9,10 +9,13 @@ it("removes stale deleted modules before building the SDK delivery", async () =>
   await mkdir(resolve("dist"), { recursive: true });
   await writeFile(stale, "export const obsolete = true;");
   try {
-    await promisify(execFile)(process.execPath, ["scripts/build.mjs"], {
-      cwd: resolve("."),
-      timeout: 30_000,
-    });
+    const cli = process.env.npm_execpath;
+    if (!cli) throw new Error("Run the SDK build regression through pnpm.");
+    await promisify(execFile)(
+      cli.endsWith(".exe") ? cli : process.execPath,
+      cli.endsWith(".exe") ? ["run", "build"] : [cli, "run", "build"],
+      { cwd: resolve("."), timeout: 30_000 },
+    );
     await expect(access(stale)).rejects.toHaveProperty("code", "ENOENT");
     await expect(access(resolve("dist", "index.js"))).resolves.toBeUndefined();
   } finally {

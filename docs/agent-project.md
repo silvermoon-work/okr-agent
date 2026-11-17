@@ -13,6 +13,11 @@
 - Name every workspace package, including the private root, under
   `@silvermoon-work/*`. Keep imports, workspace dependencies, release mappings,
   and documentation consistent when renaming packages.
+- Development-tool packages use `@silvermoon-work/devtool.<name>`.
+  `devtool.publish-gate` is an independent npm candidate, not yet a replacement
+  for the fixed publisher or a root dependency. First publish it through the
+  existing workflow; only then adopt a pinned published development dependency.
+  Keep publication authorization separate from Trusted Publisher setup.
 - Keep workspace build, test, test-coverage, lint-package and typecheck
   responsibilities aligned with `turbo.json`. Turbo reads workspace membership
   and dependency order; do not duplicate that graph in a custom scheduler. Run
@@ -28,9 +33,16 @@
   accepted or that this repository passes that Check. Do not copy the repository
   changes into Check author code, tests, references or assets to conceal the
   conflict.
-- Simple member commands call tsc, Vitest, ESLint and publint directly. Keep
-  scripts only for actual multi-step builds, development servers and integration
-  harnesses. Do not restore copied command/delivery libraries in every member.
+- Simple member commands call standard tools directly, including short fail-fast
+  command chains. SDK and ipfsaw builds use rimraf then tsc to remove stale
+  modules; the web host uses Vite's CLI with loopback host, port 4173 and strict
+  port selection. Vite uses standard config discovery rather than the former
+  wrappers' disabled config loading; no Vite config is currently present. Keep
+  scripts only for logic not adequately expressed by standard tool commands and
+  configuration. Do not restore copied command/delivery libraries in every
+  member. Extracting the fixed publisher into a shared development dependency is
+  deferred; leave its implementation and release entries unchanged in this
+  round.
 - Root `check` directly chains pnpm commands with `&&` and stops at the first
   failure: format-check, build, typecheck, whole-repository lint, package
   test-coverage, then npm package lint. Root configuration TypeScript is checked

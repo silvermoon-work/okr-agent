@@ -361,6 +361,22 @@ importers:
 
   packages/core: {}
 
+  packages/devtool.publish-gate:
+    dependencies:
+      commander:
+        specifier: 'catalog:'
+        version: 14.0.2
+      semver:
+        specifier: 'catalog:'
+        version: 7.8.6
+      yaml:
+        specifier: 'catalog:'
+        version: 2.9.1
+    devDependencies:
+      '@types/semver':
+        specifier: 'catalog:'
+        version: 7.8.0
+
   packages/ipfsaw:
     dependencies:
       '@ipld/car':

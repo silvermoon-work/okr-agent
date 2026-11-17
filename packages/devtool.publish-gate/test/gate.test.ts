@@ -1,0 +1,575 @@
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { checkPublishContext } from "../src/index.js";
+
+const command = vi.hoisted(() =>
+  vi.fn<(file: string, args: string[], options: unknown) => string>(),
+);
+vi.mock("node:child_process", () => ({ execFileSync: command }));
+
+const sha = "a".repeat(40);
+const name = "@silvermoon-work/widget";
+const registry = "https://registry.npmjs.org/";
+const version = "0.1.0-rc.0";
+let root: string;
+let cwd: string;
+let env: NodeJS.ProcessEnv;
+let manifest: Record<string, unknown>;
+let run: Record<string, unknown>;
+let after: Record<string, unknown>;
+let history: Record<string, unknown>;
+let jobs: Record<string, unknown>[];
+let metadata: Record<string, unknown> | null;
+let dependency: Record<string, unknown> | null;
+let dirty: string;
+let tagSha: string;
+let scopeRegistry: string;
+let runReads: number;
+let responder: ((url: string) => Response) | undefined;
+let fetcher: ReturnType<typeof vi.fn<typeof fetch>>;
+
+function response(
+  value: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { date: new Date().toUTCString(), ...headers },
+  });
+}
+
+function published(versions: string[]): Record<string, unknown> {
+  return {
+    name,
+    versions: Object.fromEntries(versions.map((v) => [v, {}])),
+    time: {
+      created: "2026-01-01",
+      modified: "2026-11-01",
+      ...Object.fromEntries(versions.map((v) => [v, "2026-11-01"])),
+    },
+  };
+}
+
+async function saveManifest() {
+  await writeFile(join(cwd, "package.json"), JSON.stringify(manifest));
+}
+
+beforeEach(async () => {
+  root = realpathSync(await mkdtemp(join(tmpdir(), "publish-gate-test-")));
+  cwd = join(root, "packages", "widget");
+  await mkdir(cwd, { recursive: true });
+  await mkdir(join(root, ".github", "workflows"), { recursive: true });
+  await writeFile(
+    join(root, "silvermoon.yaml"),
+    "deliverables:\n  - path: packages/widget\n    type: npm\n    packageId: widget\n  - path: packages/task\n    type: task-bundle\n",
+  );
+  await writeFile(
+    join(root, ".github", "workflows", "ci.yaml"),
+    "jobs:\n  compatibility:\n    strategy:\n      matrix:\n        node-version: [22.15.0, 24.11.1]\n",
+  );
+  manifest = {
+    name,
+    version,
+    publishConfig: { registry, access: "public" },
+    dependencies: { semver: "^7.0.0" },
+  };
+  await saveManifest();
+  env = {
+    GITHUB_ACTIONS: "true",
+    GITHUB_REPOSITORY: "silvermoon-work/okr-agent",
+    GITHUB_EVENT_NAME: "push",
+    GITHUB_REF_TYPE: "tag",
+    GITHUB_REF: `refs/tags/widget-v${version}`,
+    GITHUB_WORKFLOW_REF: `silvermoon-work/okr-agent/.github/workflows/publish-npm.yaml@refs/tags/widget-v${version}`,
+    GITHUB_SHA: sha,
+    GITHUB_TOKEN: "test-github-token",
+    ACTIONS_ID_TOKEN_REQUEST_URL: "https://oidc.invalid/",
+    ACTIONS_ID_TOKEN_REQUEST_TOKEN: "test-oidc-capability",
+    npm_command: "publish",
+    npm_lifecycle_event: "prepublishOnly",
+    npm_execpath: "npm-cli.js",
+    npm_config_registry: registry,
+    npm_config_access: "public",
+    npm_config_tag: "rc",
+    npm_config_provenance: "true",
+  };
+  run = {
+    id: 7,
+    run_attempt: 1,
+    head_sha: sha,
+    head_branch: "main",
+    event: "push",
+    path: ".github/workflows/ci.yaml",
+    status: "completed",
+    conclusion: "success",
+  };
+  after = run;
+  history = { total_count: 1, workflow_runs: [{ id: 7 }] };
+  jobs = [
+    "Quality default",
+    "Node.js 22.15.0",
+    "Node.js 24.11.1",
+    "Release verification (v1)",
+  ].map((jobName) => ({
+    name: jobName,
+    status: "completed",
+    conclusion: "success",
+    steps: [
+      {
+        name: "Confirm required checks succeeded",
+        status: "completed",
+        conclusion: "success",
+      },
+    ],
+  }));
+  metadata = null;
+  dependency = { name: "semver", versions: { "7.8.6": {} } };
+  dirty = "";
+  tagSha = sha;
+  scopeRegistry = "undefined";
+  runReads = 0;
+  responder = undefined;
+  command.mockImplementation((file, args) => {
+    if (file === process.execPath) return scopeRegistry;
+    if (args[0] === "status") return dirty;
+    if (args[0] === "merge-base") return "";
+    if (args[1] === "--show-toplevel") return root;
+    if (args[1] === "HEAD^{commit}") return sha;
+    if (args[1]?.startsWith("refs/tags/")) return tagSha;
+    throw new Error(`Unexpected command: ${file} ${args.join(" ")}`);
+  });
+  const dispatch = (url: string): Response => {
+    if (responder) return responder(url);
+    if (url.includes("/workflows/ci.yaml/runs?")) return response(history);
+    if (url.endsWith("/jobs?per_page=100"))
+      return response({ total_count: jobs.length, jobs });
+    if (url.endsWith("/runs/7"))
+      return response(runReads++ === 0 ? run : after);
+    if (url === `${registry}${encodeURIComponent(name)}`)
+      return metadata
+        ? response(metadata)
+        : response({ error: "Not found" }, 404);
+    if (url === `${registry}semver`)
+      return dependency
+        ? response(dependency)
+        : response({ error: "Not found" }, 404);
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  fetcher = vi.fn<typeof fetch>((input) => {
+    if (typeof input !== "string")
+      throw new Error("Expected a string request URL.");
+    return Promise.resolve(dispatch(input));
+  });
+  vi.stubGlobal("fetch", fetcher);
+});
+
+afterEach(async () => {
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+  await rm(root, { recursive: true, force: true });
+});
+
+describe("authorized release context", () => {
+  it("checks a tagged package and exact CI evidence without building, packing or publishing", async () => {
+    expect(await checkPublishContext(cwd, env)).toEqual({
+      packageId: "widget",
+      name,
+      version,
+      channel: "rc",
+      sha,
+      dryRun: false,
+    });
+    expect(
+      command.mock.calls.every(
+        ([file, args]) =>
+          file === "git" ||
+          (file === process.execPath &&
+            args.slice(1).join(" ") === "config get @silvermoon-work:registry"),
+      ),
+    ).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(6);
+    const [, options] = fetcher.mock.calls[0]!;
+    expect(options).toMatchObject({
+      redirect: "error",
+      headers: { authorization: "Bearer test-github-token" },
+    });
+    expect(fetcher.mock.calls[4]?.[1]?.headers).not.toHaveProperty(
+      "authorization",
+    );
+    expect(await readFile(join(cwd, "package.json"), "utf8")).toBe(
+      JSON.stringify(manifest),
+    );
+  });
+
+  it("permits explicitly selected manual dry runs but never a manual real publication", async () => {
+    env.GITHUB_EVENT_NAME = "workflow_dispatch";
+    env.PACKAGE_INPUT = "widget";
+    env.npm_config_dry_run = "true";
+    expect(await checkPublishContext(cwd, env)).toMatchObject({ dryRun: true });
+    delete env.npm_config_dry_run;
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow("dry-run only");
+  });
+
+  it.each([
+    ["GITHUB_ACTIONS", "false", "GitHub Actions"],
+    ["npm_command", "run-script", "prepublishOnly"],
+    ["npm_lifecycle_event", "prepare", "prepublishOnly"],
+    ["NPM_TOKEN", "test-token", "stored npm tokens"],
+    ["NODE_AUTH_TOKEN", "test-token", "stored npm tokens"],
+    ["ACTIONS_ID_TOKEN_REQUEST_TOKEN", "", "OIDC"],
+    ["GITHUB_REPOSITORY", "../invalid", "publish-npm.yaml"],
+    ["GITHUB_TOKEN", "", "GITHUB_TOKEN"],
+    ["GITHUB_WORKFLOW_REF", "other-workflow", "publish-npm.yaml"],
+    ["GITHUB_SHA", "b".repeat(40), "event SHA"],
+    ["npm_config_registry", "https://mirror.invalid/", "publishConfig"],
+    ["npm_config_access", "restricted", "publishConfig"],
+    ["npm_config_tag", "latest", "publishConfig"],
+    ["npm_config_provenance", "false", "publishConfig"],
+    ["npm_config_force", "true", "without --force"],
+    ["npm_execpath", "", "lifecycle executable"],
+    ["GITHUB_REF_TYPE", "branch", "Release tag"],
+    ["GITHUB_REF", "refs/tags/widget-v9.0.0", "Release tag"],
+    ["GITHUB_EVENT_NAME", "pull_request", "dry-run only"],
+  ])("blocks invalid %s", async (key, value, message) => {
+    env[key] = value;
+    if (key === "GITHUB_REF")
+      env.GITHUB_WORKFLOW_REF = `${env.GITHUB_REPOSITORY}/.github/workflows/publish-npm.yaml@${value}`;
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(message);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("rejects dirty sources, mismatching tags and non-main ancestry", async () => {
+    dirty = " M src/index.ts";
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "tracked changes",
+    );
+    dirty = "";
+    tagSha = "b".repeat(40);
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow("Release tag");
+    command
+      .mockImplementationOnce(() => root)
+      .mockImplementationOnce(() => "")
+      .mockImplementationOnce(() => sha)
+      .mockImplementationOnce(() => {
+        throw new Error("not reachable from main");
+      });
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "not reachable",
+    );
+  });
+
+  it("rejects scope registry overrides instead of assuming --registry wins", async () => {
+    scopeRegistry = "https://private.invalid/";
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "scope-specific registry",
+    );
+    scopeRegistry = registry;
+    await expect(checkPublishContext(cwd, env)).resolves.toMatchObject({
+      name,
+    });
+  });
+
+  it.each([
+    { private: true },
+    { name: "@workspace/template" },
+    { name: "bad name" },
+    { version: "1.0.0-beta.0" },
+    { version: "01.0.0" },
+    { publishConfig: { registry, access: "public", provenance: false } },
+    { publishConfig: { registry, access: "public", directory: "dist" } },
+    { publishConfig: { registry, access: "public", tag: "latest" } },
+  ])("rejects unsupported package metadata %j", async (change) => {
+    Object.assign(manifest, change);
+    await saveManifest();
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "deliverables: []",
+    "deliverables:\n - {path: packages/widget, type: npm, packageId: widget}\n - {path: packages/widget, type: npm, packageId: other}",
+    "deliverables:\n - {path: packages/widget, type: npm, packageId: widget}\n - {path: packages/other, type: npm, packageId: widget}",
+    "deliverables:\n - {path: ../outside, type: npm, packageId: widget}",
+    "deliverables:\n - {path: packages/widget, type: npm, packageId: Bad}",
+    "deliverables: [",
+    "deliverables: []\ndeliverables: []",
+    "deliverables: [null]",
+  ])(
+    "requires an unambiguous valid delivery declaration: %s",
+    async (source) => {
+      await writeFile(join(root, "silvermoon.yaml"), source);
+      await expect(checkPublishContext(cwd, env)).rejects.toThrow();
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("exact-commit CI evidence", () => {
+  it("selects the latest CI run rather than accepting an older success", async () => {
+    history = { total_count: 2, workflow_runs: [{ id: 2 }, { id: 7 }] };
+    run.conclusion = "failure";
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "latest exact-commit",
+    );
+  });
+
+  it.each([
+    { head_sha: "b".repeat(40) },
+    { head_branch: "feature" },
+    { event: "pull_request" },
+    { path: ".github/workflows/other.yaml" },
+    { status: "in_progress" },
+    { conclusion: "skipped" },
+    { id: 0 },
+    { run_attempt: 0 },
+  ])("rejects wrong or unsuccessful run %j", async (change) => {
+    Object.assign(run, change);
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "latest exact-commit",
+    );
+  });
+
+  it("rejects incomplete history, job pagination, missing/duplicate jobs and skipped aggregate steps", async () => {
+    history.total_count = 2;
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow("history");
+    history.total_count = 1;
+    responder = () =>
+      response({ total_count: 2, jobs: [], workflow_runs: [{ id: 7 }] });
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow();
+    responder = undefined;
+    jobs.pop();
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "Required CI job",
+    );
+    jobs.push({ ...jobs[0] });
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow("uniquely");
+    jobs.pop();
+    jobs.push({
+      name: "Release verification (v1)",
+      status: "completed",
+      conclusion: "success",
+      steps: [],
+    });
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "confirmation step",
+    );
+  });
+
+  it("rejects a rerun starting during verification", async () => {
+    after = { ...run, run_attempt: 2 };
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "attempt changed",
+    );
+  });
+
+  it.each([
+    "[22.15.0]",
+    "[22.15.0, 22.15.0]",
+    "[lts, 24.11.1]",
+    "[22.15.0, 24.0.0-rc.0]",
+  ])("rejects an unsupported CI matrix %s", async (nodes) => {
+    await writeFile(
+      join(root, ".github", "workflows", "ci.yaml"),
+      `jobs:\n  compatibility:\n    strategy:\n      matrix:\n        node-version: ${nodes}\n`,
+    );
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "Node versions",
+    );
+  });
+});
+
+describe("registry eligibility and trustworthy responses", () => {
+  it("accepts contiguous RC history and published runtime, optional and peer dependencies", async () => {
+    manifest.version = "0.1.0-rc.2";
+    manifest.optionalDependencies = { semver: "^7.0.0" };
+    manifest.peerDependencies = { semver: "^7.0.0" };
+    metadata = published(["0.0.0", "0.1.0-rc.1", "0.1.0-rc.0"]);
+    env.GITHUB_REF = "refs/tags/widget-v0.1.0-rc.2";
+    env.GITHUB_WORKFLOW_REF = `${env.GITHUB_REPOSITORY}/.github/workflows/publish-npm.yaml@${env.GITHUB_REF}`;
+    await saveManifest();
+    await expect(checkPublishContext(cwd, env)).resolves.toMatchObject({
+      version: "0.1.0-rc.2",
+    });
+  });
+
+  it("supports stable unscoped packages on latest without dependencies", async () => {
+    manifest.name = "widget";
+    manifest.version = "1.0.0";
+    delete manifest.dependencies;
+    env.npm_config_tag = "latest";
+    env.GITHUB_REF = "refs/tags/widget-v1.0.0";
+    env.GITHUB_WORKFLOW_REF = `${env.GITHUB_REPOSITORY}/.github/workflows/publish-npm.yaml@${env.GITHUB_REF}`;
+    await saveManifest();
+    responder = (url) => {
+      if (url.includes("/workflows/")) return response(history);
+      if (url.includes("/jobs?"))
+        return response({ total_count: jobs.length, jobs });
+      if (url.includes("/runs/")) return response(run);
+      return response({ error: "Not found" }, 404);
+    };
+    await expect(checkPublishContext(cwd, env)).resolves.toMatchObject({
+      channel: "latest",
+    });
+    responder = (url) => {
+      if (url.includes("/workflows/")) return response(history);
+      if (url.includes("/jobs?"))
+        return response({ total_count: jobs.length, jobs });
+      if (url.includes("/runs/")) return response(run);
+      return response({ ...published(["0.0.0"]), name: "widget" });
+    };
+    await expect(checkPublishContext(cwd, env)).resolves.toMatchObject({
+      channel: "latest",
+    });
+  });
+
+  it.each([
+    ["already published", published([version]), "already exists"],
+    [
+      "missing timestamps",
+      { name, versions: {}, time: {} },
+      "history is incomplete",
+    ],
+    [
+      "unpublished history",
+      {
+        name,
+        versions: {},
+        time: { created: "x", modified: "x", unpublished: true },
+      },
+      "history is incomplete",
+    ],
+    [
+      "wrong identity",
+      { ...published([]), name: "other" },
+      "identity mismatch",
+    ],
+    ["RC gap", published(["0.1.0-rc.1"]), "contiguous"],
+    ["malformed RC", published(["0.1.0-rc.bad"]), "Invalid RC"],
+    [
+      "missing version data",
+      { ...published(["0.1.0-rc.0"]), versions: {} },
+      "history is incomplete",
+    ],
+  ])("rejects %s", async (_label, value, message) => {
+    metadata = value;
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(message);
+  });
+
+  it("requires rc.0 for a new package", async () => {
+    manifest.version = "0.1.0-rc.1";
+    env.GITHUB_REF = "refs/tags/widget-v0.1.0-rc.1";
+    env.GITHUB_WORKFLOW_REF = `${env.GITHUB_REPOSITORY}/.github/workflows/publish-npm.yaml@${env.GITHUB_REF}`;
+    await saveManifest();
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow("First RC");
+  });
+
+  it.each([
+    "catalog:",
+    "workspace:*",
+    "file:../other",
+    "npm:other@1",
+    "latest",
+    "not a range",
+  ])("rejects unresolved dependency range %s", async (range) => {
+    manifest.dependencies = { semver: range };
+    await saveManifest();
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "registry SemVer range",
+    );
+  });
+
+  it("rejects missing and incompatible dependency versions", async () => {
+    dependency = null;
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "already be published",
+    );
+    dependency = { name: "semver", versions: { "6.0.0": {} } };
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "already be published",
+    );
+  });
+
+  it.each([
+    [() => response({}, 403), "HTTP 403"],
+    [() => response({ error: "permission denied" }, 404), "HTTP 404"],
+    [() => response({}, 200, { date: "invalid" }), "freshness"],
+    [() => response({}, 200, { age: "3601" }), "freshness"],
+    [() => response({}, 200, { date: new Date(0).toUTCString() }), "freshness"],
+    [
+      () => new Response(null, { headers: { date: new Date().toUTCString() } }),
+      "body is missing",
+    ],
+    [() => response(null), "Expected an object"],
+    [
+      () =>
+        new Response("not JSON", {
+          headers: { date: new Date().toUTCString() },
+        }),
+      "JSON",
+    ],
+  ])("fails explicitly for unusable API responses", async (reply, message) => {
+    responder = reply;
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(message);
+  });
+
+  it("does not interpret registry failures as absence", async () => {
+    fetcher.mockRejectedValueOnce(new Error("network unavailable"));
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "network unavailable",
+    );
+    responder = (url) => {
+      if (url.includes("/workflows/")) return response(history);
+      if (url.includes("/jobs?"))
+        return response({ total_count: jobs.length, jobs });
+      if (url.includes("/runs/")) return response(run);
+      return response({ error: "permission denied" }, 404);
+    };
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "Unconfirmed registry absence",
+    );
+  });
+
+  it("enforces the 16MiB response budget before parsing oversized content", async () => {
+    responder = () =>
+      new Response(new Uint8Array(16_777_217), {
+        headers: { date: new Date().toUTCString() },
+      });
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "exceeds 16MiB",
+    );
+  });
+
+  it("accepts 64 dependency declarations and refuses a 65th query", async () => {
+    const dependencies = Object.fromEntries(
+      Array.from({ length: 64 }, (_, index) => [`module-${index}`, "^1.0.0"]),
+    );
+    manifest.dependencies = dependencies;
+    await saveManifest();
+    responder = (url) => {
+      if (url.includes("/workflows/")) return response(history);
+      if (url.includes("/jobs?"))
+        return response({ total_count: jobs.length, jobs });
+      if (url.includes("/runs/")) return response(run);
+      const requested = decodeURIComponent(new URL(url).pathname.slice(1));
+      if (requested === name) return response({ error: "Not found" }, 404);
+      return response({ name: requested, versions: { "1.0.0": {} } });
+    };
+    await expect(checkPublishContext(cwd, env)).resolves.toMatchObject({
+      name,
+    });
+    manifest.peerDependencies = { "module-64": "^1.0.0" };
+    await saveManifest();
+    await expect(checkPublishContext(cwd, env)).rejects.toThrow(
+      "budget exceeded",
+    );
+    expect(
+      fetcher.mock.calls.some(
+        ([url]) => typeof url === "string" && url.endsWith("module-64"),
+      ),
+    ).toBe(false);
+  });
+});

@@ -44,7 +44,7 @@
     "url": "https://github.com/silvermoon-work/okr-agent/issues"
   },
   "scripts": {
-    "build": "node scripts/build.mjs",
+    "build": "rimraf dist && tsc --project tsconfig.build.json",
     "demo": "node scripts/demo.mjs",
     "lint": "eslint . --max-warnings=0",
     "lint-package": "publint",

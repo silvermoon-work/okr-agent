@@ -8,6 +8,9 @@ deliverables:
   - path: packages/ipfsaw
     type: npm
     packageId: ipfsaw
+  - path: packages/devtool.publish-gate
+    type: npm
+    packageId: devtool-publish-gate
   - path: packages/check.nodejs-toolchain
     type: task-bundle
   - path: packages/check.typescript-project
