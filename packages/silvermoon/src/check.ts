@@ -5,6 +5,7 @@ import {
 import { Input } from "./contract.js";
 import { inspectDevice, deviceLanguage } from "./device.js";
 import { canonical, digest, invariant, type State } from "./domain.js";
+import { withGitContext } from "./git-context.js";
 import {
   draftChanges,
   primary,
@@ -35,90 +36,130 @@ export function silvermoonRegistry(bundleCid: string) {
   return {
     device: defineChecker({
       target: Input,
-      check: async (target, signal): Promise<SilvermoonResult> => {
+      check: async (request, signal): Promise<SilvermoonResult> => {
+        const { target, operation, runtime } = request;
         signal.throwIfAborted();
-        if (target.mode === "snapshot")
-          return { pass: true, children: [{ checker: "project", target }] };
+        if (operation.mode === "snapshot")
+          return {
+            pass: true,
+            children: [{ checker: "project", target: request }],
+          };
         try {
-          await inspectDevice(target.device);
+          await inspectDevice({ home: target.userHome, ...runtime });
         } catch (error) {
           signal.throwIfAborted();
           return failure("device", error);
         }
         return {
           pass: true,
-          children: target.root ? [{ checker: "project", target }] : [],
+          children:
+            target.repoRoot || target.idea
+              ? [{ checker: "project", target: request }]
+              : [],
         };
       },
     }),
     project: defineChecker({
       target: Input,
-      check: async (target, signal): Promise<SilvermoonResult> => {
+      check: async (request, signal): Promise<SilvermoonResult> => {
+        const { target, operation, runtime } = request;
         try {
-          invariant(target.root, "project", "Select a Git repository root.");
-          project = await readProject(
-            target.root,
-            target.mode === "snapshot"
-              ? (target.snapshot ?? "HEAD")
-              : "worktree",
-            signal,
+          invariant(
+            target.repoRoot,
+            "project",
+            "Select a Git repository root.",
           );
-          if (target.mode === "snapshot") {
-            await snapshotHistory(project, target.snapshot ?? "HEAD", signal);
-            return { pass: true, children: [] };
-          }
+          return await withGitContext(
+            {
+              userHome: target.userHome,
+              path: runtime.path,
+              ...(runtime.sshAuthSock
+                ? { sshAuthSock: runtime.sshAuthSock }
+                : {}),
+            },
+            async (): Promise<SilvermoonResult> => {
+              invariant(
+                target.repoRoot,
+                "project",
+                "Select a Git repository root.",
+              );
+              project = await readProject(
+                target.repoRoot,
+                operation.mode === "snapshot"
+                  ? (operation.snapshot ?? "HEAD")
+                  : "worktree",
+                signal,
+              );
+              if (operation.mode === "snapshot") {
+                await snapshotHistory(
+                  project,
+                  operation.snapshot ?? "HEAD",
+                  signal,
+                );
+                return { pass: true, children: [] };
+              }
+              try {
+                observed = await primary(project, {
+                  fetch: operation.refresh ?? true,
+                  signal,
+                });
+                if (!target.idea) {
+                  invariant(
+                    !observed.changes.length && observed.head === observed.tip,
+                    "repository",
+                    "Commit/synchronize local content to the configured primary; no automatic Git writes are performed.",
+                  );
+                  return { pass: true, children: [] };
+                }
+                const current = selectIdea(project, target.idea);
+                invariant(
+                  current.bootstrap.checkCid === bundleCid,
+                  "check-identity",
+                  "The executing Check CID does not match the Idea's immutable bootstrap.",
+                );
+                state = await observedIdeaState(
+                  project,
+                  current,
+                  {
+                    head: observed.head,
+                    primary: observed.project,
+                  },
+                  await deviceLanguage({ home: target.userHome }),
+                  signal,
+                );
+                invariant(
+                  draftChanges(
+                    observed.changes,
+                    current.bootstrap.id,
+                    state.level,
+                  ),
+                  "repository",
+                  "Unrelated or mixed worktree changes block Idea routing. Preserve them; never auto-clean/stage/commit.",
+                );
+              } catch (error) {
+                signal.throwIfAborted();
+                return failure("repository", error);
+              }
+              return {
+                pass: true,
+                children: [{ checker: "idea", target: request }],
+              };
+            },
+          );
         } catch (error) {
           signal.throwIfAborted();
           return failure(
-            target.mode === "snapshot" ? "snapshot" : "project",
+            operation.mode === "snapshot" ? "snapshot" : "project",
             error,
           );
         }
-        try {
-          observed = await primary(project, {
-            fetch: target.refresh ?? true,
-            signal,
-          });
-          if (!target.idea) {
-            invariant(
-              !observed.changes.length && observed.head === observed.tip,
-              "repository",
-              "Commit/synchronize local content to the configured primary; no automatic Git writes are performed.",
-            );
-            return { pass: true, children: [] };
-          }
-          const current = selectIdea(project, target.idea);
-          invariant(
-            current.bootstrap.checkCid === bundleCid,
-            "check-identity",
-            "The executing Check CID does not match the Idea's immutable bootstrap.",
-          );
-          state = await observedIdeaState(
-            project,
-            current,
-            {
-              head: observed.head,
-              primary: observed.project,
-            },
-            await deviceLanguage(target.device),
-            signal,
-          );
-          invariant(
-            draftChanges(observed.changes, current.bootstrap.id, state.level),
-            "repository",
-            "Unrelated or mixed worktree changes block Idea routing. Preserve them; never auto-clean/stage/commit.",
-          );
-        } catch (error) {
-          signal.throwIfAborted();
-          return failure("repository", error);
-        }
-        return { pass: true, children: [{ checker: "idea", target }] };
       },
     }),
     idea: defineChecker({
       target: Input,
-      check: (target, signal): Promise<SilvermoonResult> =>
+      check: (request, signal): Promise<SilvermoonResult> =>
         Promise.resolve().then((): SilvermoonResult => {
+          const { target } = request;
           signal.throwIfAborted();
           invariant(
             project && observed && state && target.idea,

@@ -19,7 +19,7 @@ export function currentDevice(): Device {
   };
 }
 export async function deviceLanguage(
-  device: Device,
+  device: Pick<Device, "home">,
 ): Promise<string | undefined> {
   const config = join(device.home, ".config", "silvermoon", "config.yaml");
   return (await absent(config))

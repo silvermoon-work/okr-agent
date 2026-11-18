@@ -14,13 +14,14 @@
 - 仅在读取后的内存模型中规范化，不重写配置路径、版本、字段或原始文件；保留对凭据、其他主机、查询、片段及非法身份的拒绝。
 - 用旧 URL 原文的 fixture 运行 snapshot、primary 及真实 CLI；验证新旧工具均可读取本仓库现有配置。
 
-## R-02: 显式传入 Git 宿主上下文
+## R-02: 收敛业务 Target 并区分宿主运行上下文
 
 Engine 的 Worker 按设计不继承宿主环境；Git 适配却在 Worker 内读取 `process.env`，丢失 CLI 使用的 PATH、home 和 SSH agent 等上下文。
 
-- 宿主捕获有界、封闭白名单的 Git 执行环境，经 Check Target 显式传递；只传必需的路径及控制字段，不复制 token、任意 `GIT_*`、`NODE_OPTIONS` 或整个宿主环境。
-- Worker 的仓库检查使用该显式环境。将作用域限定到当前异步检查，让嵌套 Git 操作一致、并发调用不串环境；不修改全局 `process.env` 或 Task Engine。
-- 主进程的创建、事件与只读查询复用相同 Git 环境构造，保留禁 hooks、非交互、禁外部协议及现有历史/并发保护；缺失或非法显式上下文须明确报错，不能默默换系统默认环境。
+- 用户随后明确业务 Target 为 `userHome + repoRoot + idea`。`userHome` 是用户 Home，不是 Silvermoon 配置 Root；项目及个人配置、primary、语言和 Idea 事实从这两个根读取。设备级和项目级导航分别允许缺少 Repo 或 Idea；不把操作选项或任意环境集合放入 Target。
+- Check 请求显式分为 `target`、`operation`、`runtime`。snapshot / refresh 是操作策略；当前 CLI 入口、宿主可执行文件搜索路径和可选 SSH agent socket 是执行及设备核验上下文，不能从用户 Home 或 Repo 可靠推断，单独由 Host 提供。`Report.target` 仅返回业务 Target。不得添加通用环境变量映射或仓库白名单。
+- Worker 的仓库检查根据业务 Target 的用户 Home 和独立运行上下文构造 Git 环境；按 Home 寻找用户配置与 SSH 配置。将作用域限定到当前异步检查，让嵌套 Git 操作一致、并发调用不串环境；不修改全局 `process.env` 或 Task Engine，不传 token、任意 `GIT_*`、`NODE_OPTIONS` 或完整宿主环境。
+- 主进程的创建、事件与只读查询复用相同 Git 环境构造，保留禁 hooks、非交互、禁外部协议及现有历史/并发保护；缺失或非法必要上下文须明确报错，不能默默换系统默认环境。
 - 在真实子进程 CLI 与真实 CAR Worker 中使用只连接自有 bare primary 的受控传输，完成五次确认、草稿同步、实现证据、部署证据、终态及修订回退。原 `rc.0` 应在该回归中失败，不能通过替换 Worker 或注入无限制环境制造通过。
 
 ## 验证与再交付

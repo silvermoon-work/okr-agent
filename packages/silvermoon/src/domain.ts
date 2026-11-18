@@ -219,6 +219,12 @@ export function yamlObject(source: string): unknown {
   invariant(!doc.errors.length, "config", "Invalid YAML configuration.");
   return doc.toJS({ maxAliasCount: 0 }) as unknown;
 }
+export function repositoryIdentity(value: string): string | undefined {
+  if (/^[\w.-]+\/[\w.-]+$/.test(value) && !value.endsWith(".git")) return value;
+  return /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(
+    value,
+  )?.[1];
+}
 export function projectConfig(source: string): ProjectConfig {
   const value = yamlObject(source);
   invariant(
@@ -226,11 +232,11 @@ export function projectConfig(source: string): ProjectConfig {
     "config",
     "Expected v2 config with primaryRepository, primaryBranch and optional preferredLanguage only.",
   );
+  const identity = repositoryIdentity(value.primaryRepository);
   invariant(
-    /^[\w.-]+\/[\w.-]+$/.test(value.primaryRepository) &&
-      !value.primaryRepository.endsWith(".git"),
+    identity,
     "config",
-    "primaryRepository must be owner/repository, never a URL or credentials.",
+    "primaryRepository must identify a GitHub owner/repository without URL credentials, query or fragment.",
   );
   invariant(
     !value.primaryBranch.startsWith("-") &&
@@ -241,7 +247,7 @@ export function projectConfig(source: string): ProjectConfig {
     "Invalid primary branch.",
   );
   if (value.preferredLanguage) language(value.preferredLanguage);
-  return value;
+  return { ...value, primaryRepository: identity };
 }
 export function userLanguage(source?: string): string | undefined {
   if (source === undefined) return undefined;

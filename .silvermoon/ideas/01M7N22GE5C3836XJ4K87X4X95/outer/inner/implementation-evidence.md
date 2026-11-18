@@ -74,3 +74,31 @@ GitHub 仓库 `npm` environment 存在。其存在不证明 npm 侧 Trusted Publ
 - 五次独立签字、相同内容提交/同步、两阶段证据、最终 Pass、随后 Technical 支持内容修改导致回退，全部通过。日志为 session 的 `silvermoon-reviewed-smoke.log`，不是发布后测试。
 
 主 Agent 据此完成本轮 Implementation 审阅；Deployment 的真实 registry 发布与发布版验收仍需独立前提，不能由上述本地结果推断完成。
+
+## RC.0 部署反馈后的重新实施
+
+上节仅记录原 `rc.0` 候选的历史验收。真实发布后发现的两个阻塞没有被这些成绩覆盖；用户要求返回 Inner，契约与[修复决议](rc0-resolution.md)已使原 `acceptInner` 对新 revision 失效。本轮按随后确认的 Target 设计重新实施，不延续被暂停的通用 Git 环境白名单草稿。
+
+### 实际修复
+
+- 业务 `Target` 为 `{userHome, repoRoot?, idea?}`。Idea 检查需要 Repo；Device / Project 导航可省略后继身份。`userHome` 明确是用户 Home。配置、primary、语言、Idea 版本与历史均从根目录读取。
+- 请求将 `target` 与 `operation`、`runtime` 分开；snapshot / refresh 不属于对象身份，运行入口、宿主可执行文件搜索路径和可选 agent socket 也不放入 Target。`Report.target` 仅包含三个业务字段，没有环境映射、凭据或 Git Repo 白名单。
+- Git 从用户 Home 寻找配置，以 Repo 为工作目录，复用显式构造及 async-local 隔离的执行上下文。真实 Worker 和主进程一致使用受控路径；不修改 Engine 或全局环境，不传任意 `GIT_*`、token 或 `NODE_OPTIONS`。无效上下文明确失败，并发回归证明两次检查不串环境。
+- primary 配置与 remote 共用仓库身份解析，兼容无凭据 GitHub HTTPS / Git SSH 表示和简写，仅内存规范化。凭据、其他主机、查询、片段等仍拒绝，旧共享配置文件不被改写。
+- 下一连续候选为 `@silvermoon-work/silvermoon@0.1.0-rc.1`。重建后的 Check CID 为 `bafybeiag6a6uymuygy22oghwhmththrrxrrfqhkwf6gpzju3yh2btw5le4`；不会给旧 Idea 注入新 CID，也不替换全局 CLI / skill 或已发布 `rc.0`。
+
+### 重新验证结果
+
+精确开发 Node `26.13.1` / pnpm `11.28.12` 的根 `pnpm check` 全部通过，覆盖 format、build、typecheck、typed lint、coverage、strict publint。38 个 CLI 包测试与 1 个 Check 作者包测试通过；CLI statements / branches / functions / lines 为 `97.17 / 91.05 / 97.66 / 97.82%`，作者包均为 `100%`。未降低全局 90% 门禁或排除源码。
+
+新增真实子进程回归没有替换 Worker，也没有 mock fetch：只将固定测试仓库的 SSH 传输连接到自有 bare primary。使用未经改写的旧 HTTPS primary 配置及旧 `version: 1` 用户语言配置，实际完成：
+
+1. snapshot 与设备/项目整备；
+2. 16 位 ID 创建及内容语言覆盖；
+3. 五次分别修改草稿、签署准确版本、观测 synchronization，再提交同步；
+4. 实现和部署证据草稿、批次记录及同步；
+5. 最终真实 CAR Check pass，inventory 为 completed；
+6. 修改 Technical 支持内容立即回退 technical；
+7. 核对原始配置字节及无效旧归档保持不变。
+
+回归同时逐次断言 `Report.target` 精确等于 `{userHome, repoRoot, idea}`，不夹带 operation 或运行环境。fixture 的可执行入口用独立 shim 调用构建产物，未给源码或全局 bin 改权限。以上是新候选的实施证据，发布后的同制品验证仍在 Deployment 执行，不能提前宣告完成。

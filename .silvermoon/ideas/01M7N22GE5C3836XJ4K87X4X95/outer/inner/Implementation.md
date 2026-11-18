@@ -20,7 +20,7 @@
 
 ### I-S04: 修复 RC.0 配置兼容与 Git 执行上下文
 
-按[修复决议](rc0-resolution.md)复用安全的 GitHub 仓库身份解析，兼容合法旧配置而不改写共享文件；由宿主显式捕获允许的 Git 环境，经 Target 传入真实 Check Worker，并为并发检查隔离上下文，不继承任意环境或削弱 Engine 隔离。同步修复直接依赖的调用方、测试和文档。
+按[修复决议](rc0-resolution.md)复用安全的 GitHub 仓库身份解析，兼容合法旧配置而不改写共享文件；业务 Target 收敛为用户 Home、Repo Root 与 Idea，操作选项和必要运行上下文单独传递；为真实 Check Worker 的并发 Git 检查隔离上下文，不继承任意环境或削弱 Engine 隔离。同步修复直接依赖的调用方、测试和文档。
 
 ## Acceptance criteria
 

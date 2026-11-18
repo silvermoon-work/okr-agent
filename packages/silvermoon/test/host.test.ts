@@ -15,7 +15,11 @@ import {
   type Device,
 } from "../src/device.js";
 import { silvermoonRegistry } from "../src/check.js";
-import { bundledArtifact, observe, readDocument } from "../src/host.js";
+import {
+  bundledArtifact,
+  observe as observeTarget,
+  readDocument,
+} from "../src/host.js";
 import { canonical, digest, idea, reduce } from "../src/domain.js";
 import { git, selectIdea, readProject } from "../src/repository.js";
 import type { Input } from "../src/contract.js";
@@ -69,16 +73,28 @@ async function target(): Promise<{ target: Input; remote: string }> {
     "origin",
     "https://github.com/example/project.git",
   ]);
+  const current = await device();
   return {
     remote,
     target: {
-      root,
-      mode: "lifecycle",
-      refresh: false,
-      idea: id,
-      device: await device(),
+      target: { userHome: current.home, repoRoot: root, idea: id },
+      operation: { mode: "lifecycle", refresh: false },
+      runtime: {
+        entry: current.entry,
+        path: current.path + delimiter + (process.env.PATH ?? ""),
+      },
     },
   };
+}
+function observe(
+  request: Input,
+  options: Parameters<typeof observeTarget>[1] = {},
+) {
+  return observeTarget(request.target, {
+    operation: request.operation,
+    runtime: request.runtime,
+    ...options,
+  });
 }
 async function graph(target: Input, bundle = cid) {
   const nodes: ReportNode[] = [];
@@ -95,26 +111,28 @@ async function graph(target: Input, bundle = cid) {
 describe("Device → Project → Idea and the real offline Engine", () => {
   it("routes deployment drafts using the same tested-ancestor context as the Idea checker", async () => {
     const { target: input, remote } = await target();
-    const tested = await git(input.root!, ["rev-parse", "HEAD"]);
+    const tested = await git(input.target.repoRoot!, ["rev-parse", "HEAD"]);
     let source = signed();
     const current = idea(source, id);
     source = add(
       source,
       event({ type: "verify", batch: { ...batch(current), subject: tested } }),
     );
-    await git(input.root!, ["remote", "set-url", "origin", remote]);
-    await materialize(input.root!, source);
-    await sync(input.root!);
-    await git(input.root!, [
+    await git(input.target.repoRoot!, ["remote", "set-url", "origin", remote]);
+    await materialize(input.target.repoRoot!, source);
+    await sync(input.target.repoRoot!);
+    await git(input.target.repoRoot!, [
       "remote",
       "set-url",
       "origin",
       "https://github.com/example/project.git",
     ]);
-    expect(await git(input.root!, ["rev-parse", "HEAD"])).not.toBe(tested);
+    expect(await git(input.target.repoRoot!, ["rev-parse", "HEAD"])).not.toBe(
+      tested,
+    );
     await writeFile(
       join(
-        input.root!,
+        input.target.repoRoot!,
         ".silvermoon",
         "i",
         id,
@@ -205,13 +223,16 @@ describe("Device → Project → Idea and the real offline Engine", () => {
     const { target: input } = await target();
     const failedDevice = await graph({
       ...input,
-      device: { ...input.device, path: "" },
+      runtime: { ...input.runtime, path: "" },
     });
     expect(failedDevice.problems.map((problem) => problem.code)).toEqual([
       "device",
     ]);
     expect(failedDevice.nodes).toHaveLength(1);
-    const missing = await graph({ ...input, root: await scratch() });
+    const missing = await graph({
+      ...input,
+      target: { ...input.target, repoRoot: await scratch() },
+    });
     expect(missing.problems.map((problem) => problem.code)).toEqual([
       "project",
     ]);
@@ -223,21 +244,33 @@ describe("Device → Project → Idea and the real offline Engine", () => {
     expect(
       await graph({
         ...input,
-        mode: "snapshot",
-        snapshot: "HEAD",
-        device: { entry: "", home: "", path: "" },
+        operation: { mode: "snapshot", snapshot: "HEAD" },
+        runtime: { ...input.runtime, entry: "" },
       }),
     ).toMatchObject({ pass: true });
     expect(
-      await graph({ mode: "lifecycle", device: input.device }),
+      await graph({
+        ...input,
+        target: { userHome: input.target.userHome },
+      }),
     ).toMatchObject({ pass: true });
     expect(
-      await graph({ mode: "snapshot", device: input.device }),
+      await graph({
+        ...input,
+        target: { userHome: input.target.userHome, idea: id },
+      }),
+    ).toMatchObject({ pass: false, problems: [{ code: "project" }] });
+    expect(
+      await graph({
+        ...input,
+        target: { userHome: input.target.userHome },
+        operation: { mode: "snapshot" },
+      }),
     ).toMatchObject({ pass: false, problems: [{ code: "snapshot" }] });
-    const noIdea = { ...input };
-    delete noIdea.idea;
+    const noIdea = { ...input, target: { ...input.target } };
+    delete noIdea.target.idea;
     expect(await graph(noIdea)).toMatchObject({ pass: true });
-    await writeFile(join(input.root!, "unrelated.txt"), "preserve");
+    await writeFile(join(input.target.repoRoot!, "unrelated.txt"), "preserve");
     expect(await graph(noIdea)).toMatchObject({
       problems: [{ code: "repository" }],
     });
@@ -266,10 +299,10 @@ describe("Device → Project → Idea and the real offline Engine", () => {
             new TextDecoder().decode(bytes).replaceAll(cid, artifact.cid),
           ),
         );
-    await git(input.root!, ["remote", "set-url", "origin", remote]);
-    await materialize(input.root!, currentFiles);
-    await sync(input.root!);
-    await git(input.root!, [
+    await git(input.target.repoRoot!, ["remote", "set-url", "origin", remote]);
+    await materialize(input.target.repoRoot!, currentFiles);
+    await sync(input.target.repoRoot!);
+    await git(input.target.repoRoot!, [
       "remote",
       "set-url",
       "origin",
@@ -283,7 +316,14 @@ describe("Device → Project → Idea and the real offline Engine", () => {
       first.documents.every((document) => document.text.trim().length > 0),
     ).toBe(true);
     await writeFile(
-      join(input.root!, ".silvermoon", "i", id, "requirements", "example.md"),
+      join(
+        input.target.repoRoot!,
+        ".silvermoon",
+        "i",
+        id,
+        "requirements",
+        "example.md",
+      ),
       "A newly observed exact draft.\n",
     );
     const second = await observe(input, {
@@ -309,28 +349,28 @@ describe("Device → Project → Idea and the real offline Engine", () => {
   }, 20_000);
   it("distinguishes Engine faults, cancellation and timeout from business gaps and awaits release", async () => {
     const current = await device();
+    const input: Input = {
+      target: { userHome: current.home },
+      operation: { mode: "lifecycle" },
+      runtime: { entry: current.entry, path: current.path },
+    };
     const cancelled = new AbortController();
     cancelled.abort(new Error("Cancelled before request"));
-    await expect(
-      observe(
-        { mode: "lifecycle", device: current },
-        { signal: cancelled.signal },
-      ),
-    ).rejects.toThrow(/Cancelled/);
-    const inFlight = new AbortController();
-    const pending = observe(
-      { mode: "lifecycle", device: current },
-      { signal: inFlight.signal },
+    await expect(observe(input, { signal: cancelled.signal })).rejects.toThrow(
+      /Cancelled/,
     );
+    const inFlight = new AbortController();
+    const pending = observe(input, { signal: inFlight.signal });
     setTimeout(() => {
       inFlight.abort(new Error("Cancelled in flight"));
     }, 15);
     await expect(pending).rejects.toThrow(/Cancelled/);
-    await expect(
-      observe({ mode: "lifecycle", device: current }, { timeoutMs: 1 }),
-    ).rejects.toThrow(/budget/);
-    const input = { mode: "unsupported", device: current } as unknown as Input;
-    await expect(observe(input)).rejects.toThrow(/rejected|did not complete/);
+    await expect(observe(input, { timeoutMs: 1 })).rejects.toThrow(/budget/);
+    const invalid = {
+      ...input,
+      operation: { mode: "unsupported" },
+    } as unknown as Input;
+    await expect(observe(invalid)).rejects.toThrow(/rejected|did not complete/);
   }, 20_000);
   it("reads exact documentation and reports bad CID, missing blocks, wrong kind, UTF-8, budget and cancellation explicitly", async () => {
     const artifact = await bundledArtifact();
@@ -369,7 +409,7 @@ describe("Device → Project → Idea and the real offline Engine", () => {
   it("can finish the real shared graph with synchronized current evidence, while any signed detail edit rolls back", async () => {
     const { target: input, remote } = await target();
     let source = signed();
-    const tested = await git(input.root!, ["rev-parse", "HEAD"]);
+    const tested = await git(input.target.repoRoot!, ["rev-parse", "HEAD"]);
     let current = idea(source, id);
     const implementation = { ...batch(current), subject: tested };
     source = add(source, event({ type: "verify", batch: implementation }));
@@ -385,10 +425,10 @@ describe("Device → Project → Idea and the real offline Engine", () => {
         },
       }),
     );
-    await git(input.root!, ["remote", "set-url", "origin", remote]);
-    await materialize(input.root!, source);
-    await sync(input.root!);
-    await git(input.root!, [
+    await git(input.target.repoRoot!, ["remote", "set-url", "origin", remote]);
+    await materialize(input.target.repoRoot!, source);
+    await sync(input.target.repoRoot!);
+    await git(input.target.repoRoot!, [
       "remote",
       "set-url",
       "origin",
@@ -396,14 +436,21 @@ describe("Device → Project → Idea and the real offline Engine", () => {
     ]);
     expect(await graph(input)).toMatchObject({ pass: true });
     await writeFile(
-      join(input.root!, ".silvermoon", "i", id, "technical", "design.md"),
+      join(
+        input.target.repoRoot!,
+        ".silvermoon",
+        "i",
+        id,
+        "technical",
+        "design.md",
+      ),
       "Changed signed supplemental plan",
     );
     const changed = await graph(input);
     expect(changed.problems.map((problem) => problem.code)).toEqual([
       "technical",
     ]);
-    const selected = selectIdea(await readProject(input.root!), id);
+    const selected = selectIdea(await readProject(input.target.repoRoot!), id);
     expect(digest(canonical(selected.revisions))).not.toBe(
       digest(canonical(current.revisions)),
     );
@@ -441,7 +488,12 @@ describe("Device → Project → Idea and the real offline Engine", () => {
       await car.close();
     }
     expect(encoded.cid).not.toBe(original.cid);
-    const input: Input = { mode: "lifecycle", device: await device() };
+    const current = await device();
+    const input: Input = {
+      target: { userHome: current.home },
+      operation: { mode: "lifecycle" },
+      runtime: { entry: current.entry, path: current.path },
+    };
     const newerDefault = { cid: encoded.cid, path };
     const artifacts = [newerDefault, original];
     expect((await observe(input, { artifacts })).checkCid).toBe(

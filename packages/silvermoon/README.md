@@ -1,7 +1,9 @@
 # @silvermoon-work/silvermoon
 
-An npm-ready **unpublished candidate**, `0.1.0-rc.0`. This is not the installed
-legacy Silvermoon. Building/testing does not replace a global binary or skill.
+`0.1.0-rc.1` repairs the published `0.1.0-rc.0` candidate's legacy primary URL
+compatibility and missing Git execution context in the Check Worker. The new
+version is not published merely by building/testing, and does not replace a
+global legacy binary or skill.
 
 The CLI hosts the exact Check CAR in a real Task Engine. Each observation owns a
 fresh `MemoryStore`, Engine and offline `IpfsStore`; target identity does not
@@ -63,14 +65,16 @@ primaryBranch: main
 preferredLanguage: zh-CN
 ```
 
-Unknown fields, URL credentials, invalid YAML/languages, future versions and
-noncanonical BCP47 are rejected. Optional user configuration is
-`~/.config/silvermoon/config.yaml`, retaining `version: 1` and optional
-`preferredLanguage`. Versionless `{preferredLanguage}` (or `{}`) remains
-accepted for compatibility; explicit invalid/future versions and unknown fields
-are rejected. Content precedence is Idea override → project → user → `en-US`.
-Changing shared project config can affect the old tool too; the new CLI does not
-rewrite it.
+Existing credential-free GitHub HTTPS or Git SSH primary URLs are also accepted
+and normalized only in memory to `owner/repository`; the shared file is never
+rewritten. Unknown fields, URL credentials, other hosts, query/fragment
+suffixes, invalid YAML/languages, future versions and noncanonical BCP47 are
+rejected. Optional user configuration is `~/.config/silvermoon/config.yaml`,
+retaining `version: 1` and optional `preferredLanguage`. Versionless
+`{preferredLanguage}` (or `{}`) remains accepted for compatibility; explicit
+invalid/future versions and unknown fields are rejected. Content precedence is
+Idea override → project → user → `en-US`. Changing shared project config can
+affect the old tool too; the new CLI does not rewrite it.
 
 Device readiness checks the actual scoped package/bin, first PATH command, and a
 personal `.agents/skills/silvermoon` or `.copilot/skills/silvermoon` link to
@@ -79,6 +83,27 @@ Snapshot checks intentionally omit device readiness. No registry update probe,
 project dependency, optional project-skill scan or prompt execution is involved.
 Install/link only with separate authorization; never switch the legacy tool as a
 side effect of building this source.
+
+The business `Target` is `{userHome, repoRoot?, idea?}`. `userHome` is the
+user's home, not the Silvermoon config directory; project/device navigation may
+omit Idea/repository identity. Config, primary, language and Idea facts are read
+from these roots, never supplied as asserted readiness. An Idea requires a
+repository.
+
+The Check request separates `{target, operation, runtime}`. Operation contains
+lifecycle/snapshot selection and refresh policy. Runtime identifies the current
+CLI entry, host executable search path and optional SSH agent socket: these
+cannot be inferred from a home directory. `Report.target` contains only the
+business Target. `observe(target, {operation, runtime})` supplies defaults from
+the authorized running host; direct Check callers supply the explicit request.
+There is no arbitrary environment map or repository allowlist.
+
+Git reads its user/SSH configuration under `userHome` and runs in `repoRoot`.
+Repository operations use an async-local runtime scope, not mutation of
+`process.env`; concurrent checks cannot replace one another's context. Tokens,
+arbitrary `GIT_*`, `NODE_OPTIONS` and the full host environment are not
+forwarded. Engine Worker isolation and Git's
+noninteractive/hook/external-protocol protections remain.
 
 ## Minimum viable protocol (version 1)
 

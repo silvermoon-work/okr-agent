@@ -63,7 +63,7 @@ export async function runCli(
     .description(
       "Check-backed consensus and evidence; archived Ideas are never read.",
     )
-    .version("0.1.0-rc.0")
+    .version("0.1.0-rc.1")
     .option("--root <directory>", "Select a Git repository root")
     .addOption(
       new Option("--audience <audience>", "Output audience").choices([
@@ -168,9 +168,8 @@ export async function runCli(
       }
       const report = await observe(
         {
-          mode: "lifecycle",
-          device: currentDevice(),
-          ...(directory ? { root: directory } : {}),
+          userHome: currentDevice().home,
+          ...(directory ? { repoRoot: directory } : {}),
           ...(id ? { idea: id } : {}),
         },
         {
@@ -213,12 +212,13 @@ export async function runCli(
         if (options.remote) snapshot = await remoteTip(directory, io.signal);
         const report = await observe(
           {
-            mode: "snapshot",
-            root: directory,
-            snapshot,
-            device: currentDevice(),
+            userHome: currentDevice().home,
+            repoRoot: directory,
           },
-          io.signal ? { signal: io.signal } : {},
+          {
+            operation: { mode: "snapshot", snapshot },
+            ...(io.signal ? { signal: io.signal } : {}),
+          },
         );
         emit(report);
         exit = report.result.pass ? 0 : 1;

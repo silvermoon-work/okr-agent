@@ -65,11 +65,32 @@ describe("IDs, config and bounded domain inputs", () => {
         "version: 2\nprimaryRepository: example/project\nprimaryBranch: main\npreferredLanguage: zh-CN",
       ).preferredLanguage,
     ).toBe("zh-CN");
+    for (const primary of [
+      "https://github.com/example/project.git",
+      "https://github.com/example/project/",
+      "git@github.com:example/project.git",
+      "ssh://git@github.com/example/project.git",
+    ])
+      expect(
+        projectConfig(
+          `version: 2\nprimaryRepository: ${primary}\nprimaryBranch: main`,
+        ).primaryRepository,
+      ).toBe("example/project");
     for (const input of [
       "version: 3",
       "version: 2\nversion: 2",
       "[]",
       "version: 2\nprimaryRepository: https://secret@github.com/a/b\nprimaryBranch: main",
+      ...[
+        "https://github.com.evil/a/b",
+        "https://github.com/a/b?token=secret",
+        "https://github.com/a/b#fragment",
+        "https://github.com/a/b/extra",
+        "ssh://other@github.com/a/b",
+      ].map(
+        (primary) =>
+          `version: 2\nprimaryRepository: "${primary}"\nprimaryBranch: main`,
+      ),
       "version: 2\nprimaryRepository: a/b.git\nprimaryBranch: main",
       "version: 2\nprimaryRepository: a/b\nprimaryBranch: -bad",
       "version: 2\nprimaryRepository: a/b\nprimaryBranch: main\nunknown: 1",

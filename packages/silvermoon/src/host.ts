@@ -11,7 +11,8 @@ import {
   MemoryStore,
   newId,
 } from "@silvermoon-work/task-engine";
-import type { Input } from "./contract.js";
+import type { Input, Operation, Runtime, Target } from "./contract.js";
+import { currentDevice } from "./device.js";
 import { invariant, text, SilvermoonError } from "./domain.js";
 
 export interface Artifact {
@@ -30,7 +31,7 @@ export interface Result {
 export interface Report {
   readonly schema: "silvermoon/v1";
   readonly checkCid: string;
-  readonly target: Input;
+  readonly target: Target;
   readonly result: Result;
   readonly documents: readonly {
     readonly cid: string;
@@ -110,14 +111,28 @@ export async function readDocument(
   return text(Buffer.concat(chunks));
 }
 export async function observe(
-  target: Input,
+  target: Target,
   options: {
     readonly cid?: string;
     readonly artifacts?: readonly Artifact[];
     readonly signal?: AbortSignal;
     readonly timeoutMs?: number;
+    readonly operation?: Operation;
+    readonly runtime?: Runtime;
   } = {},
 ): Promise<Report> {
+  const device = currentDevice();
+  const input: Input = {
+    target,
+    operation: options.operation ?? { mode: "lifecycle" },
+    runtime: options.runtime ?? {
+      entry: device.entry,
+      path: device.path,
+      ...(process.env.SSH_AUTH_SOCK
+        ? { sshAuthSock: process.env.SSH_AUTH_SOCK }
+        : {}),
+    },
+  };
   const artifacts = options.artifacts ?? [await bundledArtifact()];
   const selectedCid = options.cid ?? artifacts[0]?.cid;
   const artifact = artifacts.find((item) => item.cid === selectedCid);
@@ -170,7 +185,7 @@ export async function observe(
       {
         requestId: newId(),
         bundle: artifact.cid,
-        parameters: { data: target, cidPaths: [] },
+        parameters: { data: input, cidPaths: [] },
         timeoutMs: options.timeoutMs ?? 60_000,
       },
       caller,

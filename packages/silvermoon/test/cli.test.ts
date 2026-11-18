@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -6,8 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCli } from "../src/cli.js";
 import * as device from "../src/device.js";
 import * as repositoryModule from "../src/repository.js";
-import { bundledArtifact } from "../src/host.js";
-import { canonical, digest, gates, idea } from "../src/domain.js";
+import { bundledArtifact, type Report } from "../src/host.js";
+import { canonical, digest, gates, idea, type State } from "../src/domain.js";
 import {
   add,
   event,
@@ -19,6 +20,7 @@ import {
   sync,
   sign,
   batch,
+  cliRepository,
 } from "./fixtures.js";
 
 const execute = promisify(execFile);
@@ -48,12 +50,203 @@ async function controlledHome() {
   const home = await scratch();
   vi.spyOn(device, "currentDevice").mockReturnValue({
     home,
-    path: "",
+    path: process.env.PATH ?? "",
     entry: resolve("dist", "bin.js"),
   });
   return home;
 }
 describe("CLI retained commands, presentation and explicit errors", () => {
+  it("completes legacy-URL consensus and evidence through the real CLI and isolated CAR Worker", async () => {
+    const entry = process.env.SILVERMOON_TEST_BIN ?? resolve("dist", "bin.js");
+    const fixture = await cliRepository(entry);
+    const invoke = async (args: string[]) =>
+      (
+        await execute(process.execPath, [fixture.entry, ...args], {
+          cwd: fixture.root,
+          env: fixture.env,
+          timeout: 60_000,
+          maxBuffer: 2 * 1024 * 1024,
+        })
+      ).stdout;
+    const report = async (args: string[]) =>
+      JSON.parse(await invoke([...args, "--json"])) as Report;
+    const before = await readFile(
+      join(fixture.root, ".silvermoon", "config.yaml"),
+      "utf8",
+    );
+    expect(await report(["check", "--worktree"])).toMatchObject({
+      result: { pass: true },
+    });
+    const prepared = await report(["whats-next"]);
+    expect(prepared.result.problems).toBeUndefined();
+    expect(prepared.result.pass).toBe(true);
+    const created = JSON.parse(
+      await invoke(["create-idea", "--language", "en-US", "--json"]),
+    ) as { id: string; contentLanguage: string; checkCid: string };
+    expect(created.id).toMatch(/^\d{12}[a-f0-9]{4}$/);
+    expect(created.contentLanguage).toBe("en-US");
+    const identity = {
+      userHome: fixture.env.HOME,
+      repoRoot: fixture.root,
+      idea: created.id,
+    };
+    await fixture.synchronize();
+    const path = (relative: string) =>
+      join(fixture.root, ".silvermoon", "i", created.id, relative);
+    const put = async (relative: string, value: string) => {
+      await mkdir(join(path(relative), ".."), { recursive: true });
+      await writeFile(path(relative), value);
+    };
+    const observe = async (level: string) => {
+      const current = await report(["whats-next", created.id]);
+      expect(current.target).toEqual(identity);
+      expect(current.checkCid).toBe(created.checkCid);
+      expect(current.documents.every((document) => document.text.trim())).toBe(
+        true,
+      );
+      expect(current.result.problems?.map((problem) => problem.code)).toEqual([
+        level,
+      ]);
+      return JSON.parse(current.result.problems![0]!.brief) as State & {
+        eventDigest: string;
+        primary: string;
+        subject: string;
+      };
+    };
+    const append = async (
+      payload: Record<string, unknown>,
+      state: { eventDigest: string; primary: string },
+      confirm = false,
+    ) => {
+      const input = join(await scratch(), "request.json");
+      await writeFile(
+        input,
+        canonical({
+          version: 1,
+          id: randomBytes(16).toString("hex"),
+          at: new Date().toISOString(),
+          ...payload,
+        }),
+      );
+      await invoke([
+        "event",
+        "append",
+        created.id,
+        "--input",
+        input,
+        "--expected-digest",
+        state.eventDigest,
+        "--expected-primary",
+        state.primary,
+        ...(confirm ? ["--confirm-human-decision"] : []),
+        "--json",
+      ]);
+    };
+    for (const [index, gate] of gates.entries()) {
+      const selected =
+        gate === "research"
+          ? "technical/research.md"
+          : gate === "cases"
+            ? "tests/cases.json"
+            : `${gate}/Spec.md`;
+      const content =
+        gate === "cases"
+          ? canonical({
+              version: 1,
+              cases: [
+                {
+                  id: "I-01",
+                  phase: "implementation",
+                  environment: "local",
+                  subject: "git-head",
+                },
+                {
+                  id: "D-01",
+                  phase: "deployment",
+                  environment: "deployment",
+                  subject: "implementation",
+                },
+              ],
+            })
+          : `# ${gate}\n\nProve exact consensus, synchronized primary, both evidence phases and revision rollback using only this owned fixture.\n`;
+      await put(selected, content);
+      if (gate === "technical")
+        await put("technical/details.md", "Signed support must be covered.\n");
+      const state = await observe(gate);
+      await append(
+        {
+          type: "signOff",
+          object: gate,
+          revision: state.revisions[gate],
+          upstream: Object.fromEntries(
+            gates
+              .slice(0, index)
+              .map((prior) => [prior, state.revisions[prior]]),
+          ),
+          decision: "confirmed",
+        },
+        state,
+        true,
+      );
+      await observe("synchronization");
+      expect(
+        JSON.parse(
+          await invoke(["event", "replay", created.id, "--json"]),
+        ) as unknown,
+      ).toMatchObject({ state: { level: "synchronization" } });
+      await fixture.synchronize();
+    }
+    for (const phase of ["implementation", "deployment"] as const) {
+      const evidence = `evidence/${phase}/cli.txt`;
+      const content = `Real CLI, Engine and CAR completed five signoffs and primary synchronization before ${phase}.\n`;
+      await put(evidence, content);
+      const state = await observe(phase);
+      await append(
+        {
+          type: "verify",
+          batch: {
+            id: `batch-${randomBytes(8).toString("hex")}`,
+            phase,
+            revisions: state.revisions,
+            subject: state.subject,
+            environment: phase === "implementation" ? "local" : "deployment",
+            results: [
+              {
+                case: phase === "implementation" ? "I-01" : "D-01",
+                result: "pass",
+                evidence: [{ path: evidence, digest: digest(content) }],
+              },
+            ],
+            ...(phase === "deployment"
+              ? { implementation: state.implementation }
+              : {}),
+          },
+        },
+        state,
+      );
+      await fixture.synchronize();
+    }
+    expect(await report(["whats-next", created.id])).toMatchObject({
+      result: { pass: true },
+    });
+    expect(
+      JSON.parse(await invoke(["list-ideas", "--all", "--json"])) as unknown,
+    ).toMatchObject({ ideas: [{ state: { level: "completed" } }] });
+    await put(
+      "technical/details.md",
+      "Material revision invalidates signoff.\n",
+    );
+    await observe("technical");
+    expect(
+      await readFile(join(fixture.root, ".silvermoon", "config.yaml"), "utf8"),
+    ).toBe(before);
+    expect(
+      await readFile(
+        join(fixture.root, ".silvermoon", "ideas", "INVALID", "events.jsonl"),
+        "utf8",
+      ),
+    ).toBe("Invalid archived content must remain inert.\n");
+  }, 90_000);
   it("uses actual nonfresh tracking context for list/replay, including ancestor evidence and unavailable primary", async () => {
     await controlledHome();
     const { root, remote } = await repository();
@@ -233,7 +426,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     const root = await scratch();
     expect(await cli(["--version"], root)).toMatchObject({
       exit: 0,
-      stdout: "0.1.0-rc.0\n",
+      stdout: "0.1.0-rc.1\n",
     });
     expect((await cli(["--help"], root)).stdout).toContain("whats-next");
     for (const argv of [
@@ -491,7 +684,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     expect(
       (await execute(process.execPath, [bin, "--version"], { cwd: root, env }))
         .stdout,
-    ).toBe("0.1.0-rc.0\n");
+    ).toBe("0.1.0-rc.1\n");
     expect(
       (await execute(process.execPath, [bin, "--help"], { cwd: root, env }))
         .stdout,

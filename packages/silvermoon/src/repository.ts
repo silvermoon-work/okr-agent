@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
+import { gitEnvironment } from "./git-context.js";
 import {
   SilvermoonError,
   digest,
@@ -12,6 +13,7 @@ import {
   maxBytes,
   projectConfig,
   requiredText,
+  repositoryIdentity,
   reduce,
   safeRelative,
   validIdeaId,
@@ -61,11 +63,7 @@ export async function git(
       encoding: "utf8",
       maxBuffer: maxBytes,
       timeout: 30_000,
-      env: {
-        ...process.env,
-        GIT_TERMINAL_PROMPT: "0",
-        GIT_OPTIONAL_LOCKS: "0",
-      },
+      env: gitEnvironment(),
       ...(signal ? { signal } : {}),
     },
   );
@@ -321,13 +319,6 @@ export interface Primary {
   readonly remote: string;
   readonly project: Project;
   readonly changes: readonly string[];
-}
-function repositoryIdentity(url: string): string | undefined {
-  const match =
-    /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(
-      url,
-    );
-  return match?.[1];
 }
 export async function primary(
   project: Project,
