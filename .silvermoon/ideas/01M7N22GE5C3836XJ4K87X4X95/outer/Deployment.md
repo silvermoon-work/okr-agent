@@ -1,6 +1,6 @@
 # Deployment
 
-本契约使用旧 Silvermoon 部署门限。候选为 `@silvermoon-work/silvermoon@0.1.0-rc.0`，准确提交 `353fe73d26fd90414a1df4e14a2a1e1b6e3f97b3`；主 Agent 受托负责生命周期验收，但真实发布仍需准确授权与全部发布前提。当前状态及恢复步骤见[部署准备记录](deployment-readiness.md)；本文不构成发布授权。
+本契约使用旧 Silvermoon 部署门限。`@silvermoon-work/silvermoon@0.1.0-rc.0` 已发布但未通过真实闭环，发布事实与缺口保留在[部署记录](deployment-readiness.md)。用户要求按[Inner 修复决议](inner/rc0-resolution.md)重新实施，并在完成后发布新的连续 RC，再回来验证；计划版本为 `0.1.0-rc.1`，准确源码提交须在修复验证完成后确定。主 Agent 受托负责生命周期验收；发布仍须绑定准确版本、提交及全部前提，不能复用 `rc.0` 成绩证明新版本完成。
 
 ## Steps
 

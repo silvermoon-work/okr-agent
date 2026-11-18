@@ -33,11 +33,16 @@
 - This consuming repository deliberately uses direct package commands rather
   than the old fixed `node scripts/<same-name>.mjs` interface. The user
   explicitly approved this engineering experiment, including the lifecycle gate
-  replacing the copied publisher. The unchanged standard `AGENTS.md` and
-  TypeScript Check assets still describe the older interface and publisher: this
-  is an open policy conflict, not a claim that the Check Idea has been accepted
-  or that this repository passes that Check. Do not copy the repository changes
-  into Check author code, tests, references or assets to conceal the conflict.
+  replacing the copied publisher. The remaining standard rules in `AGENTS.md`
+  and TypeScript Check assets still describe the older interface and publisher:
+  this is an open policy conflict, not a claim that the Check Idea has been
+  accepted or that this repository passes that Check. Do not copy the repository
+  changes into Check author code, tests, references or assets to conceal the
+  conflict.
+- The user explicitly authorized removing the obsolete exact-tarball delivery
+  bullet from root `AGENTS.md`. Preserve that deletion rather than restoring it
+  from the older standard. The installed gate and native pnpm publishing remain
+  the approved flow; this does not authorize changing Check standard assets.
 - Simple member commands call standard tools directly, including short fail-fast
   command chains. SDK and ipfsaw builds use rimraf then tsc to remove stale
   modules; ipfsaw then runs its functional browser-runtime and Task/CAR build
