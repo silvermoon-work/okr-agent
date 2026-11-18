@@ -90,3 +90,70 @@ fatal: Could not read from remote repository.
 已将准确版本与完整提交的发布确认提交交互工具；工具返回用户不可用，未提供明确选择。用户对“修复后发新 RC”的方向授权已记录，但不将工具不可用推断为仓库所要求的准确版本 / SHA 确认。因此本轮尚未创建或推送 `rc.1` tag，未发布或从 registry 安装 `rc.1`；`rc.0`、旧全局 CLI 和个人 skill 未改变。
 
 恢复条件为确认上述准确发布对象，然后重新核实 CI、main 祖先关系、版本/tag 未占用和现有门禁要求；通过既有 Trusted Publishing workflow 发布到 `rc` 后，再从当前 NRM registry 下载、校验、独立安装，使用同一真实 CLI 回归运行发布制品。现有 `SILVERMOON_TEST_BIN` 测试入口仅选择独立已安装 CLI，不替换 CAR Worker 或改变业务逻辑。Deployment ledger 继续保持未完成，直到新版本的真实外部验证成立。
+
+## RC.1 已发布并完成外部验证
+
+本节为当前结果；上文保留 `rc.0` 的真实失败及 `rc.1` 交付前的历史状态，不把失败改写为成功。
+
+### 准确授权与发布结果
+
+用户在 2026-11-18 10:05 明确回复“确认，可以继续”，对应已呈现的 `@silvermoon-work/silvermoon@0.1.0-rc.1` 与完整源码提交 `938751db3cc15fabccf156ad60825f02e842eccb`。发布前再次确认 main 祖先关系、该 SHA 最新 main-push CI 的全部质量/矩阵/聚合步骤成功、目标版本/tag 不存在及内部运行时依赖可用。
+
+[真实 Trusted Publishing run 44220828693](https://github.com/silvermoon-work/okr-agent/actions/runs/44220828693) 已成功，运行 SHA 与授权一致。现有已发布 `publish-gate` 通过后，原 workflow 构建并通过原生 pnpm 发布；未改变 workflow、跳过生命周期或使用 npm token。
+
+- 不可变 tag：`@silvermoon-work/silvermoon@0.1.0-rc.1`；
+- tag object：`e640b7faa6c66087fa19c177345abbad7bb1f3b8`，解引用为授权 SHA；
+- registry `rc` 为 `0.1.0-rc.1`，`latest` 仍为 `0.0.0`；
+- `rc.0` tag 仍解引用为 `353fe73d26fd90414a1df4e14a2a1e1b6e3f97b3`，未移动或覆盖；
+- 未发布其他包、依赖、旧 unscoped alias 或稳定版本。
+
+### 真实下载与独立安装
+
+沿用 NRM 的 taobao registry `https://registry.npmmirror.com/`。发布后初始 404 来自传播延迟；请求同一镜像同步并等待传播后，准确版本及刷新后的包元数据均已出现。没有切换 registry、强制 `--registry`、重复发布或使用本地构建替代制品。
+
+从镜像下载的真实发布制品：
+
+- 大小：233162 bytes；
+- SHA-1：`fc581c1966f0b7bdb248c0db18632dead3763f78`；
+- integrity：`sha512-kNX5BsJkJccPbtPSeK3umnrIk7pC+IfU4dC2fvnW3x/vTqwKDxOnSBjDadWKz1TLaLrzGEMv9xBnuVH8Li8m4g==`；
+- registry 元数据包含 SLSA v1 provenance 引用及签名字段。镜像 attestation 内容端点仍返回 404，因此这里只确认 provenance 元数据存在，不声称独立完成签名的密码学验证。
+
+下载字节与 registry 的 SHA-1 / SHA-512 均一致。原始下载及独立安装保留在 `~/.local/share/silvermoon/0.1.0-rc.1/`；使用 Node `26.13.1`、pnpm `11.28.12`、`pnpm install --ignore-scripts --strict-peer-dependencies` 安装下载的准确 tarball。包真实路径在该目录内，不是 workspace 链接。
+
+已安装 CLI 的 `--version` 返回 `0.1.0-rc.1`，帮助正常；随包 Check CID 为 `bafybeiag6a6uymuygy22oghwhmththrrxrrfqhkwf6gpzju3yh2btw5le4`，与修复候选一致。
+
+### T-15 / T-16 发布后结果
+
+发布版直接对本仓库运行 `check --worktree --json`：pass，离线 documentation 非空且可读，`target` 精确为用户 Home 和本 Repo Root。共享配置仍为原来的 HTTPS primary URL，未改为简写。这直接复验了 `rc.0` 的配置失败点。
+
+使用准确提交中的既有回归，仅将可执行入口选为 registry 的独立安装：
+
+```sh
+PATH="$HOME/.nvm/versions/node/v26.13.1/bin:$PATH" \
+SILVERMOON_TEST_BIN="$HOME/.local/share/silvermoon/0.1.0-rc.1/node_modules/@silvermoon-work/silvermoon/dist/bin.js" \
+pnpm --filter @silvermoon-work/silvermoon exec vitest run \
+  --root . --config ../../vitest.config.ts test/cli.test.ts \
+  -t 'completes legacy-URL'
+```
+
+结果为 1 项完整闭环测试通过，其他 7 项按选择器跳过；不将其描述为重新跑过全部发布版测试。该闭环在独立 Repo、用户 Home、个人 skill 链接及自有 bare primary 中，以真实子进程 CLI、真实 Task Engine 和随包 CAR 执行：
+
+1. 旧 URL 项目配置、旧 `version: 1` 用户配置及设备/项目整备；
+2. 16 位 ID 创建和内容语言 override；
+3. 五次分别修改草稿、确认准确 revision、观察 synchronization，再提交同步；
+4. 实现、部署证据草稿与准确 subject / revision / environment 绑定的批次及同步；
+5. 最终 Check pass，inventory 为 completed；
+6. 修改已签 Technical 支持内容立即回退 technical；
+7. 逐次断言 `Report.target` 只有 `{userHome, repoRoot, idea}`，原始共享配置与故意无效的旧归档保持不变。
+
+受控 SSH 入口仅连接自有 bare primary，不接触真实远端测试仓库，也未修改用户 SSH 配置。运行的 CLI、Engine、CAR、写入器和 Git 检查均来自真实安装；没有替换 Worker 或注入无限制环境。这直接复验了 `rc.0` 的 Worker Git 失败点。
+
+原始日志保留为本次 session 的 `silvermoon-rc1-registry-lifecycle.log`，真实项目 snapshot 为 `silvermoon-rc1-installed-snapshot.json`。准确发布提交的本地根 `pnpm check` 及全部 main-push CI 已在实施证据中核验；此次没有用本地检查替代远程发布门禁。
+
+### 过渡边界与收尾
+
+安装及验证前后的旧全局 CLI 路径、版本、入口 SHA-256、个人 skill 链接和内容摘要、共享配置 SHA-256、以及本仓库旧 Idea 的 Git 树完全一致。原始 `rc.0` 下载的 SHA-1 仍为 `2e46e23ef372637a723224c90d09a69692fdda22`。只保留新的本地隔离安装，没有替换全局 CLI、迁移旧 Idea 或给它们注入 CID。
+
+在当前未切换的真实用户环境中，新版 `whats-next` 按预期只报告 Device 的个人 skill 未注册；这是保留旧工具的明确边界，不是把全局环境假称为新版 ready。独立 fixture 的规范个人 skill 链接则通过，完整闭环已经成立。
+
+据此 D-S01..03 与 D-AC01..03 的真实外部证据均已具备。按既有主 Agent 门限委托，用旧 Silvermoon 同步本 revision、记录 `submitOuter` 并验收；不将本文件的叙述或 ledger 勾选本身当成终态事件。主工作树出现的并行 README / 项目指导改动保留给原作者，不纳入本次交付记录提交；必要时用独立干净 worktree 完成生命周期操作。
