@@ -1,30 +1,80 @@
-# 部署前提与当前阻塞
+# RC 发布与部署验证记录
 
-## 交付候选
+## 授权与真实发布
+
+用户在 2026-11-18 明确授权发布上一轮已指定的 RC，并下载、安装到本地继续验证；随后明确要求沿用现有发布流程。本次只发布：
 
 - npm 包：`@silvermoon-work/silvermoon@0.1.0-rc.0`；
-- 候选源码提交：`353fe73d26fd90414a1df4e14a2a1e1b6e3f97b3`；
-- Check CID：`bafybeig2er4ote3f7phu3nyi7tih3jzjtmcfjzdmvm3qgodltv4gyxkupe`；
-- [准确提交的 main-push CI](https://github.com/silvermoon-work/okr-agent/actions/runs/44137586803)已成功，`event=push`、`branch=main`、HEAD SHA 与候选一致，Quality default、Node.js 22.15.0 / 24.11.1 和 Release verification (v1) 全部 success；
-- 旧 unscoped `silvermoon` alias 不在本次发布范围，全局旧 CLI / 个人 skill 保持不变。
+- 准确源码提交：`353fe73d26fd90414a1df4e14a2a1e1b6e3f97b3`；
+- 不可变 tag：`@silvermoon-work/silvermoon@0.1.0-rc.0`；
+- Check CID：`bafybeig2er4ote3f7phu3nyi7tih3jzjtmcfjzdmvm3qgodltv4gyxkupe`。
 
-实现已由主 Agent 根据用户明确委托审阅验收，旧 Silvermoon 已记录 `acceptInner`，当前生命周期为 deploying。
+发布前重新确认该提交在 primary 历史内，[准确提交的 main-push CI](https://github.com/silvermoon-work/okr-agent/actions/runs/44137586803) 的 Quality default、Node.js 22.15.0 / 24.11.1、Release verification (v1) 及其聚合步骤全部成功；目标版本和 tag 不存在，运行时依赖已有可用 registry 版本。
 
-## 已具备的证据
+[真实 Trusted Publishing](https://github.com/silvermoon-work/okr-agent/actions/runs/44210568719) 成功。准确提交的现有 `publish-npm.yaml` 在 `npm` environment 中构建选中包及依赖，由已发布的 `publish-gate` 通过后执行原生 pnpm 目录发布。未改 workflow，未绕过生命周期，未使用 npm token。仅增加 `rc=0.1.0-rc.0`，`latest` 仍为 `0.0.0`；未发布其他依赖或旧 unscoped alias。
 
-根 `pnpm check`、独立 code-review 修复复查、两个包的覆盖率门禁、修复后准确 tarball 的独立安装和完整真实 CLI / Engine / CAR 流程通过，详见[实施证据](inner/implementation-evidence.md)。这些是候选验证，不等同发布版部署完成。
+标准 `AGENTS.md` 的准确 tarball 规则与项目此前批准的目录发布实验存在文档冲突；项目指导已明确不再保留 exact-tarball 验证，本次用户又明确确认沿用现有流程。此记录不擅自修改标准文件。
 
-用户已报告 Trusted Publisher 配置完成；通过当前本机腾讯镜像已可查询到 `0.0.0` placeholder。不通过本机 registry 覆盖参数更改 registry，也不把 placeholder 可见当成 OIDC 发布成功。
+## Registry 下载与独立本地安装
 
-## 发布授权边界
+本次有效 NRM registry 为 taobao，即 `https://registry.npmmirror.com/`；沿用实际配置，未使用 `--registry`，未切换为历史记录中的腾讯镜像。镜像最初返回 E404，向同一镜像请求同步后，准确版本端点及刷新后的包元数据均已包含 RC。
 
-用户委托了生命周期门限审批，但仓库要求真实 npm 发布绑定准确版本和提交。主 Agent 已通过交互工具请求授权上述准确候选在 CI 完整成功后发布到 `rc`；工具返回用户当前不可用，未得到明确选择。该结果不是授权，不创建发布 tag、不推 tag、不改 dist-tag，不将讨论期“会准备 Trusted Publisher”当作准确发布授权。
+从该镜像下载真实发布制品，不使用 workspace、源码构建或发布前本地 tarball 替代：
 
-因此当前唯一明确的审批阻塞是真实发布的准确授权。准确提交 CI 已成功；真实发布时仍需重新确认其他前提没有变化。没有通过降低 Deployment 标准、改用本地 tarball 或 dry-run 宣告 complete。
+- 下载大小：229143 bytes；
+- SHA-1：`2e46e23ef372637a723224c90d09a69692fdda22`；
+- integrity：`sha512-7X2KKnjXgIA6B4hLUAqlqhrwzs+iL8dnnyXQd1ERnoZI3GJL7srgZoHvM7mGyvIXR2gTcdDQTZPmFtsRl1EtdQ==`。
 
-## 获得授权后的后续步骤
+下载字节与 registry 的两项摘要均一致。元数据存在 SLSA v1 provenance 引用；镜像的 attestation 内容端点返回 404，因此这里只确认 provenance 元数据存在，不声称完成签名的独立密码学验证。
 
-1. 重新验证准确提交仍在 main 历史、对应最新 main-push CI 的全部质量/矩阵/聚合项成功、目标版本未发布、依赖版本可用及 Trusted Publisher 的真实 workflow/environment 绑定。
-2. 仅为上述准确版本/提交创建不可变包名 tag，按现有 workflow 发布到 `rc`，不使用 token 或绕过 `prepublishOnly`。
-3. 从 registry 在独立环境安装准确发布版，再完成对应 Test Spec 的发布后闭环验证及旧全局环境不变检查。
-4. 将真实发布与部署证据同步 primary，再由主 Agent 行使已有委托完成旧 Silvermoon 的 submitOuter / acceptOuter。未获得这些事实前，部署 ledger 条目保持未勾选。
+本地保留于 `~/.local/share/silvermoon/0.1.0-rc.0/`，其中包含原始下载及独立 pnpm 安装。安装使用精确 pnpm `11.28.12`、`pnpm install --ignore-scripts --strict-peer-dependencies`；发布包的 `workspace:` / `catalog:` 已转换为 registry 版本。安装后的包名、版本及 Check CID 正确，真实路径不在本仓库。
+
+直接运行：
+
+```sh
+~/.local/share/silvermoon/0.1.0-rc.0/node_modules/.bin/silvermoon --version
+```
+
+输出 `0.1.0-rc.0`。这不是全局切换；生命周期仍由旧 CLI 维护。
+
+## 已通过的发布后验证
+
+- 使用精确开发 Node `26.13.1` 和 pnpm `11.28.12` 完整执行根 `pnpm check` 成功，未修改源码、降低阈值或排除失败用例。此前最新 main 的 ipfsaw 远程 CI 失败仍是历史事实，本次本地成功不改写该远程成绩。
+- 发布版 `--version`、主帮助及创建、snapshot、event append 子命令帮助可运行。
+- 在独立规范化真实路径、用户 home、个人 skill 链接及自有 bare primary 的 fixture 内，真实 Engine 执行随包 CAR；`check --worktree --json` 为 pass，离线 documentation 非空且可读。
+- 发布版 `create-idea --language en-US --json` 创建合法 16 位 ID，内容语言正确覆盖项目和旧 `version: 1` 用户语言配置。
+- 发布版 `list-ideas --all --json` 返回新 Idea 的 `requirements`，明确 `fresh: false`；故意放入的无效旧归档不被解析。
+- 安装与验证前后，旧全局 `silvermoon` 的命令路径、版本、入口 SHA-256、个人 skill 链接与内容摘要、以及本仓库旧 Idea 的 Git 树一致。测试没有覆盖旧配置、旧 Idea 或 skill；随后只按旧流程更新本部署记录和执行清单。
+
+最初 fixture 使用 macOS `/var` 别名，被项目根防重定向检查拒绝；改用 `realpath` 后不再出现。该项属于测试路径修正，不将它误报为产品缺陷。
+
+## 未通过：配置并存与真实生命周期闭环
+
+### 配置格式兼容缺口
+
+在本仓库使用发布版运行 `check --worktree --audience agent`，明确失败：
+
+```text
+primaryRepository must be owner/repository, never a URL or credentials.
+```
+
+本仓库合法旧 v2 配置使用无凭据的 `https://github.com/silvermoon-work/okr-agent.git`，旧 CLI 检查仍成功；新版只接受 `owner/repository`。这与既定配置并存方向及包文档的兼容描述不一致。未通过改写共享配置来掩盖问题。
+
+### Worker 缺少 Git 执行上下文
+
+独立 fixture 使用合法的新配置、自有 bare primary 和进程级 SSH shim，仅将固定测试仓库映射到本地。相同环境下，直接执行 `git -c core.sshCommand=ssh fetch --no-tags -- origin refs/heads/main` 成功；发布版 `whats-next --json` 通过 Device 后，在真实 Engine 的 repository 检查失败：
+
+```text
+Host key verification failed.
+fatal: Could not read from remote repository.
+```
+
+已核对安装的 `@silvermoon-work/task-engine@0.2.1-rc.1`：其 `type-supervisor` 创建 Worker 时显式设置环境，仅包含空 `NODE_OPTIONS` 和可选 Windows 系统目录，不继承 `PATH`、`HOME` 或 `SSH_AUTH_SOCK`。Silvermoon 的 Git 适配在 Worker 内扩展的是该空环境，未使用宿主的受控 Git 上下文；因此 CLI 主进程可用的传输没有传入 Check。没有修改 Engine、安装包、全局 SSH 配置或 Worker 隔离来制造通过。
+
+因此 T-16 的发布版五次确认、实现/部署证据和终态检查没有完整通过；此前候选 smoke 和单元测试不能代替本次发布后结果。
+
+## 当前状态与恢复条件
+
+发布及本地独立安装已经完成，不再以发布授权为 blocker。真实闭环仍有上述缺口，Idea 保持 `deploying`；不记录 `submitOuter` / `acceptOuter`，不宣告 complete。
+
+后续需在实现阶段修复无凭据旧 primary URL 的兼容及宿主到 Check 的显式、受控 Git 执行上下文，补针对性回归，再为新准确版本与提交完成检查和发布授权。不能通过放宽 Worker 隔离、修改旧共享配置、复用旧证据、移动现有 tag 或覆盖已发布 `rc.0` 绕过问题。本次授权不自动扩大为另发 RC 或正式替换全局 CLI。
