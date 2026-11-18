@@ -78,3 +78,15 @@ fatal: Could not read from remote repository.
 发布及本地独立安装已经完成，不再以发布授权为 blocker。真实闭环仍有上述缺口，Idea 保持 `deploying`；不记录 `submitOuter` / `acceptOuter`，不宣告 complete。
 
 后续需在实现阶段修复无凭据旧 primary URL 的兼容及宿主到 Check 的显式、受控 Git 执行上下文，补针对性回归，再为新准确版本与提交完成检查和发布授权。不能通过放宽 Worker 隔离、修改旧共享配置、复用旧证据、移动现有 tag 或覆盖已发布 `rc.0` 绕过问题。本次授权不自动扩大为另发 RC 或正式替换全局 CLI。
+
+## RC.1 修复后交付准备
+
+用户随后明确要求修复后发布新 RC，并确认业务 Target 使用 `userHome + repoRoot + idea`，不是通用 Git 环境集合。两个缺口已按[Inner 决议](inner/rc0-resolution.md)重新实施；新的[实施证据](inner/implementation-evidence.md)覆盖真实 CLI / Engine / CAR 的五次确认、同步、两阶段证据、终态与修订回退。旧配置不变，Target、操作策略和必要运行上下文分离，未修改 Task Engine。
+
+新候选为 `@silvermoon-work/silvermoon@0.1.0-rc.1`，准确源码提交 `938751db3cc15fabccf156ad60825f02e842eccb`，Check CID 为 `bafybeiag6a6uymuygy22oghwhmththrrxrrfqhkwf6gpzju3yh2btw5le4`。根 `pnpm check` 成功，38 个 CLI 测试与 1 个作者包测试通过；原实施验收没有复用，新 Inner revision 已按既有门限委托重新 submit / accept。
+
+[该准确提交的 main-push CI](https://github.com/silvermoon-work/okr-agent/actions/runs/44219803173) 已全部成功：Quality default、Node.js 22.15.0 / 24.11.1、Release verification (v1) 及其 Confirm required checks succeeded 步骤均 success。候选源码已经在 primary，后续提交只包含生命周期记录和交付准备，不改变该发布对象。
+
+已将准确版本与完整提交的发布确认提交交互工具；工具返回用户不可用，未提供明确选择。用户对“修复后发新 RC”的方向授权已记录，但不将工具不可用推断为仓库所要求的准确版本 / SHA 确认。因此本轮尚未创建或推送 `rc.1` tag，未发布或从 registry 安装 `rc.1`；`rc.0`、旧全局 CLI 和个人 skill 未改变。
+
+恢复条件为确认上述准确发布对象，然后重新核实 CI、main 祖先关系、版本/tag 未占用和现有门禁要求；通过既有 Trusted Publishing workflow 发布到 `rc` 后，再从当前 NRM registry 下载、校验、独立安装，使用同一真实 CLI 回归运行发布制品。现有 `SILVERMOON_TEST_BIN` 测试入口仅选择独立已安装 CLI，不替换 CAR Worker 或改变业务逻辑。Deployment ledger 继续保持未完成，直到新版本的真实外部验证成立。
