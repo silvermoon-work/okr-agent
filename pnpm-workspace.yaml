@@ -34,7 +34,7 @@ catalog:
   yaml: ^2.8.1
   acorn: ^8.15.0
   ipfs-unixfs-exporter: 16.2.3
-  nrm: 1.2.6
+  nrm: 2.1.0
   "@eslint/js": ^10.0.1
   "@types/node": ^26.6.6
   "@vitest/coverage-v8": ^5.1.0
