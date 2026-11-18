@@ -1,6 +1,6 @@
 # Deployment
 
-本契约使用旧 Silvermoon 部署门限。`@silvermoon-work/silvermoon@0.1.0-rc.0` 已发布但未通过真实闭环，发布事实与缺口保留在[部署记录](deployment-readiness.md)。用户要求按[Inner 修复决议](inner/rc0-resolution.md)重新实施，并在完成后发布新的连续 RC，再回来验证；计划版本为 `0.1.0-rc.1`，准确源码提交须在修复验证完成后确定。主 Agent 受托负责生命周期验收；发布仍须绑定准确版本、提交及全部前提，不能复用 `rc.0` 成绩证明新版本完成。
+本契约使用旧 Silvermoon 部署门限。`@silvermoon-work/silvermoon@0.1.0-rc.0` 已发布但未通过真实闭环，发布事实与缺口保留在[部署记录](deployment-readiness.md)。用户要求按[Inner 修复决议](inner/rc0-resolution.md)重新实施，并在完成后发布新的连续 RC，再回来验证；新候选为 `0.1.0-rc.1`、准确源码提交 `938751db3cc15fabccf156ad60825f02e842eccb`，对应 [main-push CI](https://github.com/silvermoon-work/okr-agent/actions/runs/44219803173)。主 Agent 受托负责生命周期验收；发布仍须绑定准确版本、提交及全部前提，不能复用 `rc.0` 成绩证明新版本完成。
 
 ## Steps
 
