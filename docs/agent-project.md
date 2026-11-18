@@ -19,10 +19,11 @@
   two-release transition: rc.3 was published with installed rc.1 and the legacy
   framework; the root now pins 0.1.0, removes the legacy declaration and uses
   name@version tags. The rc.4 validation release keeps rc.3 runtime source
-  unchanged and verifies the installed rc.3 gate. Exact version/SHA
-  authorization and successful main-push CI are required before each tag push.
-  Never use candidate source as its own gate. Keep publication authorization
-  separate from Trusted Publisher setup.
+  unchanged and verifies the installed rc.3 gate. Resolve and record the exact
+  version/SHA, apply the channel-specific authorization below and require
+  successful main-push CI before each tag push. Never use candidate source as
+  its own gate. Keep publication authorization separate from Trusted Publisher
+  setup.
 - Keep workspace build, test, test-coverage, lint-package and typecheck
   responsibilities aligned with `turbo.json`. Turbo reads workspace membership
   and dependency order; do not duplicate that graph in a custom scheduler. Run
@@ -118,6 +119,19 @@
 
 - Keep repository release knowledge here, not in a project skill. See
   [README](../README.md#publish-one-package) for setup and commands.
+- Release authorization is channel-specific. For RCs, an advance user
+  instruction such as "publish a new RC after the fix" is explicit delegated
+  authorization for that task's selected package, including resolving and
+  recording its next valid `x.y.z-rc.n` version and exact eligible commit. Do
+  not request a second confirmation merely because those values became known
+  after implementation. This is not permission to publish unrelated packages or
+  dependencies. Stable releases require explicit release-specific user
+  confirmation of the package, exact stable version and commit; RC permission
+  never authorizes a stable release or changes to `latest`. An already supplied
+  confirmation for the same stable package/version/commit need not be repeated.
+  Both channels retain exact identity/version/SHA, main ancestry, successful
+  exact-SHA main-push CI and all existing release checks; advance RC permission
+  does not waive missing evidence or turn a blocked release into a success.
 - Release one explicitly declared package with `<full-npm-name>@<version>` tags.
   Never batch-publish workspaces or automatically release dependencies.
 - Register each actual npm delivery in its own `deliverable.yaml` with
@@ -146,7 +160,8 @@
   npm. Publish missing dependencies separately before tagging the dependent
   package.
 - Use npm Trusted Publishing, not stored tokens. Manual workflow runs are dry
-  runs only. Never push release tags or publish without explicit authorization.
+  runs only. Never push release tags or publish without the channel-specific
+  authorization above.
 - Release tags are immutable. Retry a failed pre-publication run without moving
   its tag; an existing npm version must block publication.
 

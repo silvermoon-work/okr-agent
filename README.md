@@ -13,7 +13,9 @@ rc.3 已通过旧框架和固定的 rc.1 门禁发布；现已移除根清单和
 统一采用包内声明与完整名称 tag。rc.4 仅递增版本、更新接入说明，
 运行时代码与 rc.3 相同，已验证安装 rc.3 门禁的真实发布流程。
 `0.1.0` 正式版沿用相同运行时代码，由固定的 rc.3 门禁检查后发布到 `latest`。
-每次发版都须确认准确版本和 SHA，并取得对应 main-push CI 成绩。
+每次发版都须核验并记录准确版本和 SHA，并取得对应 main-push CI 成绩。
+已前置授权“完成后发新 RC”的任务可直接发布该任务范围内的包，无需二次确认；
+正式版须取得针对准确包、版本和提交的明确确认，RC 授权不涵盖正式版。
 组织内开发工具包使用 `@silvermoon-work/devtool.<name>` 命名。
 
 ## Check Task 作者入口
@@ -366,6 +368,16 @@ Cloudflare intent does not certify platform configuration or deployment.
    is checked by the previously published version.
 
 ### Release a version
+
+Authorization is channel-specific: an advance instruction to publish a new RC
+after a task authorizes selecting and recording that package's next valid RC
+version and exact eligible commit, without a second confirmation. It does not
+authorize unrelated packages or dependency releases. Stable releases require
+explicit user confirmation of the exact package, stable version and commit; RC
+permission does not authorize publishing to `latest`. Do not repeat an already
+supplied confirmation for the same stable package/version/commit. All release
+checks below still apply to both channels. See
+[project release guidance](docs/agent-project.md#publishing).
 
 The bootstrap transition published rc.3 through the installed rc.1 gate. The
 root now pins published `0.1.0`, the legacy root declaration is removed, and the
