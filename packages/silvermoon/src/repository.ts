@@ -45,11 +45,14 @@ export async function preCommitHookPath(
   root: string,
   signal?: AbortSignal,
 ): Promise<string> {
-  return executeGit(
-    root,
-    ["rev-parse", "--path-format=absolute", "--git-path", "hooks/pre-commit"],
-    false,
-    signal,
+  return join(
+    await executeGit(
+      root,
+      ["rev-parse", "--path-format=absolute", "--git-path", "hooks"],
+      false,
+      signal,
+    ),
+    "pre-commit",
   );
 }
 async function executeGit(

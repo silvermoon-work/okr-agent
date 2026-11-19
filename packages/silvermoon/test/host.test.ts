@@ -395,6 +395,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       hook,
       process.platform === "win32" ? "junction" : "file",
     );
+    expect(await repositoryReads.preCommitHookPath(root)).toBe(hook);
     expect(await projectGraph(input)).toMatchObject({
       pass: false,
       problems: [{ code: "pre-commit-hook-configured" }],

@@ -152,8 +152,9 @@ checkpoints:
     description:
       检查 Git 实际使用的 pre-commit hook 会校验暂存候选并阻止非法提交。
     instructions: |
-      通过 `git rev-parse --path-format=absolute --git-path hooks/pre-commit`
-      定位 Git 实际使用的 hook，尊重 core.hooksPath 与 linked worktree。
+      通过 `git rev-parse --path-format=absolute --git-path hooks`
+      定位 Git 实际使用的 hooks 目录，再追加 pre-commit 文件名，
+      避免 Git 提前解析文件符号链接；尊重 core.hooksPath 与 linked worktree。
       检查本身只读文件，不执行 hook，也不自动修改 Git 配置或安装 hook。
       用户授权配置后，保留已有逻辑，采用下列可验证的 shell 前缀：
 

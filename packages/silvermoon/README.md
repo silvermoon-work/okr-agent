@@ -267,11 +267,12 @@ silvermoon check-changes --staged --audience agent || exit $?
 
 The hook must be a regular UTF-8 file and executable on non-Windows platforms.
 Resolve its location with
-`git rev-parse --path-format=absolute --git-path hooks/pre-commit`; do not
-assume `.git/hooks`, overwrite custom hooks, or execute hooks during inspection.
-Other interpreters, indirect wrappers and hook managers need an explicit
-integration decision: the Check does not infer arbitrary script equivalence.
-Missing or unsupported integration is a readiness gap, not automatic setup.
+`git rev-parse --path-format=absolute --git-path hooks` and append `pre-commit`
+without resolving the file's symlink; do not assume `.git/hooks`, overwrite
+custom hooks, or execute hooks during inspection. Other interpreters, indirect
+wrappers and hook managers need an explicit integration decision: the Check does
+not infer arbitrary script equivalence. Missing or unsupported integration is a
+readiness gap, not automatic setup.
 
 Device readiness uses `dist/setup-check.car` / `setup-check.json`, built from
 `setup-check.build.yaml`, the
