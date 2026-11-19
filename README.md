@@ -152,10 +152,13 @@ fragment 恢复所选节点，
 新版候选 [`@silvermoon-work/silvermoon`](packages/silvermoon/README.md)
 提供基于 Task Engine / Checker 的 CLI；私有
 [`@silvermoon-work/check.silvermoon`](packages/check.silvermoon/README.md)
-分别交付创建前提、Idea 推进与提交合法性三个独立的 Check Task/CAR。
+分别交付设备就绪、项目就绪、Idea 推进与提交合法性四个独立的 Check Task/CAR。
 `create-idea`
-在写入前执行[创建前提检查](docs/silvermoon-create-idea-check.yaml)，
-复用 Idea Task 的前四个检查点；`check-idea <idea>` 必须指定 Idea。
+在写入前与 `check-project`
+共用[项目就绪检查](docs/silvermoon-project-check.yaml)，
+复用 Idea Task 的前四个检查点；`check-setup`
+独立执行[设备就绪检查](docs/silvermoon-setup-check.yaml)，不要求 Git 项目。
+`check-idea <idea>` 必须指定 Idea。
 `check-changes --staged` 走提交检查，可用于 commit hook，不要求工作区洁净、
 upstream 就绪或 Idea 完成。新 Idea 仅位于 `.silvermoon/i`，使用五个准确版本的
 sign off、Events 和实现/部署 Evidence；旧 `.silvermoon/ideas` 仅留档，不迁移、
@@ -168,6 +171,8 @@ sign off、Events 和实现/部署 Evidence；旧 `.silvermoon/ideas` 仅留档�
 使用设备级安装的 Silvermoon CLI 和个人 skill，不添加项目依赖：
 
 ```sh
+silvermoon check-setup --audience agent
+silvermoon check-project --audience agent
 silvermoon list-ideas --json
 silvermoon check-idea <idea> --audience agent
 silvermoon check-changes --worktree --audience agent
@@ -175,7 +180,8 @@ silvermoon check-changes --worktree --audience agent
 
 按报告的下一步操作推进；只有明确需要创建新想法时才运行
 `silvermoon create-idea --audience agent --language zh-CN`，创建前会检查设备与仓库前提。
-新版只保留 `create-idea`、`check-idea`、`check-changes`、
+新版提供
+`check-setup`、`check-project`、`create-idea`、`check-idea`、`check-changes`、
 `get-reference <cid>` 与
 `list-ideas`；事件直接编辑文件后检查，不再提供事件写入命令。
 `check-changes` 默认检查工作区，提交前使用 `--staged` 检查实际索引。

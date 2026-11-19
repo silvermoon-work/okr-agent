@@ -1,0 +1,9 @@
+name: Silvermoon Project
+spec: ../../docs/silvermoon-project-check.yaml
+runtime:
+  minVersion: 22.15.0
+source:
+  entry: src/project-main.ts
+  contract: src/project-contract.ts
+references: references/project
+outDirectory: dist/project-check

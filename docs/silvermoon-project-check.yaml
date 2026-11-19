@@ -1,12 +1,12 @@
 $schema: urn:ipfsaw:check-bundle:1
 specVersion: "1.0"
-name: Silvermoon · Idea 创建前提检查
+name: Silvermoon · 项目就绪检查
 description:
-  供 silvermoon create-idea 在创建文件前执行的独立 Check Task，
-  检查当前设备、Git 仓库、primary 跟踪同步关系和 Silvermoon
-  数据容器是否允许创建。 本 Task 不需要 Idea 参数，不读取既有 Idea
-  内容，不创建目录、写入事件或记录批准。
-  通过只表示本次观察满足创建前提，不是持久授权；CLI
+  供 silvermoon check-project 独立检查项目是否处于可开始工作的状态， 也供
+  silvermoon create-idea 在创建文件前执行的独立 Check Task， 检查当前设备、Git
+  仓库、primary 跟踪同步关系和 Silvermoon 数据容器是否就绪，不仅是配置校验。 本
+  Task 不需要 Idea 参数，不读取既有 Idea 内容，不创建目录、写入事件或记录批准。
+  通过只表示本次观察项目就绪，不是持久授权；CLI
   写入时仍须加锁并重新核对仓库与内容， 防止检查通过后发生的并发变化。与 Idea
   推进、候选变更合法性两个 Task 独立；
   相同前提规则应共享实现，不复制出另一套判定。
@@ -24,13 +24,14 @@ parameter:
       repoRoot:
         type: string
         minLength: 1
-        description: 拟创建 Idea 的 Git 仓库根目录绝对路径；有效性由检查点核验。
+        description:
+          待检查的 Git 仓库根目录绝对路径；有效性由检查点核验，不要求已有 Idea。
 checkpoints:
   - id: global
     title: 全局 Silvermoon 已正确配置
     description: 检查全局 Silvermoon 安装、个人 skill 链接及用户配置是否有效。
     instructions:
-      按下列 Rules 修复实际安装、个人 skill 或配置问题后，重试 create-idea。
+      按下列 Rules 修复实际安装、个人 skill 或配置问题后，重试原命令。
       不自动安装、升级、链接或更改配置；需要这些操作时遵守独立授权。
       不通过添加项目依赖或复制项目内 skill 绕过设备边界。
     rules:
@@ -56,12 +57,12 @@ checkpoints:
             规范语言标签或 undefined；用于后续创建的语言继承， 不包含实际写入的
             Idea 身份或调用方声明的 ready 标记。
   - id: repository
-    title: 仓库在可创建 Idea 的状态
+    title: 仓库在可开始工作的状态
     description: 检查仓库根目录有效、HEAD 关联本地分支，且工作区没有未提交内容。
     instructions:
       保留所有已有修改，通过普通且获授权的 Git 操作整理候选并提交；
       不通过删除、隐藏或重置改动来取得通过。本检查点不解析既有 Idea， 不自动执行
-      stage、commit、push 或 clean；修复后重试创建。
+      stage、commit、push 或 clean；修复后重试原命令。
     rules:
       - code: repository-root-valid
         description:
@@ -119,12 +120,14 @@ checkpoints:
             本次 HEAD、primary tip、remote 与变更事实。
             创建写入层必须重新核验适用性，不能将这次通过当成跨执行的授权。
   - id: silvermoon-folder
-    title: Silvermoon 数据容器可安全用于创建
+    title: Silvermoon 数据容器有效
     description: 检查元数据目录、配置文件及可选 Idea 容器的路径和读取安全性。
     instructions:
-      修复下列 Rules 指出的目录或文件类型问题后重试创建。 首个 Idea 创建前 i
+      修复下列 Rules 指出的目录或文件类型问题后重试原命令。 首个 Idea 创建前 i
       目录不存在是正常状态；检查不替 CLI 建目录， 不扫描、迁移、删除或修复既有
-      Ideas。全部检查通过后才由 CLI 开始创建事务； 写入期间仍需独占锁、唯一 ID
+      Ideas。check-project 到此只返回就绪结果，不开始任何创建事务； 仅
+      create-idea 在全部检查通过后才由 CLI
+      开始创建事务。写入期间仍需独占锁、唯一 ID
       分配、并发复核和仅清理本次拥有文件的失败恢复。 这些事务行为不是本 Task
       的副作用，也不因前提检查通过而省略。
     rules:
@@ -142,5 +145,5 @@ checkpoints:
     output:
       description:
         成功不新增数据，pass output 为 undefined。 Task
-        全部通过仅证明本次创建前提检查通过； 不分配 Idea ID、不写入 created
+        全部通过仅证明本次项目就绪检查通过； 不分配 Idea ID、不写入 created
         事件、不证明 scaffold 已成功落盘。

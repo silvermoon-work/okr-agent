@@ -24,7 +24,8 @@ export const Operation = Type.Object(
     mode: Type.Union([
       Type.Literal("lifecycle"),
       Type.Literal("snapshot"),
-      Type.Literal("creation"),
+      Type.Literal("project"),
+      Type.Literal("setup"),
     ]),
     snapshot: Type.Optional(Type.String({ minLength: 1 })),
     refresh: Type.Optional(Type.Boolean()),
@@ -73,10 +74,13 @@ export type ConsensusRuleCode =
   (typeof consensusRuleCodes)[keyof typeof consensusRuleCodes];
 export type ConsensusSynchronizationRuleCode =
   `${(typeof consensusCheckpointIds)[keyof typeof consensusCheckpointIds]}-synchronized`;
-export const prerequisiteCodes = [
+export const setupCodes = [
   "global-runtime-ready",
   "global-skill-linked",
   "global-configuration-valid",
+] as const;
+export const prerequisiteCodes = [
+  ...setupCodes,
   "repository-root-valid",
   "repository-branch-attached",
   "repository-worktree-clean",

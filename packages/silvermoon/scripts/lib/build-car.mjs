@@ -6,7 +6,7 @@ import { directoryTree } from "@silvermoon-work/task-builder-cli/node";
 import { encodeTaskBundleCar } from "@silvermoon-work/task-builder/car";
 
 export async function buildCar(output, kind = "idea") {
-  if (kind !== "idea" && kind !== "commit" && kind !== "create")
+  if (!["idea", "commit", "project", "setup"].includes(kind))
     throw new Error("Unknown Silvermoon Check kind.");
   const name = kind === "idea" ? "check" : `${kind}-check`;
   const root = fileURLToPath(new URL("../..", import.meta.url));

@@ -13,7 +13,8 @@ export type {
   Operation,
   Runtime,
 } from "./contract.js";
-export type { CreationTarget } from "./create-contract.js";
+export type { ProjectTarget } from "./project-contract.js";
+export type { SetupTarget } from "./setup-contract.js";
 export type { CommitTarget, CommitRuleCode } from "./commit-contract.js";
 export { createIdea, appendEvent, replay } from "./write.js";
 export type { AppendOptions } from "./write.js";

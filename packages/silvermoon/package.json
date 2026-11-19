@@ -23,9 +23,13 @@
       "types": "./dist/commit-check.d.ts",
       "import": "./dist/commit-check.js"
     },
-    "./create-check": {
-      "types": "./dist/create-check.d.ts",
-      "import": "./dist/create-check.js"
+    "./project-check": {
+      "types": "./dist/project-check.d.ts",
+      "import": "./dist/project-check.js"
+    },
+    "./setup-check": {
+      "types": "./dist/setup-check.d.ts",
+      "import": "./dist/setup-check.js"
     },
     "./package.json": "./package.json"
   },
@@ -39,7 +43,8 @@
     "references",
     "check.build.yaml",
     "commit-check.build.yaml",
-    "create-check.build.yaml",
+    "project-check.build.yaml",
+    "setup-check.build.yaml",
     "README.md",
     "LICENSE"
   ],

@@ -14,7 +14,8 @@ import {
   type RuleCode,
   type RepositoryTarget,
 } from "./contract.js";
-import type { CreationTarget } from "./create-contract.js";
+import type { ProjectTarget } from "./project-contract.js";
+import type { SetupTarget } from "./setup-contract.js";
 import {
   inspectInstallation,
   inspectPersonalSkill,
@@ -69,14 +70,11 @@ export interface CheckExecution {
   readonly refresh?: boolean;
   readonly localRemote?: string;
 }
-export function prerequisiteCheckpoints(
-  execution: CheckExecution,
-  targetSchema: typeof Target | typeof CreationTarget,
+export function environmentCheckpoint(
+  runtime: Runtime,
+  targetSchema: typeof Target | typeof ProjectTarget | typeof SetupTarget,
 ) {
-  const runtime = execution.runtime;
-  const inGit = <T>(target: RepositoryTarget, action: () => Promise<T>) =>
-    withGitContext({ userHome: target.userHome, ...runtime }, action);
-  const environment = defineCheckpoint({
+  return defineCheckpoint({
     id: "global",
     target: targetSchema,
     description: "全局 Silvermoon 安装、个人 skill 与配置均有效。",
@@ -158,6 +156,16 @@ export function prerequisiteCheckpoints(
         : { pass: true, output: { userLanguage } };
     },
   });
+}
+
+export function prerequisiteCheckpoints(
+  execution: CheckExecution,
+  targetSchema: typeof Target | typeof ProjectTarget,
+) {
+  const runtime = execution.runtime;
+  const inGit = <T>(target: RepositoryTarget, action: () => Promise<T>) =>
+    withGitContext({ userHome: target.userHome, ...runtime }, action);
+  const environment = environmentCheckpoint(runtime, targetSchema);
   const repository = defineCheckpoint({
     id: "repository",
     target: targetSchema,
@@ -290,7 +298,11 @@ export function prerequisiteCheckpoints(
               throw error;
             return failure("branch-silvermoon-config-valid", error);
           }
-          if (error instanceof SyntaxError || error instanceof TypeError)
+          if (
+            error instanceof SyntaxError ||
+            error instanceof TypeError ||
+            ["ENOENT", "ENOTDIR"].includes(String(nativeCode(error)))
+          )
             return failure("branch-silvermoon-config-valid", error);
           throw error;
         }

@@ -7,19 +7,19 @@ import {
   prerequisiteCheckpointIds,
 } from "./contract.js";
 
-export const CreationTarget = RepositoryTarget;
-export type CreationTarget = Static<typeof CreationTarget>;
-export const CreationRuleCode = Type.Union(
+export const ProjectTarget = RepositoryTarget;
+export type ProjectTarget = Static<typeof ProjectTarget>;
+export const ProjectRuleCode = Type.Union(
   prerequisiteCodes.map((code) => Type.Literal(code)),
 );
-export const creationContract = createCheckContract(
-  CreationTarget,
-  CreationRuleCode,
+export const projectContract = createCheckContract(
+  ProjectTarget,
+  ProjectRuleCode,
   prerequisiteCheckpointIds,
 );
 export const Input = Type.Object(
   {
-    target: CreationTarget,
+    target: ProjectTarget,
     runtime: Runtime,
     refresh: Type.Optional(Type.Boolean()),
   },
@@ -28,6 +28,6 @@ export const Input = Type.Object(
 export type Input = Static<typeof Input>;
 export default createCheckContract(
   Input,
-  CreationRuleCode,
+  ProjectRuleCode,
   prerequisiteCheckpointIds,
 );

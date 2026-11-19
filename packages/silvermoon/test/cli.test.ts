@@ -248,6 +248,8 @@ describe("CLI retained commands, presentation and explicit errors", () => {
       ["whats-next", id],
       ["check"],
       ["check-idea"],
+      ["check-setup", "--root", root],
+      ["check-project", id],
       ["check-changes", "--remote"],
       ["event", "replay", id],
       ["event", "append", id],
@@ -431,7 +433,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     );
     const prerequisite = vi.spyOn(host, "observe").mockResolvedValue({
       schema: "silvermoon/v2",
-      checkCid: (await bundledArtifact("create")).cid,
+      checkCid: (await bundledArtifact("project")).cid,
       target: { userHome: device.currentDevice().home, repoRoot: root },
       result: { pass: true, documentation: "", references: [] },
       documents: [],
@@ -443,7 +445,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     expect(created.exit).toBe(0);
     expect(prerequisite).toHaveBeenCalledWith(
       { userHome: device.currentDevice().home, repoRoot: root },
-      { operation: { mode: "creation" } },
+      { operation: { mode: "project" } },
     );
     prerequisite.mockRestore();
     const result = created.json() as {
@@ -490,23 +492,74 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     const result = await cli(["create-idea", "--json"], root);
     expect(result.exit).toBe(1);
     expect(result.json()).toMatchObject({
-      checkCid: (await bundledArtifact("create")).cid,
+      checkCid: (await bundledArtifact("project")).cid,
       result: { pass: false, problems: [{ code: "global-runtime-ready" }] },
     });
     expect((await repositoryModule.readProject(root)).ideas.size).toBe(0);
   });
-  it("reads exact reference content from all three Check Bundles without executing a Check", async () => {
+
+  it("dispatches standalone project checks without creating an Idea and fails readiness gaps", async () => {
+    const home = await controlledHome();
+    const outside = await scratch();
+    vi.spyOn(repositoryModule, "discoverRoot").mockResolvedValueOnce(undefined);
+    expect((await cli(["check-project", "--json"], outside)).exit).toBe(1);
+    const { root } = await repository({ idea: false });
+    const artifact = await bundledArtifact("project");
+    const report: host.Report = {
+      schema: "silvermoon/v2",
+      checkCid: artifact.cid,
+      target: { userHome: home, repoRoot: root },
+      result: { pass: true, documentation: "", references: [] },
+      documents: [],
+    };
+    const observe = vi
+      .spyOn(host, "observe")
+      .mockResolvedValueOnce(report)
+      .mockResolvedValueOnce({
+        ...report,
+        result: {
+          pass: false,
+          documentation: "",
+          references: [],
+          problems: [
+            {
+              checkpoint: "branch",
+              code: "branch-silvermoon-config-valid",
+              brief: "Configure primary.",
+            },
+          ],
+        },
+      });
+    const success = await cli(
+      ["check-project", "--root", root, "--json"],
+      outside,
+    );
+    expect(success.exit).toBe(0);
+    expect(success.json()).toMatchObject({
+      checkCid: artifact.cid,
+      result: { pass: true },
+    });
+    expect(observe).toHaveBeenNthCalledWith(
+      1,
+      { userHome: home, repoRoot: root },
+      { operation: { mode: "project" } },
+    );
+    expect((await cli(["check-project", "--json"], root)).exit).toBe(1);
+    expect((await repositoryModule.readProject(root)).ideas.size).toBe(0);
+  });
+  it("reads exact reference content from all four Check Bundles without executing a Check", async () => {
     const home = await controlledHome();
     const { root } = await repository();
     for (const operation of [
       { mode: "lifecycle" as const },
-      { mode: "creation" as const },
+      { mode: "setup" as const },
+      { mode: "project" as const },
       { mode: "snapshot" as const, snapshot: "worktree" },
     ]) {
       const report = await host.observe(
         {
           userHome: home,
-          repoRoot: root,
+          ...(operation.mode !== "setup" ? { repoRoot: root } : {}),
           ...(operation.mode === "lifecycle" ? { idea: id } : {}),
         },
         { operation },

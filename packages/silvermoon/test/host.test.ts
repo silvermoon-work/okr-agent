@@ -23,8 +23,10 @@ import {
   type Device,
 } from "../src/device.js";
 import { silvermoonCheckpoints } from "../src/check.js";
-import { creationCheckpoints } from "../src/create-check.js";
-import { CreationTarget } from "../src/create-contract.js";
+import { projectCheckpoints } from "../src/project-check.js";
+import { ProjectTarget } from "../src/project-contract.js";
+import { SetupTarget } from "../src/setup-contract.js";
+import { runCli } from "../src/cli.js";
 import {
   Target,
   checkpointIds,
@@ -172,9 +174,9 @@ async function graph(
         });
   return { ...report, problems: report.pass ? [] : report.problems, nodes };
 }
-async function creationGraph(input: Request) {
+async function projectGraph(input: Request) {
   return executeCheck({
-    checkpoints: creationCheckpoints({
+    checkpoints: projectCheckpoints({
       runtime: input.runtime,
       refresh: false,
     }),
@@ -186,67 +188,127 @@ async function creationGraph(input: Request) {
   });
 }
 describe("Ordered checkpoints and the real offline Engine", () => {
-  it("executes a separate creation CAR with no Idea, no scaffold writes and shared prerequisite diagnostics", async () => {
+  it("runs setup onboarding outside Git without a Git executable and reports missing personal setup", async () => {
+    const current = await device();
+    vi.spyOn(deviceReads, "currentDevice").mockReturnValue(current);
+    const outside = await scratch();
+    const discover = vi.spyOn(repositoryReads, "discoverRoot");
+    const invoke = async () => {
+      let output = "";
+      let errors = "";
+      const exit = await runCli(["check-setup", "--json"], {
+        cwd: outside,
+        stdout: {
+          write: (value) => {
+            output += value;
+          },
+        },
+        stderr: {
+          write: (value) => {
+            errors += value;
+          },
+        },
+      });
+      expect(errors).toBe("");
+      return { exit, report: JSON.parse(output) as unknown };
+    };
+    const artifact = await bundledArtifact("setup");
+    expect(await invoke()).toMatchObject({
+      exit: 0,
+      report: {
+        checkCid: artifact.cid,
+        target: { userHome: current.home },
+        result: { pass: true, references: [] },
+      },
+    });
+    expect(discover).not.toHaveBeenCalled();
+    expect(
+      Value.Check(SetupTarget, { userHome: current.home, repoRoot: outside }),
+    ).toBe(false);
+    await expect(
+      observeTarget(
+        { userHome: current.home, repoRoot: outside },
+        {
+          operation: { mode: "setup" },
+        },
+      ),
+    ).rejects.toThrow(/userHome only/);
+    await rm(join(current.home, ".agents", "skills", "silvermoon"));
+    expect(await invoke()).toMatchObject({
+      exit: 1,
+      report: {
+        checkCid: artifact.cid,
+        result: {
+          pass: false,
+          problems: [{ checkpoint: "global", code: "global-skill-linked" }],
+        },
+      },
+    });
+    expect(discover).not.toHaveBeenCalled();
+  }, 20_000);
+
+  it("executes a separate project CAR with no Idea, no scaffold writes and shared prerequisite diagnostics", async () => {
     const { target: input } = await target({ idea: false });
-    const creationTarget = {
+    const projectTarget = {
       userHome: input.target.userHome,
       repoRoot: input.target.repoRoot,
     };
-    const artifact = await bundledArtifact("create");
+    const artifact = await bundledArtifact("project");
     const ideaArtifact = await bundledArtifact();
     const commitArtifact = await bundledArtifact("commit");
+    const setupArtifact = await bundledArtifact("setup");
     expect(
-      new Set([artifact.cid, ideaArtifact.cid, commitArtifact.cid]).size,
-    ).toBe(3);
-    const before = await git(creationTarget.repoRoot, [
-      "status",
-      "--porcelain",
-    ]);
-    const head = await git(creationTarget.repoRoot, ["rev-parse", "HEAD"]);
-    const report = await observeTarget(creationTarget, {
+      new Set([
+        artifact.cid,
+        ideaArtifact.cid,
+        commitArtifact.cid,
+        setupArtifact.cid,
+      ]).size,
+    ).toBe(4);
+    const before = await git(projectTarget.repoRoot, ["status", "--porcelain"]);
+    const head = await git(projectTarget.repoRoot, ["rev-parse", "HEAD"]);
+    const report = await observeTarget(projectTarget, {
       runtime: input.runtime,
-      operation: { mode: "creation", refresh: false },
+      operation: { mode: "project", refresh: false },
     });
     expect(report).toMatchObject({
       checkCid: artifact.cid,
-      target: creationTarget,
+      target: projectTarget,
       result: { pass: true, references: [] },
     });
-    expect(report.documents[0]?.text).toContain("Idea 创建前提检查");
-    expect(await git(creationTarget.repoRoot, ["status", "--porcelain"])).toBe(
+    expect(report.documents[0]?.text).toContain("项目就绪检查");
+    expect(await git(projectTarget.repoRoot, ["status", "--porcelain"])).toBe(
       before,
     );
-    expect(await git(creationTarget.repoRoot, ["rev-parse", "HEAD"])).toBe(
-      head,
-    );
+    expect(await git(projectTarget.repoRoot, ["rev-parse", "HEAD"])).toBe(head);
     await expect(
-      lstat(join(creationTarget.repoRoot, ".silvermoon", "i")),
+      lstat(join(projectTarget.repoRoot, ".silvermoon", "i")),
     ).rejects.toMatchObject({ code: "ENOENT" });
-    expect(Value.Check(CreationTarget, input.target)).toBe(false);
-    expect(Value.Check(CreationTarget, creationTarget)).toBe(true);
+    expect(Value.Check(ProjectTarget, input.target)).toBe(false);
+    expect(Value.Check(ProjectTarget, projectTarget)).toBe(true);
     await expect(
-      observeTarget(creationTarget, {
+      observeTarget(projectTarget, {
         runtime: input.runtime,
       }),
     ).rejects.toThrow(/requires.*idea/);
     await expect(
       observeTarget(input.target, {
-        operation: { mode: "creation", refresh: false },
+        operation: { mode: "project", refresh: false },
         runtime: input.runtime,
       }),
     ).rejects.toThrow(/only/);
     await expect(
-      observeTarget(creationTarget, {
-        operation: { mode: "creation", refresh: false },
+      observeTarget(projectTarget, {
+        operation: { mode: "project", refresh: false },
         runtime: input.runtime,
         artifacts: [ideaArtifact],
       }),
     ).rejects.toThrow(/different task/);
 
-    await writeFile(join(creationTarget.repoRoot, "unrelated.txt"), "preserve");
-    const blocked = await observeTarget(creationTarget, {
+    await writeFile(join(projectTarget.repoRoot, "unrelated.txt"), "preserve");
+    const blocked = await observeTarget(projectTarget, {
       runtime: input.runtime,
-      operation: { mode: "creation", refresh: false },
+      operation: { mode: "project", refresh: false },
     });
     expect(blocked).toMatchObject({
       checkCid: artifact.cid,
@@ -256,8 +318,50 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       },
     });
     expect(
-      await readFile(join(creationTarget.repoRoot, "unrelated.txt"), "utf8"),
+      await readFile(join(projectTarget.repoRoot, "unrelated.txt"), "utf8"),
     ).toBe("preserve");
+  }, 20_000);
+
+  it("returns project onboarding guidance for a missing config without initializing or creating an Idea", async () => {
+    const { target: input, remote } = await target({ idea: false });
+    await rm(join(input.target.repoRoot, ".silvermoon", "config.yaml"));
+    await git(input.target.repoRoot, ["remote", "set-url", "origin", remote]);
+    await sync(input.target.repoRoot);
+    await git(input.target.repoRoot, [
+      "remote",
+      "set-url",
+      "origin",
+      "https://github.com/example/project.git",
+    ]);
+    const before = await git(input.target.repoRoot, ["status", "--porcelain"]);
+    const report = await observeTarget(
+      {
+        userHome: input.target.userHome,
+        repoRoot: input.target.repoRoot,
+      },
+      {
+        runtime: input.runtime,
+        operation: { mode: "project", refresh: false },
+      },
+    );
+    expect(report).toMatchObject({
+      checkCid: (await bundledArtifact("project")).cid,
+      result: {
+        pass: false,
+        problems: [
+          { checkpoint: "branch", code: "branch-silvermoon-config-valid" },
+        ],
+      },
+    });
+    expect(await git(input.target.repoRoot, ["status", "--porcelain"])).toBe(
+      before,
+    );
+    await expect(
+      lstat(join(input.target.repoRoot, ".silvermoon", "config.yaml")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      lstat(join(input.target.repoRoot, ".silvermoon", "i")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   }, 20_000);
 
   it("reports a behind branch as an unmet synchronization rule, not an execution fault", async () => {
@@ -350,7 +454,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       return executeCheck({
         checkpoints: selector
           ? silvermoonCheckpoints(cid, { runtime, localRemote })
-          : creationCheckpoints({ runtime, localRemote }),
+          : projectCheckpoints({ runtime, localRemote }),
         target,
         signal: new AbortController().signal,
       });
@@ -700,7 +804,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
         },
       ]);
       if (scope === "other")
-        expect(await creationGraph(input)).toMatchObject({ pass: true });
+        expect(await projectGraph(input)).toMatchObject({ pass: true });
     },
   );
 
@@ -1034,9 +1138,9 @@ describe("Ordered checkpoints and the real offline Engine", () => {
         repoRoot: input.target.repoRoot,
       }),
     ).toBe(false);
-    expect(await creationGraph(input)).toMatchObject({ pass: true });
+    expect(await projectGraph(input)).toMatchObject({ pass: true });
     await writeFile(join(input.target.repoRoot, "unrelated.txt"), "preserve");
-    expect(await creationGraph(input)).toMatchObject({
+    expect(await projectGraph(input)).toMatchObject({
       problems: [{ code: "repository-worktree-clean" }],
     });
     expect(await graph(input)).toMatchObject({

@@ -126,6 +126,43 @@ export async function runCli(
     );
   };
   program
+    .command("check-setup")
+    .description(
+      "Check device installation, personal skill and configuration without a project.",
+    )
+    .action(async () => {
+      invariant(
+        !program.opts<Options>().root,
+        "usage",
+        "check-setup does not accept --root.",
+      );
+      const report = await observe(
+        { userHome: currentDevice().home },
+        {
+          operation: { mode: "setup" },
+          ...(io.signal ? { signal: io.signal } : {}),
+        },
+      );
+      emit(report);
+      exit = report.result.pass ? 0 : 1;
+    });
+  program
+    .command("check-project")
+    .description(
+      "Check device, repository, branch and metadata readiness without an Idea.",
+    )
+    .action(async () => {
+      const report = await observe(
+        { userHome: currentDevice().home, repoRoot: await root() },
+        {
+          operation: { mode: "project" },
+          ...(io.signal ? { signal: io.signal } : {}),
+        },
+      );
+      emit(report);
+      exit = report.result.pass ? 0 : 1;
+    });
+  program
     .command("check-idea <idea>")
     .description(
       "Execute the exact pinned Check; gaps are normal observations.",
@@ -249,7 +286,7 @@ export async function runCli(
       const readiness = await observe(
         { userHome: currentDevice().home, repoRoot: directory },
         {
-          operation: { mode: "creation" },
+          operation: { mode: "project" },
           ...(io.signal ? { signal: io.signal } : {}),
         },
       );
