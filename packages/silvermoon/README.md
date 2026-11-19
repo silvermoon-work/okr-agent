@@ -11,6 +11,15 @@ contain mutable revisions or a random nonce. A domain reducer shared by the
 Check, writer and replay is the only lifecycle implementation. The Host renders
 `pass/documentation/problems`; it never decides a second lifecycle.
 
+The
+[Idea-rooted checker-tree design draft](../../docs/silvermoon-single-checker.yaml)
+uses Check Bundle Spec v1.0 for ipfsaw preview. One Idea entry owns a
+progressive chain of internal checkers: device/repository prerequisites, Idea
+observation, five consensus gates with per-gate synchronization, implementation,
+deployment and terminal synchronization. This is one business entry, not one
+registered checker or three independent lifecycles. It is not implemented; the
+current Check still uses Device → Project → Idea.
+
 ## Commands
 
 ```text
