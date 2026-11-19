@@ -25,6 +25,18 @@ single repo 在 workspace 检查点不要求 workspace 声明。
 详细识别和执行边界见[检查说明](references/check.md)。
 通过只表示当前已实现规则成立，不表示完整工程合规。
 
+## 改造规格
+
+[docs/spec.yaml](docs/spec.yaml) 使用最新的 Spec v1.0 有序检查点模型，
+记录项目身份、workspace 及根工程工具链的增量设计。每步分别声明
+description、Agent instructions、正向 Rules 和成功 Context output；
+通过继续、不通过即停止，不使用旧图或固定脚本包装器。
+项目身份与 workspace 已实现，其余步骤尚未实现；九个根 Turbo 聚合命令已确认，
+共享工具组合及版本规则仍为候选。成员、单包工程和其他未细化政策见规格的范围说明。
+规格中的 Rule code 尽量采用所属 Checkpoint ID 前缀；运行时、设计样例和参考文档
+尚未同步新命名，当前运行结果仍使用原规则码。
+该文件不参与当前 CAR 构建，也不表示生产 Check 已增加这些能力。
+
 ## 构建与运行
 
 在仓库根目录构建本包和依赖：

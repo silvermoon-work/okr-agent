@@ -29,6 +29,17 @@
   and dependency order; do not duplicate that graph in a custom scheduler. Run
   whole-repository ESLint and Prettier once from the root.
 
+## Check Task modeling
+
+- Use the repository
+  [check-task-spec skill](../.agent/skills/check-task-spec/SKILL.md) when
+  authoring or reviewing Check Task specs. It defines the three-layer model,
+  field audiences and the later code/reference mapping.
+- Prefer prefixing each Rule code with its owning Checkpoint ID and a hyphen,
+  for example `installation-tool-present` or `tool-turbo-version-valid`. Keep
+  codes phrased as positive conditions. This is an authoring convention, not an
+  additional SDK/Spec validation requirement.
+
 ## Engineering simplification and Check policy boundary
 
 - This consuming repository deliberately uses direct package commands rather

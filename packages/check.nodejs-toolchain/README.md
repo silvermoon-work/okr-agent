@@ -10,6 +10,28 @@ Worker 缺少 PATH 的问题已通过获批准的显式执行上下文解决，�
 nvm-windows
 1.2.2 已在隔离环境通过真实 CAR 的 Node/npm 管理与配对、双工具未受管及仅 npm 未受管反例；未改共享安装、配置、链接或 PATH。原共享 nvm 二进制仍存在启动挂起问题，未声称修复该宿主问题。Check 不会自动改用验证缓存；工具选择始终遵循调用方授权的显式上下文。
 
+## 模型预览
+
+[docs/spec.yaml](docs/spec.yaml) 使用 Spec v1.0 描述改造后的六个有序检查点：
+nvm、node、npm、pnpm、nrm 各自安装检查，以及最后的 configuration。
+规格固定检查五种工具，默认输入为 `{}`，唯一可选参数为 `minimumVersions`，
+例如 `{"minimumVersions":{"node":"22.15.0"}}`；示例不是默认下限。
+每种工具包含 executable、version-valid 两条基础安装规则；
+node、npm 各自另有 managed-by-nvm 规则，独立确认属于 nvm 管理的安装，
+不以 node 受管推定 npm 受管；Node/npm 配对仍由 configuration 单独检查。
+具体失败原因由 brief 区分。
+检查对象仅为执行设备，直接读取设备环境与用户级/全局配置，不需要业务 context、
+项目目录或另一套宿主 context 参数，不受目标项目配置覆盖。
+各安装步骤独立输出工具入口；首个业务失败即停止，不再跨工具收集安装问题，可用 ipfsaw 查看。
+它只展示定义，不执行探测，也不代表当前设备或新 CAR 已通过检查。
+规格中的 Rule code 尽量采用所属 Checkpoint
+ID 前缀；简化输入、统一政策、拆分流程、逐工具 Context 输出及
+新命名尚未同步到运行时契约、问题码和参考文档。registry 白名单、nrm 必需注册项的
+准确值及设备环境读取适配尚待细化，不从本机配置自动继承统一政策。
+当前生产实现仍要求下文的 context/requirements 输入，按
+installation → configuration 两步执行，使用原规则码与工具入口 Map；
+实际输入及语义校验仍以源码契约为准。
+
 ## 作者构建与验证
 
 在仓库根执行：
