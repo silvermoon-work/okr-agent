@@ -125,9 +125,12 @@
 - Discover Ideas with `silvermoon list-ideas --json`, then use
   `silvermoon check-idea <idea> --audience agent` and follow its next action.
   The Idea selector is required. Creation and check-project share the Project
-  Task, which reuses the Idea Task's first four checkpoints; check-setup reuses
-  the first checkpoint only. Each Task has its own strict contract and CAR.
-  Creation still locks and revalidates before writing.
+  Task, which reuses the Idea Task's first four checkpoints and then checks the
+  effective pre-commit hook for fail-closed staged validation; check-setup
+  reuses the first checkpoint only. Preserve existing hook logic and respect
+  `core.hooksPath`; checking does not install or execute hooks. Each Task has
+  its own strict contract and CAR. Creation still locks and revalidates before
+  writing.
 - Validate metadata with `silvermoon check-changes --worktree --audience agent`
   before staging and `silvermoon check-changes --staged --audience agent` before
   committing.

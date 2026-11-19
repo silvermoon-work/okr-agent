@@ -1,4 +1,5 @@
 import {
+  chmod,
   lstat,
   mkdir,
   readFile,
@@ -6,7 +7,7 @@ import {
   symlink,
   writeFile,
 } from "node:fs/promises";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, join, relative, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Value } from "@sinclair/typebox/value";
 import { IpfsStore } from "@silvermoon-work/ipfs-store";
@@ -320,6 +321,152 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     expect(
       await readFile(join(projectTarget.repoRoot, "unrelated.txt"), "utf8"),
     ).toBe("preserve");
+  }, 20_000);
+
+  it("checks the effective pre-commit hook without executing it or accepting commented and fail-open commands", async () => {
+    const { target: input } = await target({ idea: false });
+    const root = input.target.repoRoot;
+    const original = join(root, ".git", "hooks", "pre-commit");
+    const prefix = await readFile(original, "utf8");
+    const directory = join(await scratch(), "custom hooks");
+    await mkdir(directory);
+    await git(root, ["config", "core.hooksPath", directory]);
+    const hook = join(directory, "pre-commit");
+    const projectTarget = {
+      userHome: input.target.userHome,
+      repoRoot: root,
+    };
+    const options = {
+      runtime: input.runtime,
+      operation: { mode: "project" as const, refresh: false },
+    };
+    const missing = await observeTarget(projectTarget, options);
+    expect(missing.result).toMatchObject({
+      pass: false,
+      problems: [
+        { checkpoint: "pre-commit", code: "pre-commit-hook-configured" },
+      ],
+    });
+    expect(
+      missing.documents.map((document) => document.text).join("\n"),
+    ).toContain(
+      "silvermoon check-changes --staged --audience agent || exit $?",
+    );
+    await expect(lstat(hook)).rejects.toMatchObject({ code: "ENOENT" });
+    for (const body of [
+      "#!/bin/sh\n# silvermoon check-changes --staged --audience agent\n",
+      prefix.replace(" || exit $?", " || true"),
+      prefix.replace("--staged", "--worktree"),
+    ]) {
+      await writeFile(hook, body, { mode: 0o755 });
+      expect(await projectGraph(input)).toMatchObject({
+        pass: false,
+        problems: [{ code: "pre-commit-hook-configured" }],
+      });
+    }
+    const marker = join(directory, "executed");
+    const body = prefix + `printf 'must not run' > "${marker}"\n`;
+    const installed =
+      process.platform === "win32" ? body.replaceAll("\n", "\r\n") : body;
+    await writeFile(hook, installed);
+    expect((await observeTarget(projectTarget, options)).result.pass).toBe(
+      true,
+    );
+    expect(await readFile(hook, "utf8")).toBe(installed);
+    await expect(lstat(marker)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(original, "utf8")).toBe(prefix);
+
+    if (process.platform !== "win32") {
+      await chmod(hook, 0o644);
+      expect(await projectGraph(input)).toMatchObject({
+        pass: false,
+        problems: [{ code: "pre-commit-hook-configured" }],
+      });
+      await chmod(hook, 0o755);
+    }
+    await writeFile(hook, new Uint8Array([0xff]));
+    expect(await projectGraph(input)).toMatchObject({
+      pass: false,
+      problems: [{ code: "pre-commit-hook-configured" }],
+    });
+    await rm(hook);
+    await symlink(
+      process.platform === "win32" ? join(original, "..") : original,
+      hook,
+      process.platform === "win32" ? "junction" : "file",
+    );
+    expect(await projectGraph(input)).toMatchObject({
+      pass: false,
+      problems: [{ code: "pre-commit-hook-configured" }],
+    });
+  }, 30_000);
+
+  it("resolves shared hooks for linked worktrees and relative core.hooksPath without using the inspection override", async () => {
+    const { target: input } = await target({ idea: false });
+    const root = input.target.repoRoot;
+    const linked = join(await scratch(), "linked");
+    await git(root, ["worktree", "add", "-b", "linked", linked]);
+    await git(linked, ["branch", "--set-upstream-to=origin/main"]);
+    const request = {
+      ...input,
+      target: { ...input.target, repoRoot: linked },
+    };
+    expect(await projectGraph(request)).toMatchObject({ pass: true });
+    await git(linked, [
+      "config",
+      "core.hooksPath",
+      relative(linked, join(root, ".git", "hooks")),
+    ]);
+    expect(await projectGraph(request)).toMatchObject({ pass: true });
+    await git(linked, ["config", "core.hooksPath", "../missing-hooks"]);
+    expect(await projectGraph(request)).toMatchObject({
+      pass: false,
+      problems: [{ code: "pre-commit-hook-configured" }],
+    });
+  }, 20_000);
+
+  it("propagates hook read faults, concurrent changes and cancellation as execution errors", async () => {
+    const { target: input } = await target({ idea: false });
+    const read = repositoryReads.readRegular;
+    for (const error of [
+      Object.assign(new Error("Hook I/O failed"), { code: "EIO" }),
+      new SilvermoonError("concurrent-edit", "Hook changed while reading."),
+    ]) {
+      const spy = vi
+        .spyOn(repositoryReads, "readRegular")
+        .mockImplementation((path, signal) =>
+          path.endsWith("pre-commit")
+            ? Promise.reject(error)
+            : read(path, signal),
+        );
+      await expect(projectGraph(input)).rejects.toBe(error);
+      spy.mockRestore();
+    }
+    const controller = new AbortController();
+    const cancellation = new Error("Cancelled hook read");
+    const spy = vi
+      .spyOn(repositoryReads, "readRegular")
+      .mockImplementation((path, signal) => {
+        if (path.endsWith("pre-commit")) {
+          controller.abort(cancellation);
+          return Promise.reject(cancellation);
+        }
+        return read(path, signal);
+      });
+    await expect(
+      executeCheck({
+        checkpoints: projectCheckpoints({
+          runtime: input.runtime,
+          refresh: false,
+        }),
+        target: {
+          userHome: input.target.userHome,
+          repoRoot: input.target.repoRoot,
+        },
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow("Cancelled hook read");
+    spy.mockRestore();
   }, 20_000);
 
   it("returns project onboarding guidance for a missing config without initializing or creating an Idea", async () => {

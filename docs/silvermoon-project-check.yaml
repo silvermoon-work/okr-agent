@@ -4,8 +4,9 @@ name: Silvermoon · 项目就绪检查
 description:
   供 silvermoon check-project 独立检查项目是否处于可开始工作的状态， 也供
   silvermoon create-idea 在创建文件前执行的独立 Check Task， 检查当前设备、Git
-  仓库、primary 跟踪同步关系和 Silvermoon 数据容器是否就绪，不仅是配置校验。 本
-  Task 不需要 Idea 参数，不读取既有 Idea 内容，不创建目录、写入事件或记录批准。
+  仓库、primary 跟踪同步关系、Silvermoon 数据容器和提交 hook
+  是否就绪，不仅是配置校验。 本 Task 不需要 Idea 参数，不读取既有 Idea
+  内容，不创建目录、写入事件或记录批准。
   通过只表示本次观察项目就绪，不是持久授权；CLI
   写入时仍须加锁并重新核对仓库与内容， 防止检查通过后发生的并发变化。与 Idea
   推进、候选变更合法性两个 Task 独立；
@@ -125,9 +126,8 @@ checkpoints:
     instructions:
       修复下列 Rules 指出的目录或文件类型问题后重试原命令。 首个 Idea 创建前 i
       目录不存在是正常状态；检查不替 CLI 建目录， 不扫描、迁移、删除或修复既有
-      Ideas。check-project 到此只返回就绪结果，不开始任何创建事务； 仅
-      create-idea 在全部检查通过后才由 CLI
-      开始创建事务。写入期间仍需独占锁、唯一 ID
+      Ideas。通过后继续检查提交 hook，不开始任何创建事务；仅 create-idea
+      在全部检查通过后才由 CLI 开始创建事务。写入期间仍需独占锁、唯一 ID
       分配、并发复核和仅清理本次拥有文件的失败恢复。 这些事务行为不是本 Task
       的副作用，也不因前提检查通过而省略。
     rules:
@@ -147,3 +147,42 @@ checkpoints:
         成功不新增数据，pass output 为 undefined。 Task
         全部通过仅证明本次项目就绪检查通过； 不分配 Idea ID、不写入 created
         事件、不证明 scaffold 已成功落盘。
+  - id: pre-commit
+    title: 提交前自动检查 Silvermoon 候选
+    description:
+      检查 Git 实际使用的 pre-commit hook 会校验暂存候选并阻止非法提交。
+    instructions: |
+      通过 `git rev-parse --path-format=absolute --git-path hooks/pre-commit`
+      定位 Git 实际使用的 hook，尊重 core.hooksPath 与 linked worktree。
+      检查本身只读文件，不执行 hook，也不自动修改 Git 配置或安装 hook。
+      用户授权配置后，保留已有逻辑，采用下列可验证的 shell 前缀：
+
+      ```sh
+      #!/bin/sh
+      # BEGIN Silvermoon check-changes
+      silvermoon check-changes --staged --audience agent || exit $?
+      # END Silvermoon check-changes
+      ```
+
+      已有兼容的 sh hook 可在此前缀后保留原脚本正文；不能覆盖或丢弃原逻辑。
+      若原 hook 使用其他解释器或 hook manager，先明确集成方式，不擅自转换。
+      非 Windows 设备须为 hook 设置执行权限。配置后的 hook 使用设备级 silvermoon，
+      不使用项目依赖或源码路径。失败必须向 Git 返回非零，不能使用 || true、
+      后续命令或只检查工作区来掩盖暂存候选失败。
+      若 hook 作为仓库文件管理，按普通授权流程提交并同步后重试原命令。
+    rules:
+      - code: pre-commit-hook-configured
+        description:
+          Git 根据有效配置（包括 core.hooksPath）解析到的 pre-commit 必须存在，
+          为有界 UTF-8 常规文件而非符号链接，非 Windows 平台还必须可执行。
+          文件必须使用 LF（Windows 上也接受规范化后的
+          CRLF），以下列四行及末尾换行开始： "#!/bin/sh"、"# BEGIN Silvermoon
+          check-changes"、 "silvermoon check-changes --staged --audience agent
+          || exit $?"、 "# END Silvermoon check-changes"。前缀后允许保留已有
+          shell 逻辑。 不执行或推测任意脚本、注释、条件分支、间接 wrapper 或
+          hook manager
+          的等价性；其他集成形式返回明确的配置缺口，不视作已经验证。
+          缺失、无效内容或不可执行是不通过；意外 I/O、取消和并发变更是执行错误。
+    output:
+      description:
+        成功输出为 undefined；不安装、执行 hook 或记录跨执行就绪状态。

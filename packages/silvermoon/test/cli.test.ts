@@ -248,7 +248,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     const root = await scratch();
     expect(await cli(["--version"], root)).toMatchObject({
       exit: 0,
-      stdout: "0.1.0-rc.2\n",
+      stdout: "0.1.0-rc.3\n",
     });
     expect((await cli(["--help"], root)).stdout).toContain("check-idea");
     for (const argv of [
@@ -638,7 +638,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     expect(
       (await execute(process.execPath, [bin, "--version"], { cwd: root, env }))
         .stdout,
-    ).toBe("0.1.0-rc.2\n");
+    ).toBe("0.1.0-rc.3\n");
     expect(
       (await execute(process.execPath, [bin, "--help"], { cwd: root, env }))
         .stdout,

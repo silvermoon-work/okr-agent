@@ -159,6 +159,14 @@ export async function repository(
   await git(root, ["config", "user.email", "fixture@example.invalid"]);
   await git(root, ["config", "user.name", "Fixture"]);
   await git(root, ["config", "core.autocrlf", "false"]);
+  await writeFile(
+    join(root, ".git", "hooks", "pre-commit"),
+    "#!/bin/sh\n" +
+      "# BEGIN Silvermoon check-changes\n" +
+      "silvermoon check-changes --staged --audience agent || exit $?\n" +
+      "# END Silvermoon check-changes\n",
+    { mode: 0o755 },
+  );
   await git(root, ["remote", "add", "origin", remote]);
   await mkdir(join(root, ".silvermoon"));
   await writeFile(

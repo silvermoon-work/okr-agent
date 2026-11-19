@@ -21,6 +21,8 @@ integrity and binding using the real upstream reader.
 and Idea selector; `check-project` and `create-idea` use the same Project CAR,
 with creation writing only after it passes. Both Project and Idea reuse the same
 four prerequisite checkpoint implementations, not an implicit no-Idea branch.
+The Project Task additionally checks the effective pre-commit hook for a
+fail-closed staged `check-changes` command; it never installs or executes hooks.
 `check-setup` runs the global checkpoint in its own Setup CAR without a Git
 repository. `silvermoon check-changes` executes the commit CAR for changed
 Ideas, with explicit `--allow-delete` exceptions for whole deletions.

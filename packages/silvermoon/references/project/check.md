@@ -2,10 +2,12 @@
 
 `silvermoon check-project` 独立检查项目是否处于可开始工作的状态，
 `silvermoon create-idea` 在写入前也执行同一 Task；都不需要 Idea 参数。
-四个检查点为 global → repository → branch → silvermoon-folder；
-复用 Idea Task 的相同前提规则，但不检查既有 Idea 或生命周期完成状态。
+五个检查点为 global → repository → branch → silvermoon-folder → pre-commit；
+前四步复用 Idea Task 的相同前提规则，但不检查既有 Idea 或生命周期完成状态。
 任一检查点失败即停止，CLI 返回问题和修复指引，不创建 scaffold。
-检查包含工作区干净、upstream 和 primary 同步，不只是项目配置校验。
+检查包含工作区干净、upstream 和 primary 同步，以及有效 pre-commit hook 中的
+`silvermoon check-changes --staged --audience agent` 失败阻断前缀，
+不只是项目配置校验。尊重 core.hooksPath；只读检查，不执行或自动安装 hook。
 缺少配置或首次接入尚未准备好时返回具体问题，不自动初始化。
 
 通过只代表本次观察项目就绪，不是持久授权。check-project 到此结束，不创建文件。

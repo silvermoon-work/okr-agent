@@ -19,8 +19,12 @@ copy.
 - Use `check-setup` for device onboarding without a Git repository; it checks
   installation, personal skill and user config only and rejects `--root`.
 - Use `check-project` for project onboarding without an Idea; it checks the
-  first four checkpoints, including clean worktree, upstream and primary
-  synchronization. Missing configuration is reported with repair guidance, never
+  shared first four checkpoints plus a pre-commit hook checkpoint, including
+  clean worktree, upstream and primary synchronization. The hook must run
+  `silvermoon check-changes --staged --audience agent` with fail-closed behavior
+  using the documented shell prefix. Respect effective `core.hooksPath`,
+  preserve existing logic and obtain authorization before installing or changing
+  hooks. Missing configuration is reported with repair guidance, never
   automatically initialized. Both readiness commands exit 1 for gaps and never
   install software, link skills or create an Idea.
 - Use `check-idea <idea>` for the Idea Check Task: global → repository → branch

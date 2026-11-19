@@ -1,5 +1,11 @@
 # @silvermoon-work/silvermoon
 
+`0.1.0-rc.3` adds a Project pre-commit readiness checkpoint shared by
+`check-project` and creation preflight. It reads Git's effective hook without
+executing it and requires fail-closed validation of the staged snapshot.
+Existing hook logic must be preserved; installation remains an authorized Agent
+action, not a side effect of checking.
+
 `0.1.0-rc.2` adds explicit device and project onboarding through `check-setup`
 and `check-project`, sharing readiness checks with Idea navigation and creation.
 Global runtime and personal skill replacement still require separate
@@ -124,17 +130,19 @@ navigation. `check-setup` requires no Git repository and does not discover or
 read a project; it checks global installation, personal skill and user config
 only. It rejects `--root`. `check-project` checks the same four prerequisite
 checkpoints used by the Idea Task, including a clean worktree, upstream and
-primary synchronization, not merely project configuration. Missing project
+primary synchronization, then an independent pre-commit hook checkpoint. It
+resolves Git's effective hook path, including `core.hooksPath` and linked
+worktrees, and reads but never executes or installs the hook. Missing project
 configuration is a readiness gap with repair guidance, not automatic setup.
 Neither command creates an Idea, installs software, links a skill or initializes
 a project.
 
-`create-idea` executes the shared Project Task before writing; its four shared
-checkpoints check global/repository/branch/layout readiness. Failures return the
-Check report with exit 1 and no scaffold. No command appends events: edit
-`events.jsonl` directly, preserving its exact prefix and canonical JSONL, then
-run `check-changes` before staging/committing. Creation still writes the initial
-`created` event. Library writer/replay helpers remain available.
+`create-idea` executes the shared Project Task before writing; its five
+checkpoints check global/repository/branch/layout and pre-commit readiness.
+Failures return the Check report with exit 1 and no scaffold. No command appends
+events: edit `events.jsonl` directly, preserving its exact prefix and canonical
+JSONL, then run `check-changes` before staging/committing. Creation still writes
+the initial `created` event. Library writer/replay helpers remain available.
 
 `check-changes` defaults to the worktree against HEAD. `--staged` checks only
 the index against HEAD; an exact `--commit` checks against its first parent.
@@ -240,11 +248,30 @@ from `project-check.build.yaml`, the
 [Project Spec](../../docs/silvermoon-project-check.yaml) and
 `references/project`. The Project Task and Idea Task use the same
 `prerequisiteCheckpoints` factory for global, repository, branch and layout
-rules, with each Task's own strict Target schema. Project always stops after
-these four checkpoints; the Idea Task always continues with its required Idea.
-Successful preflight does not create files or authorize later writes: the writer
-still locks, refreshes primary and revalidates the candidate before creating the
+rules, with each Task's own strict Target schema. Project then checks
+`pre-commit`; the Idea Task instead continues with its required Idea. Successful
+preflight does not create files or authorize later writes: the writer still
+locks, refreshes primary and revalidates the candidate before creating the
 scaffold. New Ideas pin the Idea CAR, never the Project CAR.
+
+After authorization, configure Git's effective pre-commit file with this exact
+prefix (LF; CRLF also accepted on Windows), keeping any existing compatible
+shell body after it:
+
+```sh
+#!/bin/sh
+# BEGIN Silvermoon check-changes
+silvermoon check-changes --staged --audience agent || exit $?
+# END Silvermoon check-changes
+```
+
+The hook must be a regular UTF-8 file and executable on non-Windows platforms.
+Resolve its location with
+`git rev-parse --path-format=absolute --git-path hooks/pre-commit`; do not
+assume `.git/hooks`, overwrite custom hooks, or execute hooks during inspection.
+Other interpreters, indirect wrappers and hook managers need an explicit
+integration decision: the Check does not infer arbitrary script equivalence.
+Missing or unsupported integration is a readiness gap, not automatic setup.
 
 Device readiness uses `dist/setup-check.car` / `setup-check.json`, built from
 `setup-check.build.yaml`, the

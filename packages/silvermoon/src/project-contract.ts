@@ -9,13 +9,19 @@ import {
 
 export const ProjectTarget = RepositoryTarget;
 export type ProjectTarget = Static<typeof ProjectTarget>;
+export const projectCheckpointIds = [
+  ...prerequisiteCheckpointIds,
+  "pre-commit",
+] as const;
 export const ProjectRuleCode = Type.Union(
-  prerequisiteCodes.map((code) => Type.Literal(code)),
+  [...prerequisiteCodes, "pre-commit-hook-configured"].map((code) =>
+    Type.Literal(code),
+  ),
 );
 export const projectContract = createCheckContract(
   ProjectTarget,
   ProjectRuleCode,
-  prerequisiteCheckpointIds,
+  projectCheckpointIds,
 );
 export const Input = Type.Object(
   {
@@ -29,5 +35,5 @@ export type Input = Static<typeof Input>;
 export default createCheckContract(
   Input,
   ProjectRuleCode,
-  prerequisiteCheckpointIds,
+  projectCheckpointIds,
 );

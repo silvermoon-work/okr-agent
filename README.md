@@ -156,7 +156,9 @@ fragment 恢复所选节点，
 `create-idea`
 在写入前与 `check-project`
 共用[项目就绪检查](docs/silvermoon-project-check.yaml)，
-复用 Idea Task 的前四个检查点；`check-setup`
+复用 Idea Task 的前四个检查点，并独立检查有效 pre-commit hook 会以失败阻断方式
+运行 `silvermoon check-changes --staged --audience agent`；检查不自动安装或执行
+hook，配置须保留原逻辑并尊重 `core.hooksPath`。`check-setup`
 独立执行[设备就绪检查](docs/silvermoon-setup-check.yaml)，不要求 Git 项目。
 `check-idea <idea>` 必须指定 Idea。
 `check-changes --staged` 走提交检查，可用于 commit hook，不要求工作区洁净、
