@@ -1,0 +1,491 @@
+$schema: urn:ipfsaw:check-bundle:1
+specVersion: "1.0"
+name: Silvermoon · 单 Idea 入口递进检查树（设计稿，未实现）
+root: idea
+checkers:
+  idea:
+    title: Idea 推进入口
+    description: |
+      **设计稿，不是当前实现的执行图。** 当前源码仍注册 `device → project → idea`；
+      本稿改为一个 `idea` 业务根入口，下挂多个有明确依赖的内部 checker。
+      设备、仓库是 Idea 推进的前置检查节点，不是另外两条生命周期。
+      **这是单 Idea 入口，不是严格只有一个注册 checker。**
+
+      **业务问题：这个 Idea 是否已经完成；如果没有，当前阻塞在哪里、下一步是什么？**
+      单个节点通过只表示本节点的职责已满足；整个 Check 通过才表示终态要求全部满足。
+      正常的未完成阶段返回 `pass: false` 和明确问题，不是执行故障。
+
+      本稿只覆盖 `operation.mode = lifecycle`，要求明确的仓库和 Idea。
+      无 Idea 的设备／仓库诊断、创建、清单、事件读写及快照检查不在本图中展开，
+      不因调整内部检查树就删除这些能力，也不把快照结构有效视为 Idea 完成。
+      参数范围的收窄是设计边界，尚未修改现有 CLI 或 Check 契约。
+
+      **递进顺序：入口 → 设备 → 仓库 → Idea 观察 → 五个共识门禁 → 实现 → 部署 → 完成。**
+      每个共识节点内部先核验准确版本的 sign off，再核验其内容／事件已同步到 primary。
+      本节点完全通过才展开唯一后继；失败返回本节点问题并剪掉后继，
+      不把有先后依赖的阶段写成兄弟节点，也不依赖兄弟顺序或不存在的全父 join。
+      同步屏障归属各门禁，不抽成一个被多阶段共享、却不能串行衔接的叶节点。
+
+      各节点沿用同一请求，在本次执行内读取按请求隔离的只读事实 Promise 缓存：
+      配置、Git 观察、Idea 文件／事件、reducer 结果及受测对象上下文。
+      不靠“前一个 checker 写可变闭包变量”传递事实，不重复 fetch，
+      不跨观察复用 readiness，也不直接递归调用其他已注册 checker。
+      参数 schema 复用不代表接收方的语义前置已满足；直接父节点必须先实际验证。
+      生命周期只使用现有共享 reducer 的结论，不在各节点、Host 或 CLI 复制状态机。
+
+      所有就绪性判断都属于 Check；Host 只提供真实运行上下文、执行和展示。
+      导航不安装工具、不替换 skill、不执行项目脚本、不 stage／commit／push／clean。
+      只有明确允许的 Git fetch 可以刷新主分支观察。
+
+      **后续实施计划，当前仅规划：**
+
+      1. 保持现有生命周期规则不变，整理本次执行独享、不可变的观察与事实读取器。
+      2. 实现下列命名节点及条件展开，根入口切换为 idea；不把文字 when 当作可执行 DSL。
+      3. 补充失败剪枝、逐门禁同步、上游修改回退、证据失效和终态同步的针对性回归。
+      4. 分别验证既有设备／仓库诊断与 snapshot 入口，不把本图的窄输入直接覆盖全部命令。
+      5. 验证后重建 CAR 并显式更新新消费者的准确 CID；不重写既有 Idea 的固定 CID，
+         不自动发布、替换全局 CLI 或安装 skill。
+    parameter:
+      schema: &request
+        type: object
+        additionalProperties: false
+        required:
+          - target
+          - operation
+          - runtime
+        properties:
+          target:
+            type: object
+            description: |
+              业务对象：`userHome`、`repoRoot` 和已选定的 `idea`。
+              不包含可变 revision、随机 nonce 或调用方断言的 ready 标记。
+            additionalProperties: false
+            required:
+              - userHome
+              - repoRoot
+              - idea
+            properties:
+              userHome:
+                type: string
+                minLength: 1
+                description: 用户 home 的绝对路径，不是 Silvermoon 配置目录。
+              repoRoot:
+                type: string
+                minLength: 1
+                description:
+                  待观察 Git 仓库根目录的绝对路径；有效性由本 checker 检查。
+              idea:
+                type: string
+                minLength: 1
+                description:
+                  待解析的 Idea ID 或 alias；存在性与唯一性由本 checker 检查。
+          operation:
+            type: object
+            description: 本次观察操作，不属于 Idea 的业务身份。
+            additionalProperties: false
+            required:
+              - mode
+            properties:
+              mode:
+                type: string
+                const: lifecycle
+                description:
+                  本设计只描述 Idea 生命周期导航，不混用 snapshot 的通过语义。
+              refresh:
+                type: boolean
+                description: |
+                  是否允许 fetch 刷新配置的 primary；省略时沿用当前默认值 true。
+                  false 只使用本地主分支跟踪快照，不得宣称网络新鲜性。
+          runtime:
+            type: object
+            description: |
+              宿主显式提供的当前执行上下文，不是设备已就绪的证明。
+              不接受任意环境变量映射，也不转发 token 或完整宿主环境。
+            additionalProperties: false
+            required:
+              - entry
+              - path
+            properties:
+              entry:
+                type: string
+                pattern: '^[^\u0000\r\n]*$'
+                maxLength: 65536
+                description: 实际运行的 Silvermoon CLI 入口；必须属于当前安装。
+              path:
+                type: string
+                pattern: '^[^\u0000\r\n]*$'
+                maxLength: 65536
+                description: 宿主实际的可执行文件搜索路径；空值不能冒充已就绪。
+              sshAuthSock:
+                type: string
+                pattern: '^[^\u0000\r\n]*$'
+                maxLength: 65536
+                description: 可选 SSH agent socket，仅用于已授权的 Git 访问。
+      preconditions:
+        - 调用方已选定拟观察的用户、仓库和 Idea，并获准在该范围读取必要事实。
+        - 调用方提供真实运行上下文；当允许 refresh 时，具备执行配置仓库 fetch
+          的授权。
+    rules:
+      - description: |
+          本节点只拥有业务入口与请求分派，不读取 readiness 或报告下游领域问题。
+          输入不符合 schema 时属于输入错误，不作为生命周期 Problem。
+          合法请求展开设备前置；入口通过不能单独解释为 Idea 已完成。
+        problems: []
+      - description: |
+          **整个 Check 的公共结果与故障边界。** 沿用 pass、documentation 与失败时非空
+          problems；问题保留其实际内部 checker 的来源，不统一伪装成根节点问题。
+          生命周期 brief 保留当前语言、revisions、level、event digest、primary 和 subject。
+          Engine／内容读取故障、取消、预算耗尽、无法信任或取得固定 Check CID 等
+          显式传播为执行错误，不伪装成未完成阶段或成功结果。
+        problems: []
+    children:
+      - checker: device
+        when: 请求满足入口 schema，且调用方具备本次观察所需授权。
+        parameter:
+          原样传递 `{ target, operation, runtime }`，不注入 ready 标记。
+  device:
+    title: 设备前置
+    description: |
+      检查本次 Idea 导航所需的实际 Silvermoon 安装、执行入口、PATH、
+      个人 skill 链接及用户配置。它是推进前置，不是独立的业务生命周期。
+      不检查 registry 最新版本，不自动安装或修复。
+    parameter:
+      schema: *request
+      preconditions:
+        - 直接父节点已验证请求形状与观察授权，运行上下文来自真实宿主。
+    rules:
+      - description: |
+          从实际文件与搜索路径核对设备，不接受调用方断言的 ready 布尔值。
+          设备就绪由本节点检查，不是根调用方必须保证的输入假设。
+        problems:
+          - code: device
+            description:
+              当前设备尚未满足本次 Idea 导航所需的 Silvermoon 执行条件。
+            when: |
+              实际入口不属于 `@silvermoon-work/silvermoon` 的规范 bin，
+              PATH 首个 Silvermoon 命令不指向本次安装，
+              个人发现路径没有链接到本次安装的规范 skill，
+              或用户语言配置不符合支持的协议。
+              报告具体原因，停止仓库与生命周期判断。
+    children:
+      - checker: repository
+        when: 实际安装、PATH、个人 skill 和用户配置均满足设备前置。
+        parameter: 原样传递请求；接收方读取本次执行内的同一用户配置事实。
+  repository:
+    title: 仓库前置
+    description: |
+      建立可信的项目配置及 Git 观察，先确认后续 Idea 判断所依赖的仓库事实。
+      只从指定根读取，不由 Host 注入已验证配置，不执行项目脚本。
+      refresh 为 true 时才按授权 fetch，观察结果只在本次执行内复用。
+    parameter:
+      schema: *request
+      preconditions:
+        - 直接父节点已验证设备前置；当前请求的运行上下文和读取范围未改变。
+    rules:
+      - description: |
+          验证仓库根、项目配置及只读文件树的基础有效性。
+          非法路径重定向、文件类型或越界内容不得作为有效输入接受。
+        problems:
+          - code: project
+            description: 无法建立有效的项目观察范围。
+            when: |
+              repoRoot 不是有效目标根、项目配置无效，
+              或基础文件树不符合现有读取安全及容量约束。
+      - description: |
+          检查真实 HEAD、本地分支、
+          与项目配置一致的 upstream，以及配置 primary 的观察结果。
+          primary tip 必须是 HEAD 的祖先；primary 事件历史保持追加，
+          bootstrap 身份不可改写。
+        problems:
+          - code: repository
+            description: 当前 Git 状态不能建立安全的推进观察。
+            when: |
+              Git 分支或跟踪关系不符合配置、HEAD 未包含观察到的 primary、
+              primary 事件历史被改写，或已记录的 bootstrap 身份被修改。
+    children:
+      - checker: observation
+        when: 项目配置和 Git 观察有效，具备当前 HEAD、primary 及工作区变更事实。
+        parameter: 原样传递请求；接收方使用同一次仓库观察，不重新 fetch。
+  observation:
+    title: 建立 Idea 观察
+    description: |
+      在仓库前置满足后解析所选 Idea，建立后续全部阶段共享的不可变观察，
+      不是另一个生命周期实现。只读取 `.silvermoon/i`；
+      `.silvermoon/ideas` 只是旧版留档，不扫描、迁移或回退读取。
+
+      先验证 ID／alias、bootstrap、追加事件、签署范围和用例索引；
+      核对运行 Check 与 Idea 固定 CID 的绑定，再通过共享 reducer 计算当前状态。
+      未知、不可信或不可用的固定 CID 是执行错误，不猜测最新规则替代。
+      结构可解释不代表文档语义已经获准。
+    parameter:
+      schema: *request
+      preconditions:
+        - 直接父节点已建立有效仓库观察；后续读取绑定同一 HEAD、primary
+          及工作区范围。
+    rules:
+      - description: 验证所选 Idea 的唯一身份、协议结构与必要文件／事件。
+        problems:
+          - code: project
+            description: 无法建立有效且唯一的 Idea 观察对象。
+            when: |
+              Idea 无法唯一解析，或 bootstrap、事件、文件树、用例索引
+              不符合现有结构、安全与容量约束。
+      - description: |
+          使用当前 reducer 阶段检查工作区是否仅包含该阶段允许的
+          当前 Idea 草稿／事件路径。不得为继续导航而清理无关改动。
+        problems:
+          - code: repository
+            description: 无关或混合工作区改动阻止安全路由。
+            when: 当前仓库观察包含不属于该 Idea 当前阶段允许范围的工作区变更。
+      - description: |
+          **显式放弃状态。** 在前置通过后，以有效事件序列中的 abandon／resume
+          事实判断；放弃不是完成，也不是自动跳过全部门禁。
+        problems:
+          - code: abandoned
+            description: Idea 当前已放弃，不继续生命周期推进。
+            when: |
+              reducer 返回 `state.level = abandoned`。
+              只有显式有效的 resume 事实才能恢复，不能由 Agent 或 CLI 自动代写。
+    children:
+      - checker: requirements
+        when:
+          Idea 结构、CID 绑定与工作区路由有效，且 Idea 未处于 abandoned 状态。
+        parameter:
+          原样传递请求；后续节点复用本次不可变 Idea、primary、reducer
+          及受测对象事实。
+  requirements:
+    title: 需求共识与同步
+    description: |
+      第一个共识门禁，签署整个 requirements 树的准确 revision。
+      只有本节点的签署和 primary 同步都通过，才展开调研门禁。
+      人类决定必须是显式事实，不能从正文、复选框、沉默、Git 或确认参数推断。
+    parameter:
+      schema: *request
+      preconditions:
+        - 直接父节点已验证 Idea 观察有效、工作区范围可路由且未放弃。
+    rules:
+      - description: |
+          先验证 requirements 的匹配 sign off；它的 upstream 必须为空。
+          当前内容发生任何受签署范围内的变更，都需要新的准确版本确认。
+        problems:
+          - code: requirements
+            description: 当前 Requirements 尚无匹配准确版本的有效人类确认。
+            when: reducer 返回 `state.level = requirements`。
+      - description: 核验准确需求内容和对应 sign off 已同步到观察到的 primary。
+        problems:
+          - code: synchronization
+            description: 已确认的需求内容或事件尚未同步。
+            when:
+              reducer 返回 `state.level = synchronization` 且 `state.next =
+              requirements`。
+    children:
+      - checker: research
+        when: 当前 requirements 的准确签署和 primary 同步均已验证通过。
+        parameter:
+          原样传递请求；后继使用同一观察中的 requirements revision 与签署事实。
+  research:
+    title: 调研共识与同步
+    description: |
+      独立签署 technical/research.md 调研问题索引的准确 revision，
+      upstream 恰好包含当前 requirements revision。
+      索引确认和同步完成后，才进入技术方案正文门禁。
+    parameter:
+      schema: *request
+      preconditions:
+        - 直接父节点已验证当前 requirements 的准确签署及 primary 同步。
+    rules:
+      - description: 验证当前调研问题索引与前序需求向量绑定的显式人类确认。
+        problems:
+          - code: research
+            description: 当前调研问题索引尚无匹配版本及前序向量的有效人类确认。
+            when: reducer 返回 `state.level = research`。
+      - description: 核验当前调研索引、前序需求及对应 sign off 的 primary 同步。
+        problems:
+          - code: synchronization
+            description: 已确认的调研索引或事件尚未同步。
+            when:
+              reducer 返回 `state.level = synchronization` 且 `state.next =
+              research`。
+    children:
+      - checker: technical
+        when: 当前 research 的准确签署和 primary 同步均已验证通过。
+        parameter:
+          原样传递请求；沿用同一观察中的前序 gate revisions 和签署事实。
+  technical:
+    title: 技术共识与同步
+    description: |
+      签署 technical 树中除 research.md 外的全部内容，
+      包括技术方案、计划、附件与细化材料；upstream 恰好包含 requirements、research。
+      不能以“计划微调”跳过重新签署和同步。
+    parameter:
+      schema: *request
+      preconditions:
+        - 直接父节点已验证 research 及其前序 gate 的准确签署和 primary 同步。
+    rules:
+      - description:
+          验证当前技术内容及恰好全部前序 revisions 绑定的显式人类确认。
+        problems:
+          - code: technical
+            description:
+              当前 Technical Spec
+              及补充材料尚无匹配版本及前序向量的有效人类确认。
+            when: reducer 返回 `state.level = technical`。
+      - description:
+          核验当前技术内容、全部前序内容及对应 sign off 的 primary 同步。
+        problems:
+          - code: synchronization
+            description: 已确认的技术内容或事件尚未同步。
+            when:
+              reducer 返回 `state.level = synchronization` 且 `state.next =
+              technical`。
+    children:
+      - checker: cases
+        when: 当前 technical 的准确签署和 primary 同步均已验证通过。
+        parameter:
+          原样传递请求；沿用同一观察中的前序 gate revisions 和签署事实。
+  cases:
+    title: 用例索引共识与同步
+    description: |
+      独立签署 tests/cases.json 机器可读索引；upstream 恰好包含
+      requirements、research、technical。实现和部署两类用例都必须存在，
+      用例阶段、环境与受测对象范围由当前索引定义，不用正文替代机器索引。
+    parameter:
+      schema: *request
+      preconditions:
+        - 直接父节点已验证 technical 及其前序 gate 的准确签署和 primary 同步。
+    rules:
+      - description:
+          验证当前用例索引及恰好全部前序 revisions 绑定的显式人类确认。
+        problems:
+          - code: cases
+            description: 当前用例索引尚无匹配版本及前序向量的有效人类确认。
+            when: reducer 返回 `state.level = cases`。
+      - description:
+          核验当前用例索引、全部前序内容及对应 sign off 的 primary 同步。
+        problems:
+          - code: synchronization
+            description: 已确认的用例索引或事件尚未同步。
+            when:
+              reducer 返回 `state.level = synchronization` 且 `state.next =
+              cases`。
+    children:
+      - checker: tests
+        when: 当前 cases 的准确签署和 primary 同步均已验证通过。
+        parameter:
+          原样传递请求；沿用同一观察中的用例索引、前序 revisions 和签署事实。
+  tests:
+    title: 测试共识与同步
+    description: |
+      签署 tests 树中除 cases.json 外的全部测试说明与补充材料，
+      定义前置、操作、预期及所需证明；upstream 恰好包含前面四个 gate。
+      索引不因正文细化而自动改变，但正文范围内的改动仍需要重新确认与同步。
+    parameter:
+      schema: *request
+      preconditions:
+        - 直接父节点已验证 cases 及其前序 gate 的准确签署和 primary 同步。
+    rules:
+      - description:
+          验证当前测试内容及恰好全部前序 revisions 绑定的显式人类确认。
+        problems:
+          - code: tests
+            description:
+              当前 Test Spec 及补充材料尚无匹配版本及前序向量的有效人类确认。
+            when: reducer 返回 `state.level = tests`。
+      - description:
+          核验当前测试内容、全部前序内容及对应 sign off 的 primary 同步。
+        problems:
+          - code: synchronization
+            description: 已确认的测试内容或事件尚未同步。
+            when:
+              reducer 返回 `state.level = synchronization` 且 `state.next =
+              tests`。
+    children:
+      - checker: implementation
+        when: 五个准确版本的共识及每个 gate 的 primary 同步均已验证通过。
+        parameter:
+          原样传递请求；后继使用同一观察的完整
+          revisions、用例索引及受测对象上下文。
+  implementation:
+    title: 实现验收
+    description: |
+      五个共识门禁之后，检查全部必需实现环境的 Evidence；
+      不增加人类实现结果 sign off，不执行项目测试或 LLM。
+      Check 核验事实绑定，不保证证据日志陈述本身真实。
+    parameter:
+      schema: *request
+      preconditions:
+        - 直接父节点已验证当前五个 gate 的准确签署及各自 primary 同步。
+    rules:
+      - description: |
+          **实现验收 Evidence。** 五个门禁及各自同步均满足后，
+          每个实现环境最新的一批结果必须完整覆盖该环境的全部实现用例，
+          绑定当前五个 revision、准确受测提交，并通过证据路径与内容哈希核验。
+          新失败批次会使同一环境的旧成功批次失效。
+
+          后续提交若只增加本 Idea 的事件／证据，不使已受测代码过期；
+          其他受跟踪内容变化必须重新验证。Check 核验事实绑定，
+          不执行 LLM、不运行项目测试，也不保证日志陈述本身真实。
+        problems:
+          - code: implementation
+            description: 当前实现尚缺完整、有效且通过的验收证据。
+            when: |
+              reducer 返回 `state.level = implementation`；
+              包括必需环境缺批次、最新批次失败／错误／不完整，
+              或 revision、受测提交、证据哈希不匹配。
+    children:
+      - checker: deployment
+        when: 全部必需实现环境的最新批次完整通过，得到当前实现批次集合的准确摘要。
+        parameter: 原样传递请求；后继读取同一观察中的实现批次摘要，不接受外部声明的成功结果。
+  deployment:
+    title: 部署验收
+    description: |
+      仅在实现验收满足后检查全部必需部署环境；
+      部署批次必须绑定本次有效实现集合，不能复用旧实现对应的成功结论。
+      不增加人类部署结果 sign off，不以部署命令返回成功替代 Evidence。
+    parameter:
+      schema: *request
+      preconditions:
+        - 直接父节点已验证全部实现环境的当前通过批次，并建立其准确集合摘要。
+    rules:
+      - description: |
+          **部署验收 Evidence。** 实现验收有效后，每个必需部署环境
+          必须有当前完整通过批次，满足相同的版本、受测对象和证据校验，
+          并绑定当前实现批次集合的准确摘要。
+          新实现批次会使绑定旧实现摘要的部署证据失效。
+          不增加人类实现／部署结果 sign off，也不以部署命令返回成功替代 Evidence。
+        problems:
+          - code: deployment
+            description: 当前部署尚缺绑定本次实现结果的完整通过证据。
+            when: |
+              reducer 返回 `state.level = deployment`；
+              包括必需环境缺批次、最新结果无效，或绑定的实现摘要已过期。
+    children:
+      - checker: completion
+        when: 全部必需部署环境的当前批次完整通过，且绑定当前实现摘要。
+        parameter: 原样传递请求；后继核对同一仓库观察中的最终同步条件。
+  completion:
+    title: 完成与终态同步
+    description: |
+      唯一的终态叶节点。五个准确共识、各自同步及两阶段 Evidence
+      已由直接父链验证，本节点再核对最终事件／证据的提交与 primary 同步。
+      它通过且没有任何上游问题时，整个 Check 才能通过。
+    parameter:
+      schema: *request
+      preconditions:
+        - 直接父节点已验证全部部署环境的当前通过批次，且它们绑定当前有效实现摘要。
+    rules:
+      - description: |
+          **终态门禁。** reducer 返回 completed 还不单独构成最终 Pass；
+          当前事件与证据必须已提交并同步，工作区无改动且 HEAD 等于观察到的 primary tip。
+          只有这些条件全部满足，才返回 `pass: true`；不接受手写 completed 标记。
+        problems:
+          - code: repository
+            description: 生命周期证据已齐备，但终态内容尚未完整同步。
+            when: |
+              reducer 返回 `state.level = completed`，
+              但工作区仍有改动，或 HEAD 不等于观察到的 primary tip。
+      - description: |
+          若前序节点已通过而本次同一观察的 reducer 结论却不是 completed，
+          表示内部前置／状态映射不一致，必须作为执行错误显式传播，不能默认通过。
+        problems: []
+    children: []
