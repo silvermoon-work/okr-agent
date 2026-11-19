@@ -554,14 +554,9 @@ export function silvermoonCheckpoints(
           "idea-folder-active",
           "Idea is explicitly abandoned; only an authorized resume event can restore it.",
         );
-      const facts = Object.fromEntries(
-        Object.entries(state).filter(
-          ([key]) => key !== "level" && key !== "next",
-        ),
-      );
       const brief = canonical({
         idea: current.bootstrap.id,
-        ...facts,
+        ...state,
         eventDigest: digest(current.eventSource),
         primary: observed.tip,
         subject: observed.head,

@@ -131,6 +131,59 @@ export async function readDocument(
   }
   return text(Buffer.concat(chunks));
 }
+export async function getReference(
+  cid: string,
+  options: {
+    readonly artifacts?: readonly Artifact[];
+    readonly signal?: AbortSignal;
+  } = {},
+): Promise<string> {
+  const selected = CID.parse(cid);
+  const artifacts =
+    options.artifacts ??
+    (await Promise.all([bundledArtifact("idea"), bundledArtifact("commit")]));
+  for (const artifact of artifacts) {
+    options.signal?.throwIfAborted();
+    const car = await readTaskBundleCar(
+      new Blob([Uint8Array.from(await readFile(artifact.path))]).stream(),
+    );
+    try {
+      invariant(
+        car.cid === artifact.cid,
+        "artifact",
+        "CAR root differs from its fixed Check CID.",
+      );
+      const store = IpfsStore.fromClient({ block: car.block });
+      try {
+        const find = async (path: string): Promise<boolean> => {
+          for (const entry of await car.tree.list(path, options)) {
+            options.signal?.throwIfAborted();
+            const child = `${path}/${entry.name}`;
+            if (entry.kind === "directory") {
+              if (await find(child)) return true;
+            } else if (
+              selected.equals(
+                await store.resolveContent(CID.parse(car.cid), child, options),
+              )
+            )
+              return true;
+          }
+          return false;
+        };
+        if (await find("resources/references"))
+          return await readDocument(store, cid, 65_536, options.signal);
+      } finally {
+        await store.close();
+      }
+    } finally {
+      await car.close();
+    }
+  }
+  throw new SilvermoonError(
+    "reference-unavailable",
+    "Reference CID is unavailable in the trusted Check Bundles.",
+  );
+}
 export async function observe(
   target: Target,
   options: {
@@ -170,6 +223,9 @@ export async function observe(
             userHome: target.userHome,
             repoRoot: target.repoRoot!,
             snapshot: operation.snapshot ?? "HEAD",
+            ...(operation.allowDelete
+              ? { allowDelete: operation.allowDelete }
+              : {}),
           },
           runtime,
         }

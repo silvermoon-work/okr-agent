@@ -841,7 +841,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     const brief = JSON.parse(observed.problems[0].brief) as {
       implementation: string;
     };
-    expect(brief).not.toHaveProperty("level");
+    expect(brief).toHaveProperty("level", "deployment");
     expect(brief.implementation).toMatch(/^sha256:/);
   });
   it("uses actual entry/PATH/personal link/config facts and never a supplied ready boolean", async () => {

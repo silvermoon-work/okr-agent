@@ -215,6 +215,91 @@ describe("independent Silvermoon commit Check Task", () => {
     });
   });
 
+  it("allows only explicitly named whole deletions in the index and the real Task", async () => {
+    const { root, home, runtime, target } = await setup();
+    await rm(join(root, ".silvermoon", "i", id), { recursive: true });
+    await git(root, ["add", "-A"]);
+    expect(
+      await executeCheck({
+        checkpoints: commitCheckpoints(runtime),
+        target: { ...target, allowDelete: [id] },
+        signal: new AbortController().signal,
+      }),
+    ).toMatchObject({ pass: true });
+    expect(
+      (
+        await observe(
+          { userHome: home, repoRoot: root },
+          {
+            runtime,
+            operation: {
+              mode: "snapshot",
+              snapshot: "staged",
+              allowDelete: [id],
+            },
+          },
+        )
+      ).result.pass,
+    ).toBe(true);
+    await expect(
+      observe(
+        { userHome: home, repoRoot: root },
+        {
+          runtime,
+          operation: {
+            mode: "snapshot",
+            snapshot: "staged",
+            allowDelete: ["not-an-id"],
+          },
+        },
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("rejects deletion exceptions for retained Ideas and partial deletions", async () => {
+    const { root, runtime, target } = await setup();
+    const run = () =>
+      executeCheck({
+        checkpoints: commitCheckpoints(runtime),
+        target: { ...target, allowDelete: [id] },
+        signal: new AbortController().signal,
+      });
+    expect((await run()).pass).toBe(false);
+    await rm(join(root, ".silvermoon", "i", id, "events.jsonl"));
+    await git(root, ["add", "-A"]);
+    expect((await run()).pass).toBe(false);
+  });
+
+  it("does not parse unchanged Ideas, but fully validates changed and untracked Ideas", async () => {
+    const { root, run } = await setup();
+    const path = join(root, ".silvermoon", "i", id, "events.jsonl");
+    await writeFile(path, "historical invalid data\n");
+    await git(root, ["add", "-A"]);
+    await git(root, ["commit", "-m", "Unchanged historical fixture"]);
+    await writeFile(join(root, "source.txt"), "Deliverable only\n");
+    expect((await run("worktree")).pass).toBe(true);
+    expect((await run("staged")).pass).toBe(true);
+    await writeFile(
+      join(root, ".silvermoon", "i", id, "requirements", "Spec.md"),
+      "Changed requirements\n",
+    );
+    expect((await run("worktree")).pass).toBe(false);
+    const newId = "202611191608abcd";
+    await mkdir(join(root, ".silvermoon", "i", newId), { recursive: true });
+    await writeFile(
+      join(root, ".silvermoon", "i", newId, "events.jsonl"),
+      "invalid new Idea\n",
+    );
+    await git(root, [
+      "restore",
+      "--worktree",
+      "--",
+      `.silvermoon/i/${id}/requirements/Spec.md`,
+    ]);
+    expect((await run("worktree")).pass).toBe(false);
+    expect((await run("staged")).pass).toBe(true);
+  });
+
   it.each(["unborn", "adoption"] as const)(
     "accepts an initial staged Silvermoon snapshot for %s",
     async (mode) => {

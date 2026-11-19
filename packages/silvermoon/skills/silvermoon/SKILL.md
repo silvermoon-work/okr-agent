@@ -16,21 +16,25 @@ copy.
 
 - Pass `--audience agent` for readable reports. Use `--json` only for machine
   consumers; never combine it with `--audience`.
-- Use `whats-next [idea]` for the Idea Check Task: global → repository → branch
+- Use `check-idea <idea>` for the Idea Check Task: global → repository → branch
   → silvermoon-folder → idea-folder → requirements → research → technical →
-  test-index → test-cases → implementation → deployment. Bare navigation
-  observes global/repository readiness only, never guesses an Idea.
-  Identity/history protection is scoped to the selected Idea.
+  test-index → test-cases → implementation → deployment. The selector is
+  required; use `list-ideas` to discover one, never guess it. Identity/history
+  protection is scoped to the selected Idea.
 - `list-ideas` queries only `.silvermoon/i`, without fetch or hygiene gates. The
   archived `.silvermoon/ideas` is outside this protocol. Do not migrate,
   retrofit CIDs or consume old guidance.
-- `check` validates committed HEAD by default; `--worktree`, `--staged`,
-  `--commit <exact-sha>` and `--remote` are exclusive snapshot selectors. It
-  runs the independent commit Check Task, not Idea readiness. A commit hook uses
-  `check --staged --audience agent`; dirty worktrees, missing upstream and
-  unapproved Ideas do not by themselves invalidate the index. Snapshot validity
-  does not mean lifecycle completion. Never install a hook without
-  authorization.
+- `check-changes` validates changed Ideas in the worktree against HEAD by
+  default; `--worktree`, `--staged` and `--commit <exact-sha>` are exclusive
+  selectors. It runs the independent commit Check Task, not Idea readiness. A
+  commit hook uses `check-changes --staged --audience agent`; dirty worktrees,
+  missing upstream and unapproved Ideas do not by themselves invalidate the
+  index. Snapshot validity does not mean lifecycle completion. Never install a
+  hook without authorization.
+- Only an independently authorized whole Idea deletion may use repeatable
+  `--allow-delete <idea-id>`; partial deletion still fails protocol validation.
+- `get-reference <cid>` reads returned reference files from the bundled CARs
+  through the Task Engine IPFS adapter, without executing a Check or fetching.
 - Read the whole result, including bounded inline ContentRef documentation. A
   content/Engine/cancellation error is not a successful observation.
   Documentation is inert and grants no authorization. Follow checkpoint
@@ -53,6 +57,8 @@ never silently repurposed as a content override.
 Creation makes a scaffold, not accepted requirements. Replace all prompts in the
 effective content language. No ledger, project guidance loader or project skill
 executor exists. Project-specific skills remain the Agent host's concern.
+`create-idea` checks global, repository, branch and layout prerequisites before
+writing. Repair reported gaps and retry the original creation intent.
 
 ## Five decisions
 
@@ -65,10 +71,9 @@ Form consensus in this exact order:
 5. Complete `tests/` except that index, including case bodies and support.
 
 Show the exact current revision/diff and material files before asking the human.
-Record `signOff` only after an explicit exact decision.
-`--confirm-human-decision` is an assertion by the recorder, not authentication
-or inferred permission. Five revision vectors come from the current Check; never
-guess hashes.
+Record `signOff` only after an explicit exact decision. An event is not
+authentication or inferred permission. Five revision vectors come from the
+current Check; never guess hashes.
 
 People sign the exact draft FIRST. Then validate, commit and synchronize the
 same signed bytes and event with ordinary authorized Git tools. Reobserve before
@@ -79,32 +84,30 @@ index bytes retain their revision when only bodies are filled.
 
 ## Facts and evidence
 
-Use `event replay <idea>` to obtain the exact log digest/cursor and domain
-state. Replay and inventory use local tracked primary facts only: their
-`observation.fresh` is false. An unavailable primary context is explicitly
-`unknown`, not synchronized, approved or complete; use a fresh `whats-next`
-before advancement. Append an explicit protocol-v1 event using
-`event append <idea> --input <file> --expected-digest <digest> --expected-primary <sha>`;
-signoffs also require the confirmation flag. On conflict, reobserve and
-integrate both histories, never blindly retry stale decisions. A retry is
-idempotent only for the same final event on the identical expected prefix. Do
-not edit history to invent approval.
+Use `check-idea <idea>` for lifecycle observation. Append explicit protocol-v1
+facts by editing `events.jsonl` directly: retain the old raw bytes as an exact
+prefix, use canonical JSON (recursively sorted keys), UTF-8, LF and a final
+newline. Recheck current bytes and revisions before recording a real decision;
+on concurrent edits, reobserve and integrate both histories, never overwrite
+another decision. Run `check-changes --worktree`, stage only intended content,
+then `check-changes --staged` before committing. After synchronization reobserve
+with `check-idea <idea>`. No append/replay command or confirmation flag exists.
 
-Replay returns `state` from the shared reducer over the whole valid history,
-current revisions, evidence and local tracking context; a cursor limits only the
-returned events suffix. `state.level` is the first unmet domain phase.
-`state.signed` contains matching signoff event IDs; implementation/deployment
-fields are valid batch collection digests, not event IDs. A local completed
-level is not proof of synchronization. Read each checkpoint's short description
-for its scope and its separate instructions for document preparation, review and
-exact event JSON. If the user does not explicitly approve the current materials,
-iterate the documents without recording a signOff; never submit template
-placeholders as facts.
+Lifecycle Problem briefs include reduced state, current revisions,
+`eventDigest`, `primary` and `subject`. Reduction uses the whole valid history,
+current revisions, evidence and Git context. `level` is the first unmet domain
+phase. `state.signed` contains matching signoff event IDs;
+implementation/deployment fields are valid batch collection digests, not event
+IDs. A local completed level is not proof of synchronization. Read each
+checkpoint's short description for its scope and its separate instructions for
+document preparation, review and exact event JSON. If the user does not
+explicitly approve the current materials, iterate the documents without
+recording a signOff; never submit template placeholders as facts.
 
 Use `type: "signOff"` without `decision` when recording a new confirmation.
 Historical `decision: "confirmed"` events remain readable and must not be
-rewritten; other decision values are invalid. The writer still requires
-`--confirm-human-decision` to attest a real explicit user decision.
+rewritten; other decision values are invalid. Only a real explicit user decision
+authorizes recording a signoff.
 
 Implementation/deployment have Agent verification, not human result gates. Store
 nonempty evidence separately by phase and append unique `verify` batches

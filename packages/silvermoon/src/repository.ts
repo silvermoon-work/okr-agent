@@ -142,7 +142,7 @@ export async function readRegular(
 async function worktree(
   root: string,
   signal?: AbortSignal,
-  id?: string,
+  ids?: ReadonlySet<string>,
 ): Promise<Files> {
   const files = new Map<string, Uint8Array>();
   const config = join(root, ".silvermoon", "config.yaml");
@@ -175,11 +175,14 @@ async function worktree(
       }
     }
   };
-  if (id) {
-    const selected = join(base, id);
-    if (!(await absent(selected))) {
-      await regular(selected, true);
-      await walk(selected, `.silvermoon/i/${id}`);
+  if (ids) {
+    for (const id of ids) {
+      invariant(validIdeaId(id), "layout", `Invalid Idea ID: ${id}`);
+      const selected = join(base, id);
+      if (!(await absent(selected))) {
+        await regular(selected, true);
+        await walk(selected, `.silvermoon/i/${id}`);
+      }
     }
   } else await walk(base, ".silvermoon/i");
   return files;
@@ -313,12 +316,23 @@ export async function readProject(
   root: string,
   snapshot: Snapshot = "worktree",
   signal?: AbortSignal,
+  ids?: ReadonlySet<string>,
 ): Promise<Project> {
   await verifyRepositoryRoot(root, signal);
   const files =
     snapshot === "worktree"
-      ? await worktree(root, signal)
-      : await gitSnapshot(root, snapshot, signal);
+      ? await worktree(root, signal, ids)
+      : await gitSnapshot(
+          root,
+          snapshot,
+          signal,
+          ids
+            ? [
+                ".silvermoon/config.yaml",
+                ...[...ids].map((id) => `.silvermoon/i/${id}`),
+              ]
+            : undefined,
+        );
   return projectFiles(root, files);
 }
 export async function readIdeaProject(
@@ -334,7 +348,7 @@ export async function readIdeaProject(
   await verifyRepositoryRoot(root, signal);
   const files =
     snapshot === "worktree"
-      ? await worktree(root, signal, id)
+      ? await worktree(root, signal, new Set([id]))
       : await gitSnapshot(root, snapshot, signal, [
           ".silvermoon/config.yaml",
           `.silvermoon/i/${id}`,

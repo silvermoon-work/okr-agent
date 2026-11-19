@@ -17,6 +17,11 @@ export const Operation = Type.Object(
     mode: Type.Union([Type.Literal("lifecycle"), Type.Literal("snapshot")]),
     snapshot: Type.Optional(Type.String({ minLength: 1 })),
     refresh: Type.Optional(Type.Boolean()),
+    allowDelete: Type.Optional(
+      Type.Array(Type.String({ pattern: "^[0-9]{12}[a-f0-9]{4}$" }), {
+        uniqueItems: true,
+      }),
+    ),
   },
   closed,
 );

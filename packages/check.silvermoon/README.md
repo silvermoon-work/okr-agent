@@ -15,6 +15,13 @@ The CLI's own build packages its exact CAR so normal builds and npm delivery do
 not depend on an out-of-graph side effect. `verifyArtifact` validates full CAR
 integrity and binding using the real upstream reader.
 
+`silvermoon check-idea <idea>` executes the Idea CAR; `create-idea` also uses
+its prerequisite checkpoints before writing. `silvermoon check-changes` executes
+the commit CAR for changed Ideas, with explicit `--allow-delete` exceptions for
+whole deletions. `silvermoon get-reference <cid>` reads reference files from
+either CAR through the Engine's IPFS adapter without executing a Task. Events
+are edited directly; no event command is exposed.
+
 Protocol, revision scopes, five signoffs, host trust, evidence, concurrency and
 Git boundaries are documented in the CLI README. Both use the same domain
 reducer and SDK `createCheckCallback` ordered checkpoints, not a copy of the old
