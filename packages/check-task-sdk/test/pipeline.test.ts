@@ -44,6 +44,14 @@ it("orders checkpoints and preserves arbitrary output and target identities with
     target,
     description: "Read resource.",
     rules: [rule],
+    output: {
+      description:
+        "Execution-local cyclic object and Map capability; never serialized.",
+      fields: [
+        { name: "resource", description: "Shared mutable Map." },
+        { name: "circular", description: "Reference to the entire output." },
+      ],
+    },
     check: (input) => {
       expect(input).toBe(business);
       return Promise.resolve({ pass: true, output });

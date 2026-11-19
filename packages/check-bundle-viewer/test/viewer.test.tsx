@@ -47,7 +47,7 @@ function render(spec: unknown = orderedSpec(), navigation = false) {
   });
 }
 function details() {
-  return host.querySelector<HTMLElement>('[aria-label="Checkpoint 详情"]')!;
+  return host.querySelector<HTMLElement>("article.cbv-details")!;
 }
 function heading() {
   return details().querySelector("h3")!;
@@ -72,10 +72,20 @@ describe("ordered checkpoint navigation", () => {
         nav.querySelector("ol ol, ul, [aria-expanded], .cbv-reference"),
       ).toBeNull();
       expect(nav.textContent).not.toContain(spec.name);
-      expect(nav.querySelectorAll('[aria-current="step"]')).toHaveLength(1);
-      expect(heading().textContent).toBe("上下文");
+      expect(nav.querySelectorAll('[aria-current="step"]')).toHaveLength(0);
+      expect(heading().textContent).toBe("任务总览");
+      expect(details().getAttribute("aria-label")).toBe("Task 总览");
+      expect(button("任务总览").getAttribute("aria-current")).toBe("page");
+      expect(
+        details().querySelector('[aria-label="参数字段列表"]'),
+      ).not.toBeNull();
+      expect(details().textContent).toContain(
+        "只读核验本地 上下文、脚本与任务完成条件",
+      );
+      expect(details().textContent).not.toContain("任务执行边界");
       click("完成", nav);
       expect(heading().textContent).toBe("完成");
+      expect(details().getAttribute("aria-label")).toBe("Checkpoint 详情");
       expect(document.activeElement).toBe(heading());
       expect(details().querySelector(".cbv-identity > code")!.textContent).toBe(
         "completion",
@@ -85,8 +95,21 @@ describe("ordered checkpoint navigation", () => {
           details().querySelectorAll(":scope > section > h4"),
           (item) => item.textContent,
         ),
-      ).toEqual(["Parameters", "Rules"]);
-      expect(details().textContent).toContain("所有检查点共享同一任务参数");
+      ).toEqual(["Instructions", "Rules", "成功 Context 输出"]);
+      expect(details().textContent).not.toContain("Parameters");
+      expect(details().querySelector("details")).toBeNull();
+      expect(details().textContent).toContain("undefined");
+      if (mobile) click("检查点");
+      click("任务总览");
+      expect(heading().textContent).toBe("任务总览");
+      expect(details().getAttribute("aria-label")).toBe("Task 总览");
+      expect(details().querySelector(".cbv-identity > code")).toBeNull();
+      expect(
+        details().querySelectorAll('[aria-label="参数字段列表"]'),
+      ).toHaveLength(1);
+      expect(details().querySelector(".cbv-rules")).toBeNull();
+      expect(document.activeElement).toBe(heading());
+      if (mobile) expect(host.querySelector("dialog")!.open).toBe(false);
       expect(host.textContent).toContain("通过继续，不通过即停止");
       expect(spec).toEqual(original);
     },
@@ -129,7 +152,7 @@ describe("ordered checkpoint navigation", () => {
     const [first, second] = host.querySelectorAll<HTMLElement>(".cbv");
     expect(button("上下文", first).id).not.toBe(button("上下文", second).id);
     click("脚本定义", second);
-    expect(first!.querySelector("h3")!.textContent).toBe("上下文");
+    expect(first!.querySelector("h3")!.textContent).toBe("任务总览");
     expect(second!.querySelector("h3")!.textContent).toBe("脚本定义");
     expect(second!.contains(document.activeElement)).toBe(true);
     expect(window.location.hash).toBe("");
@@ -215,7 +238,7 @@ describe("opt-in checkpoint URL navigation", () => {
     const spec = orderedSpec();
     spec.checkpoints[0]!.id = "a".repeat(4096);
     render(spec, true);
-    expect(heading().textContent).toBe("上下文");
+    expect(heading().textContent).toBe("任务总览");
     expect(window.location.hash).toBe("");
     click("脚本定义");
     expect(window.location.hash).toBe("#checkpoint=scripts");
@@ -224,7 +247,7 @@ describe("opt-in checkpoint URL navigation", () => {
     expect(window.location.hash).toBe("#checkpoint=scripts");
   });
 
-  it("restores selection across updates, reordering and remounts; deleted IDs fall back to the first checkpoint", () => {
+  it("restores selection across updates, reordering and remounts; deleted IDs fall back to Task overview", () => {
     window.history.replaceState(null, "", "#other=kept&checkpoint=scripts");
     const spec = orderedSpec();
     render(spec, true);
@@ -242,8 +265,8 @@ describe("opt-in checkpoint URL navigation", () => {
     expect(heading().textContent).toBe("更新后的完成");
     spec.checkpoints.shift();
     render(spec, true);
-    expect(heading().textContent).toBe("脚本定义");
-    expect(window.location.hash).toBe("#other=kept&checkpoint=scripts");
+    expect(heading().textContent).toBe("任务总览");
+    expect(window.location.hash).toBe("#other=kept");
   });
 
   it("restores browser history without appending entries and replaces unknown IDs", () => {
@@ -260,8 +283,8 @@ describe("opt-in checkpoint URL navigation", () => {
       window.history.replaceState(null, "", "#checkpoint=__proto__");
       window.dispatchEvent(new HashChangeEvent("hashchange"));
     });
-    expect(heading().textContent).toBe("上下文");
-    expect(window.location.hash).toBe("#checkpoint=context");
+    expect(heading().textContent).toBe("任务总览");
+    expect(window.location.hash).toBe("");
   });
 
   it("accepts embedded navigation only from the parent origin without changing Task parameters", () => {
@@ -299,7 +322,7 @@ describe("opt-in checkpoint URL navigation", () => {
     state("#checkpoint=scripts", parentWindow, "https://foreign.test");
     state("#checkpoint=scripts", parentWindow, window.location.origin, "wrong");
     state(1);
-    expect(heading().textContent).toBe("上下文");
+    expect(heading().textContent).toBe("任务总览");
     state("#checkpoint=scripts");
     expect(heading().textContent).toBe("脚本定义");
     click("完成");
@@ -312,19 +335,53 @@ describe("opt-in checkpoint URL navigation", () => {
       },
       window.location.origin,
     );
-    state("#checkpoint=missing");
-    expect(heading().textContent).toBe("上下文");
+    click("任务总览");
     expect(post).toHaveBeenLastCalledWith(
       {
         protocol: "ipfsaw-navigation/v1",
         type: "navigate",
-        hash: "#checkpoint=context",
+        hash: "",
+        replace: false,
+      },
+      window.location.origin,
+    );
+    state("#checkpoint=missing");
+    expect(heading().textContent).toBe("任务总览");
+    expect(post).toHaveBeenLastCalledWith(
+      {
+        protocol: "ipfsaw-navigation/v1",
+        type: "navigate",
+        hash: "",
         replace: true,
       },
       window.location.origin,
     );
     expect(window.location.hash).toBe("");
     expect(spec).toEqual(original);
+  });
+
+  it("keeps a checkpoint named overview distinct from the separate overview action and restores both routes", () => {
+    const spec = orderedSpec();
+    spec.checkpoints[0]!.id = "overview";
+    window.history.replaceState(
+      null,
+      "",
+      "/?preview=yes#other=kept&checkpoint=overview",
+    );
+    render(spec, true);
+    expect(heading().textContent).toBe("上下文");
+    click("任务总览");
+    expect(heading().textContent).toBe("任务总览");
+    expect(window.location.hash).toBe("#other=kept");
+    expect(window.location.search).toBe("?preview=yes");
+    click("上下文");
+    expect(window.location.hash).toBe("#other=kept&checkpoint=overview");
+    act(() => {
+      window.history.replaceState(null, "", "/?preview=yes");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(heading().textContent).toBe("任务总览");
+    expect(window.location.hash).toBe("");
   });
 });
 
@@ -333,12 +390,35 @@ describe("safe Markdown and shared task parameters", () => {
     const spec = orderedSpec();
     spec.checkpoints[0]!.description =
       "# **说明**\n\n两段中的 *强调* 和 `directory`。\n\n- 一个条目\n- 第二项\n\n```ts\nconst inert = 'text';\n```\n\n[安全链接](https://example.com)\n\n| 项 | 值 |\n| - | - |\n| A | B |";
-    spec.parameter.preconditions = ["`directory` **已经存在**。"];
+    spec.checkpoints[0]!.instructions =
+      '先 review，用户确认后再记录。\n\n```json\n{"type":"signOff"}\n```';
+    spec.description = "任务核验 **目标范围** 中的 `directory`，不是执行结果。";
     spec.checkpoints[0]!.rules[0] = {
       code: "**plain-code**",
       description: "规则 **约束**含 `field`。",
     };
     render(spec);
+    const fields = details().querySelector('[aria-label="参数字段列表"]')!;
+    expect(fields.querySelector("code")?.textContent).toBe("directory");
+    expect(fields.querySelector("strong")?.textContent).toBe("目录");
+    expect(fields.querySelector("td code")?.textContent).toBe("string");
+    expect(fields.textContent).toContain("必填");
+    expect(details().querySelector(".cbv-markdown strong")?.textContent).toBe(
+      "目标范围",
+    );
+    const schema = details().querySelector("details")!;
+    expect(schema.open).toBe(false);
+    expect(schema.querySelector("code")?.textContent).toContain("**目录**");
+    expect(schema.querySelector("strong")).toBeNull();
+    click("上下文");
+    const instructions = Array.from(details().querySelectorAll("section")).find(
+      (section) => section.querySelector("h4")?.textContent === "Instructions",
+    )!;
+    expect(instructions.textContent).toContain("先 review");
+    expect(
+      instructions.querySelector("pre code.language-json")?.textContent,
+    ).toContain('{"type":"signOff"}');
+    expect(instructions.textContent).not.toContain("说明");
     expect(details().querySelector("em")?.textContent).toBe("强调");
     expect(
       details().querySelector("pre code.language-ts")?.textContent,
@@ -349,14 +429,6 @@ describe("safe Markdown and shared task parameters", () => {
     expect(
       details().querySelector('[aria-label="Markdown 表格"] table'),
     ).not.toBeNull();
-    const fields = details().querySelector('[aria-label="参数字段列表"]')!;
-    expect(fields.querySelector("code")?.textContent).toBe("directory");
-    expect(fields.querySelector("strong")?.textContent).toBe("目录");
-    expect(fields.querySelector("td code")?.textContent).toBe("string");
-    expect(fields.textContent).toContain("必填");
-    expect(
-      details().querySelector(".cbv-preconditions code")?.textContent,
-    ).toBe("directory");
     const rules = details().querySelector(".cbv-rules")!;
     expect(
       Array.from(
@@ -367,11 +439,13 @@ describe("safe Markdown and shared task parameters", () => {
     expect(rules.querySelector("th code")?.textContent).toBe("**plain-code**");
     expect(rules.querySelector("th strong")).toBeNull();
     expect(rules.querySelector("td strong")?.textContent).toBe("约束");
-    const schema = details().querySelector("details")!;
-    expect(schema.open).toBe(false);
-    expect(schema.querySelector("code")?.textContent).toContain("**目录**");
-    expect(schema.querySelector("strong")).toBeNull();
+    const output = details().querySelector('[aria-label="成功输出字段"]')!;
+    expect(output.querySelector("th code")?.textContent).toBe("directory");
+    expect(output.querySelector("td strong")?.textContent).toBe("目录");
     click("脚本定义");
+    expect(details().querySelector('[aria-label="参数字段列表"]')).toBeNull();
+    expect(details().querySelector('[aria-label="成功输出字段"]')).toBeNull();
+    click("任务总览");
     expect(
       details().querySelector('[aria-label="参数字段列表"]')?.textContent,
     ).toBe(fields.textContent);
@@ -382,7 +456,28 @@ describe("safe Markdown and shared task parameters", () => {
     spec.checkpoints[0]!.title = "**纯文本标题**";
     spec.checkpoints[0]!.description =
       "<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>\n\n[危险](javascript:alert%281%29) [数据](data:text/html,test)\n\n![remote](https://example.com/tracking.png)\n\n`<b>literal</b>` 与 ${1+1}";
+    spec.description = spec.checkpoints[0]!.description;
+    spec.checkpoints[0]!.instructions =
+      "<script>instructions()</script>\n\n![tracking](https://example.com/instructions.png)\n\n[危险指示](javascript:alert%281%29)";
+    spec.checkpoints[0]!.output = {
+      description:
+        "<script>output()</script>\n\n**输出说明** [危险输出](javascript:alert%281%29) ![tracking](https://example.com/output.png)",
+      fields: [
+        {
+          name: "**plain-name**",
+          description:
+            "<img src=x onerror=alert(1)>\n\n字段 *含义* 与 `${notExecuted()}`。",
+        },
+      ],
+    };
     render(spec);
+    expect(details().querySelector("script, img, b")).toBeNull();
+    expect(details().textContent).toContain("${1+1}");
+    for (const link of details().querySelectorAll("a"))
+      expect(link.getAttribute("href")).not.toMatch(/^(javascript|data):/);
+    expect(details().textContent).not.toContain("任务执行边界");
+    expect(details().textContent).not.toContain("语义前置");
+    click("**纯文本标题**");
     expect(heading().textContent).toBe("**纯文本标题**");
     expect(heading().querySelector("strong")).toBeNull();
     expect(details().querySelector("script, img, b")).toBeNull();
@@ -390,9 +485,14 @@ describe("safe Markdown and shared task parameters", () => {
       expect(link.getAttribute("href")).not.toMatch(/^(javascript|data):/);
     expect(details().textContent).toContain("<b>literal</b>");
     expect(details().textContent).toContain("${1+1}");
+    const output = details().querySelector('[aria-label="成功输出字段"]')!;
+    expect(output.querySelector("th code")?.textContent).toBe("**plain-name**");
+    expect(output.querySelector("th strong")).toBeNull();
+    expect(output.querySelector("td em")?.textContent).toBe("含义");
+    expect(output.textContent).toContain("${notExecuted()}");
   });
 
-  it("does not invent fields from composition and handles untyped fields and absent assumptions", () => {
+  it("does not invent fields from composition and handles untyped fields", () => {
     const spec = orderedSpec();
     spec.parameter = {
       schema: {
@@ -402,12 +502,11 @@ describe("safe Markdown and shared task parameters", () => {
         },
         allOf: [{ $ref: "#/$defs/part" }],
       },
-      preconditions: [],
     };
     render(spec);
     expect(details().querySelector('[aria-label="参数字段列表"]')).toBeNull();
     expect(details().textContent).toContain("此 Schema 未直接列出字段");
-    expect(details().textContent).toContain("未声明语义前置假设");
+    expect(details().querySelectorAll(":scope > section > h4")).toHaveLength(1);
     spec.parameter.schema = {
       type: "object",
       properties: {
@@ -459,7 +558,7 @@ describe("native mobile navigation pane", () => {
     click("检查点");
     expect(platform.showModal).toHaveBeenCalledOnce();
     expect(dialog.open).toBe(true);
-    expect(document.activeElement).toBe(button("上下文", dialog));
+    expect(document.activeElement).toBe(button("任务总览", dialog));
     click("脚本定义", dialog);
     expect(dialog.open).toBe(false);
     expect(heading().textContent).toBe("脚本定义");
@@ -553,11 +652,11 @@ describe("invalid input and spec replacement", () => {
     );
     expect(host.querySelector("nav")).toBeNull();
   });
-  it("resets stale selection on replacement and explicitly rejects v1", () => {
+  it("resets stale selection on replacement to overview and explicitly rejects obsolete graphs", () => {
     render();
     click("完成");
     render(typescriptProjectSpec);
-    expect(heading().textContent).toBe("识别项目");
+    expect(heading().textContent).toBe("任务总览");
     render({ specVersion: "1.0", name: "旧文档", root: "entry", checkers: {} });
     expect(host.querySelector('[role="alert"]')?.textContent).toContain(
       "仅支持当前 Spec v1 有序检查点格式",

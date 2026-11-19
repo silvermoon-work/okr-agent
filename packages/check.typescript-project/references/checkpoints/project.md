@@ -1,6 +1,6 @@
 # TypeScript 项目身份检查点
 
-## typescript-project-invalid
+## typescript-project-valid
 
 根目录必须提供可解析为 JSON 对象的普通文件 `package.json`，并存在
 TypeScript 依赖声明、tsconfig 配置文件或 TS 源码中的至少一种明确依据。

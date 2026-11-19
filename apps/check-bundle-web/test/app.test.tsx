@@ -35,6 +35,13 @@ it("switches ordered real and mock examples, with duplicate, schema and old-form
   });
   expect(host.textContent).toContain("仅定义，未执行");
   expect(host.querySelectorAll("nav ol")).toHaveLength(1);
+  expect(host.querySelector(".cbv-details h3")?.textContent).toBe("任务总览");
+  expect(host.querySelector(".cbv-details")?.textContent).toContain(
+    "未实现的讨论 mock",
+  );
+  expect(host.querySelector(".cbv-details")?.textContent).not.toContain(
+    "任务执行边界",
+  );
   const select = host.querySelector("select")!;
   for (const [value, expected] of [
     ["typescript-design", "有序工程检查设计（未实现）"],
@@ -59,10 +66,16 @@ it("switches ordered real and mock examples, with duplicate, schema and old-form
         scripts.click();
       });
       expect(host.querySelector(".cbv-details")?.textContent).toContain(
-        "workspace-script-unexpected",
+        "workspace-script-allowed",
       );
       expect(host.querySelector(".cbv-details")?.textContent).toContain(
         "turbo run",
+      );
+      expect(host.querySelector(".cbv-details")?.textContent).toContain(
+        "尚未实现",
+      );
+      expect(host.querySelector(".cbv-details")?.textContent).not.toContain(
+        "Parameters",
       );
       expect(host.textContent).toContain("@vitest/coverage-v8 工具声明");
       expect(host.querySelector("nav ol ol, nav ul")).toBeNull();
@@ -78,10 +91,13 @@ it("switches ordered real and mock examples, with duplicate, schema and old-form
         "Workspace 配置",
       );
       expect(host.querySelector(".cbv-details")?.textContent).toContain(
-        "workspace-configuration-invalid",
+        "workspace-configuration-valid",
       );
       expect(host.querySelector(".cbv-details")?.textContent).toContain(
         "packages",
+      );
+      expect(host.querySelector(".cbv-details")?.textContent).toContain(
+        "undefined",
       );
     }
     if (value === "invalid-duplicate") {

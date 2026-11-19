@@ -2,7 +2,7 @@
 
 单仓库无需 workspace 声明；monorepo 使用以下规则。
 
-## workspace-configuration-invalid
+## workspace-configuration-valid
 
 Monorepo 必须在根目录提供普通文件 `pnpm-workspace.yaml`。文件必须是合法
 YAML 对象，显式包含非空 `packages` 数组，且每项为非空白字符串。

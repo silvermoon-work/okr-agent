@@ -6,18 +6,18 @@
 
 ## Node/npm 配对
 
-- `pairing-mismatch`：当前 npm CLI 或其运行时不属于当前 Node 的标准安装布局。
+- `node-npm-paired`：当前 npm CLI 或其运行时不属于当前 Node 的标准安装布局。
   修正执行机授权 PATH、npm shim/prefix，使两者指向同一环境。版本分别合格不足以
   证明配对；不要求 npm 是该 Node 原厂附带的精确版本。
-- `pairing-unconfirmed`：入口或实际路径不足以建立关系，不等于已经证明不配对。
+- `node-npm-pairing-verifiable`：入口或实际路径不足以建立关系，不等于已经证明不配对。
   确认标准 CLI/shim，调查符号链接及全局 prefix；新布局需要适配与真实证据。
   系统发行版拆分布局未建立关系时不判通过。
 
 ## nvm 管理
 
-- `management-mismatch`：brief 指明工具的入口或运行时不属于 nvm 已确认管理的安装。
+- `tool-managed`：brief 指明工具的入口或运行时不属于 nvm 已确认管理的安装。
   管理员通过对应平台 nvm 选择所需 Node，修正实际入口和 npm 指向。
-- `management-unconfirmed`：入口证据不足，不当作已受管或已证明未受管。检查 nvm
+- `tool-management-verifiable`：入口证据不足，不当作已受管或已证明未受管。检查 nvm
   当前选择与标准安装布局；Unix
   nvm 需要正确的 NVM_DIR/nvm.sh，未知协议为执行故障。
 
@@ -26,10 +26,10 @@
 
 ## 有效默认 registry
 
-- `registry-mismatch`：brief 指明 npm/pnpm，其实际项目上下文有效默认 registry 没有
+- `registry-allowed`：brief 指明 npm/pnpm，其实际项目上下文有效默认 registry 没有
   命中任一 allowedUrls。分别调查项目、用户与环境覆盖的原生优先级，不能从 nrm
   列表推断，也不要擅自替换调用方 URL 政策。
-- `registry-unusable`：工具可运行，但 config get registry 返回非零退出码。
+- `registry-readable`：工具可运行，但 config get registry 返回非零退出码。
   检查配置语法、权限或入口，不依据旧文件猜测有效值。
 
 不回显实际 URL 或完整配置。尾斜线可等价，协议、主机、非默认端口和有意义路径必须
@@ -38,9 +38,9 @@
 
 ## nrm 注册项
 
-- `nrm-registration-missing`：缺少 brief 指明的精确名称（区分大小写）。管理员在
+- `nrm-registration-present`：缺少 brief 指明的精确名称（区分大小写）。管理员在
   同一用户上下文添加声明名称及 URL，不用 nrm use 掩盖缺失。
-- `nrm-registration-mismatch`：名称存在，但 URL 不符。修正该项，不改名或切换当前
+- `nrm-registration-url-matched`：名称存在，但 URL 不符。修正该项，不改名或切换当前
   registry；名称全部 required 项都必须匹配，允许保留额外项。
 
 nrm 注册不代表 npm/pnpm 当前使用该地址，也不检查网络。只读启动仅验证 1.2.6；

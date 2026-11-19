@@ -505,31 +505,35 @@ export function toolchainCheckpoints(
     id: "configuration",
     target: Input,
     description: "工具配对、nvm 管理、有效 registry 与 nrm 注册项配置。",
+    output: {
+      description:
+        "成功不新增数据，pass output 为 undefined；不安装、切换或修改工具配置。",
+    },
     rules: [
-      { code: "pairing-mismatch", description: "npm 必须属于当前 Node 安装。" },
+      { code: "node-npm-paired", description: "npm 必须属于当前 Node 安装。" },
       {
-        code: "pairing-unconfirmed",
+        code: "node-npm-pairing-verifiable",
         description: "必须能确认 Node/npm 配对。",
       },
       {
-        code: "management-mismatch",
+        code: "tool-managed",
         description: "工具必须属于 nvm 管理环境。",
       },
       {
-        code: "management-unconfirmed",
+        code: "tool-management-verifiable",
         description: "必须能确认 nvm 管理关系。",
       },
       {
-        code: "registry-mismatch",
+        code: "registry-allowed",
         description: "有效 registry 必须在允许范围。",
       },
-      { code: "registry-unusable", description: "有效 registry 必须可查询。" },
+      { code: "registry-readable", description: "有效 registry 必须可查询。" },
       {
-        code: "nrm-registration-missing",
+        code: "nrm-registration-present",
         description: "所需 nrm 注册项必须存在。",
       },
       {
-        code: "nrm-registration-mismatch",
+        code: "nrm-registration-url-matched",
         description: "nrm 注册 URL 必须匹配。",
       },
     ],
@@ -560,7 +564,7 @@ export function toolchainCheckpoints(
         await leaf(async (report) => {
           if (!node.realPath || !npmLocation) {
             report(
-              "pairing-unconfirmed",
+              "node-npm-pairing-verifiable",
               "node/npm：无法确认当前 npm 入口与 Node 安装环境的关系。",
             );
           } else {
@@ -596,12 +600,12 @@ export function toolchainCheckpoints(
                 )
               )
                 report(
-                  "pairing-mismatch",
+                  "node-npm-paired",
                   "node/npm：当前 npm 不属于当前 Node 的安装环境；请使两者指向同一环境。",
                 );
               else
                 report(
-                  "pairing-unconfirmed",
+                  "node-npm-pairing-verifiable",
                   "node/npm：当前 npm 为非标准拆分布局，无法确认与 Node 安装环境的关系。",
                 );
           }
@@ -698,7 +702,7 @@ export function toolchainCheckpoints(
           const path = name === "node" ? entry.realPath : npmLocation?.cli;
           if (!path)
             report(
-              "management-unconfirmed",
+              "tool-management-verifiable",
               `${name}：无法确认当前入口与 nvm 管理环境的关系。`,
             );
           else if (
@@ -708,7 +712,7 @@ export function toolchainCheckpoints(
               !managedRoots.some((root) => within(root, npmLocation.node)))
           )
             report(
-              "management-mismatch",
+              "tool-managed",
               `${name}：当前入口或其运行时不属于 nvm 已确认管理的安装环境。`,
             );
         });
@@ -727,7 +731,7 @@ export function toolchainCheckpoints(
           );
           if (result.code !== 0) {
             report(
-              "registry-unusable",
+              "registry-readable",
               `${name}：无法读取项目上下文中的有效默认 registry（退出码 ${String(result.code)}）。`,
             );
             return;
@@ -745,7 +749,7 @@ export function toolchainCheckpoints(
             !requirement.allowedUrls.some((url) => registryUrl(url) === actual)
           )
             report(
-              "registry-mismatch",
+              "registry-allowed",
               `${name}：有效默认 registry 不在声明的 allowedUrls 中；实际 URL 已隐藏以避免泄露配置。`,
             );
         });
@@ -760,12 +764,12 @@ export function toolchainCheckpoints(
           const actual = registrations.get(required.name);
           if (actual === undefined)
             problems.push({
-              code: "nrm-registration-missing",
+              code: "nrm-registration-present",
               brief: `nrm：缺少注册名称 ${required.name}。`,
             });
           else if (actual !== registryUrl(required.url))
             problems.push({
-              code: "nrm-registration-mismatch",
+              code: "nrm-registration-url-matched",
               brief: `nrm：注册名称 ${required.name} 的 URL 与要求不符；实际 URL 已隐藏。`,
             });
         }

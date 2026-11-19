@@ -1,5 +1,6 @@
 import { posix } from "node:path";
 import type { IpfsStore } from "@silvermoon-work/ipfs-store";
+import { portableIdentifier } from "@silvermoon-work/check-task-sdk/contracts";
 import {
   buildTaskBundle,
   readTaskBuild,
@@ -14,6 +15,12 @@ import {
   type ReadOptions,
 } from "@silvermoon-work/task-builder/tree";
 import { parse, stringify } from "yaml";
+import {
+  readSpecification,
+  specificationTree,
+  validateSpecificationContract,
+  type CheckSpecification,
+} from "./spec.js";
 
 export { createCheckProject } from "./project.js";
 export type { CheckProjectOptions } from "./project.js";
@@ -24,6 +31,7 @@ export const checkBuildSchemaUri =
 export interface CheckBuild extends TaskBuildFile {
   readonly tree: ReadonlyFileTree;
   readonly references: string;
+  readonly spec?: CheckSpecification;
 }
 
 export interface CheckBuildOptions extends ReadOptions {
@@ -31,7 +39,7 @@ export interface CheckBuildOptions extends ReadOptions {
   readonly content?: IpfsStore;
 }
 
-/** Overlay only a standard build description; sources and dependencies stay lazy. */
+/** Overlay the build description and optional Spec docs; sources and dependencies stay lazy. */
 export async function transformCheckTree(
   input: ReadonlyFileTree,
   path = "check.build.yaml",
@@ -61,32 +69,47 @@ export async function transformCheckTree(
     );
   const include = config.include ?? [];
   if (!Array.isArray(include)) throw new Error("Include must be an array.");
+  const referencesDirectory =
+    config.references === undefined ? "references" : config.references;
+  if (typeof referencesDirectory !== "string")
+    throw new Error("References must be a relative directory path.");
+  checkTreePath(referencesDirectory);
   const normalized: Record<string, unknown> = {
     ...config,
     source: { ...source, mode: "explicit" },
     include: [
       ...(include as unknown[]),
-      { from: "references/**", to: "resources/references/" },
+      { from: `${referencesDirectory}/**`, to: "resources/references/" },
     ],
   };
   delete normalized.$schema;
+  delete normalized.references;
+  delete normalized.spec;
+  const base = posix.dirname(path);
+  const references =
+    base === "." ? referencesDirectory : `${base}/${referencesDirectory}`;
+  const spec =
+    config.spec === undefined
+      ? undefined
+      : await readSpecification(input, path, config.spec, options);
+  const sources = spec
+    ? await specificationTree(input, references, spec, options)
+    : input;
   const bytes = Buffer.from(stringify(normalized));
   const tree: ReadonlyFileTree = {
-    list: (name, readOptions) => input.list(name, readOptions),
+    list: (name, readOptions) => sources.list(name, readOptions),
     read: (name, readOptions) =>
       name === path
         ? Promise.resolve(memoryFile(bytes, readOptions))
-        : input.read(name, readOptions),
+        : sources.read(name, readOptions),
   };
   const definition = await readTaskBuild(tree, path, {
     ...options,
     allowContractExecution: true,
   });
-  const base = posix.dirname(path);
-  const references = base === "." ? "references" : `${base}/references`;
   let visited = 0;
   const inspectReferences = async (directory: string): Promise<void> => {
-    for (const entry of await listTree(input, directory, options)) {
+    for (const entry of await listTree(tree, directory, options)) {
       if (++visited > 16_384)
         throw new Error("Reference subtree exceeds path capacity.");
       const child = `${directory}/${entry.name}`;
@@ -109,6 +132,7 @@ export async function transformCheckTree(
     },
     tree,
     references,
+    ...(spec ? { spec } : {}),
   };
 }
 
@@ -129,11 +153,7 @@ function literalCodes(value: unknown, allowEmpty = false): string[] {
       throw new Error("Empty or duplicate Check identifiers.");
     return codes;
   }
-  if (
-    typeof schema.const !== "string" ||
-    !/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(schema.const) ||
-    /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(schema.const)
-  )
+  if (!portableIdentifier(schema.const))
     throw new Error("Check codes must be finite portable string literals.");
   return [schema.const];
 }
@@ -228,7 +248,7 @@ export async function buildCheckBundle(
       ),
     ).toString(),
   );
-  literalCodes(codeSchema);
+  const codes = literalCodes(codeSchema);
   const checkpointSchema: unknown = JSON.parse(
     Buffer.from(
       await readBytes(
@@ -239,10 +259,13 @@ export async function buildCheckBundle(
       ),
     ).toString(),
   );
+  const ids = literalCodes(checkpointSchema, true);
+  if (definition.spec)
+    validateSpecificationContract(definition.spec, ids, codes);
   await validateReferences(
-    input,
+    definition.tree,
     definition.references,
-    literalCodes(checkpointSchema, true),
+    ids,
     options,
   );
   return bundle;

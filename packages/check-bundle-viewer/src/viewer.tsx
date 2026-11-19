@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { ContractDetails } from "./details.js";
+import { ContractDetails, TaskOverview } from "./details.js";
 import { validateCheckBundleSpec } from "./spec.js";
 import type { CheckBundleSpec } from "./spec.js";
 import { useCheckpointNavigation } from "./navigation.js";
@@ -60,13 +60,13 @@ function Definition({
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(30);
   const layout = useRef<HTMLDivElement>(null);
-  const controls = useRef(new Map<string, HTMLButtonElement>());
+  const controls = useRef(new Map<string | null, HTMLButtonElement>());
   const detailsHeading = useRef<HTMLHeadingElement>(null);
   const detailsPane = useRef<HTMLElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const navigationToggle = useRef<HTMLButtonElement>(null);
   const navigationRoot = useRef<HTMLElement>(null);
-  const checkpoint = spec.checkpoints.find(({ id }) => id === selected)!;
+  const checkpoint = spec.checkpoints.find(({ id }) => id === selected);
 
   useEffect(() => {
     const media = window.matchMedia(mobileQuery);
@@ -98,7 +98,7 @@ function Definition({
     setNavigationOpen(false);
     navigationToggle.current?.focus();
   };
-  const navigate = (id: string) => {
+  const navigate = (id: string | null) => {
     select(id);
     dialog.current?.close();
     setNavigationOpen(false);
@@ -124,6 +124,21 @@ function Definition({
           </button>
         )}
       </div>
+      <button
+        type="button"
+        className="cbv-select cbv-overview"
+        title="任务总览"
+        aria-current={selected === null ? "page" : undefined}
+        ref={(element) => {
+          if (element) controls.current.set(null, element);
+          else controls.current.delete(null);
+        }}
+        onClick={() => {
+          navigate(null);
+        }}
+      >
+        任务总览
+      </button>
       <nav className="cbv-outline" aria-label="Checkpoint 顺序">
         <ol>
           {spec.checkpoints.map((item, index) => (
@@ -245,19 +260,26 @@ function Definition({
         )}
         <article
           className="cbv-details"
-          aria-label="Checkpoint 详情"
+          aria-label={checkpoint ? "Checkpoint 详情" : "Task 总览"}
           ref={detailsPane}
         >
           <div className="cbv-identity">
             <h3 tabIndex={-1} ref={detailsHeading}>
-              {checkpoint.title}
+              {checkpoint ? checkpoint.title : "任务总览"}
             </h3>
-            <code>{selected}</code>
+            {checkpoint && <code>{checkpoint.id}</code>}
           </div>
-          <ContractDetails spec={spec} checkpoint={checkpoint} />
+          {checkpoint ? (
+            <ContractDetails checkpoint={checkpoint} />
+          ) : (
+            <TaskOverview
+              description={spec.description}
+              parameter={spec.parameter}
+            />
+          )}
           <p className="cbv-footnote">
-            Schema 合法不等于语义前置条件成立。所有检查点共享 Check Task
-            Target；调用方保证任务前置条件。此处仅展示定义，不执行检查或说明表达式。
+            所有检查点共享 Check Task Target；任务检查范围与参数见任务总览。
+            此处仅展示定义，不执行检查或说明表达式。
           </p>
         </article>
       </div>

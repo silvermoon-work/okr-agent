@@ -170,7 +170,7 @@ const cases = [
       },
     },
     pass: false,
-    codes: ["nrm-registration-mismatch", "nrm-registration-missing"],
+    codes: ["nrm-registration-url-matched", "nrm-registration-present"],
   },
   {
     name: "directory-fault",
@@ -395,7 +395,7 @@ try {
     return task.stage === "completed" ? task.result.data : undefined;
   });
   assert.equal(observed.pass, false);
-  assert.equal(observed.problems[0].code, "version-too-low");
+  assert.equal(observed.problems[0].code, "tool-version-minimum");
   const major = Number(/当前 (\d+)/.exec(observed.problems[0].brief)?.[1]);
   assert.ok(
     [10, 11].includes(major),
@@ -416,7 +416,7 @@ try {
     name: "pnpm-version",
     taskId: probe.taskId,
     pass: false,
-    codes: ["version-too-low"],
+    codes: ["tool-version-minimum"],
   });
   for (const sample of cases) {
     let submitted = await engine.submit(

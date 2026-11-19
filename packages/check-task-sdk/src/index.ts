@@ -1,6 +1,15 @@
 export { createCheckContract } from "./contracts.js";
 export type { CheckContract } from "./contracts.js";
 export { defineCheckpoint, failed } from "./checkpoint.js";
+export {
+  validateCheckpointRules,
+  validateOutputDocumentation,
+  renderCheckpointDocumentation,
+} from "./documentation.js";
+export type {
+  OutputDocumentation,
+  CheckpointDocumentation,
+} from "./documentation.js";
 export type {
   Rule,
   RuleFailure,

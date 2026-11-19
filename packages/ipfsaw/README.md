@@ -111,6 +111,15 @@ SIGTERM 为 143。已输出就绪结果后发生清理失败只写 stderr 并非
 正常预览没有常驻宿主标题栏；加载时显示状态，成功后让应用占满窗口，
 错误或断连时重新显示提示。Check
 viewer 的标题下方，有序检查点侧栏与详情填满剩余高度。
+默认展示任务总览，仅在该处展示根任务说明与全局 Target 参数列表 / Schema；
+`#checkpoint=<id>` 直接进入检查点目标、规则与成功 Context 输出文档。
+独立「任务总览」操作清除 checkpoint 参数，不占用检查点 ID（包括 `overview`）。
+当前未发布 Spec 仍为 v1.0 / `urn:ipfsaw:check-bundle:1`，
+根 `description` 必填以说明任务检查内容与范围，`parameter` 仅包含 `schema`。
+所有层级都不支持 `preconditions`，旧字段作为未知字段拒绝，不映射为假设。
+检查点必需的 `output.description` 与可选非空、字段名唯一的 `output.fields`
+仅是安全 Markdown 文档，不验证、序列化或执行成功输出；
+旧 CAR 不会自动获得新视图，需重建并使用新的准确制品。
 最后一个预览页面的 SSE 连接断开后，CLI 等待 3 秒重连窗口，再关闭 HTTP、
 自己持有的 Store/会话/opener 并正常退出（0）；清理失败仍为非零。
 刷新期间重连会取消退出，仍有其他标签页/浏览器连接时不退出。

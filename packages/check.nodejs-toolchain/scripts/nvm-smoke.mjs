@@ -132,18 +132,18 @@ const samples = [
   {
     name: "portable-nvm-unmanaged-tools",
     context: context([unmanaged]),
-    codes: ["management-mismatch", "management-mismatch"],
+    codes: ["tool-managed", "tool-managed"],
   },
   {
     name: "portable-nvm-unmanaged-npm",
     context: context([npmOnly, current], npmOnly),
-    codes: ["pairing-mismatch", "management-mismatch"],
+    codes: ["node-npm-paired", "tool-managed"],
   },
   {
     name: "portable-nvm-version-observation",
     context: context([current]),
     requirements: { tools: { nvm: { minimumVersion: "999" } } },
-    codes: ["version-too-low"],
+    codes: ["tool-version-minimum"],
   },
 ];
 let evidence;

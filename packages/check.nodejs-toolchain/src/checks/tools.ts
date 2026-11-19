@@ -39,7 +39,7 @@ export function toolChecks(input: Input, host: Host, signal: AbortSignal) {
         pass: false,
         problems: [
           {
-            code: "tool-missing",
+            code: "tool-present",
             brief: `${name}：当前执行上下文中未找到所需工具。`,
           },
         ],
@@ -55,7 +55,7 @@ export function toolChecks(input: Input, host: Host, signal: AbortSignal) {
         pass: false,
         problems: [
           {
-            code: "tool-unusable",
+            code: "tool-executable",
             brief: `${name}：版本命令不可用（退出码 ${String(output.code)}）；未输出可能含秘密的命令内容。`,
           },
         ],
@@ -68,7 +68,7 @@ export function toolChecks(input: Input, host: Host, signal: AbortSignal) {
         pass: false,
         problems: [
           {
-            code: "version-unparseable",
+            code: "tool-version-readable",
             brief: `${name}：成功执行版本命令，但无法识别其数字版本。`,
           },
         ],
@@ -79,11 +79,15 @@ export function toolChecks(input: Input, host: Host, signal: AbortSignal) {
     id: "installation",
     target: Input,
     description: "所需工具的安装、可执行性与版本就绪。",
+    output: {
+      description:
+        "成功值是 Map<Tool, ToolEntry>，记录本次实际发现并验证的工具入口，供配置检查复用；不是 JSON 参数，不含完整环境变量或自动发布的版本日志。",
+    },
     rules: [
-      { code: "tool-missing", description: "所需工具必须存在。" },
-      { code: "tool-unusable", description: "版本命令必须可执行。" },
-      { code: "version-unparseable", description: "版本输出必须可识别。" },
-      { code: "version-too-low", description: "版本必须满足声明下限。" },
+      { code: "tool-present", description: "所需工具必须存在。" },
+      { code: "tool-executable", description: "版本命令必须可执行。" },
+      { code: "tool-version-readable", description: "版本输出必须可识别。" },
+      { code: "tool-version-minimum", description: "版本必须满足声明下限。" },
     ],
     check: async () => {
       signal.throwIfAborted();
@@ -103,7 +107,7 @@ export function toolChecks(input: Input, host: Host, signal: AbortSignal) {
         const minimum = r.tools?.[name]?.minimumVersion;
         if (minimum && compareVersions(value.version, minimum) < 0)
           problems.push({
-            code: "version-too-low",
+            code: "tool-version-minimum",
             brief: `${name}：当前 ${value.version}，要求不低于 ${minimum}。`,
           });
       }

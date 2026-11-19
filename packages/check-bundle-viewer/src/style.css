@@ -156,6 +156,21 @@
   text-overflow: ellipsis;
   font-size: 12px !important;
 }
+.cbv-overview {
+  flex: none;
+  margin: 12px 8px 0;
+  padding: 5px 12px;
+  border-radius: 4px;
+}
+.cbv-overview:hover {
+  background: #edf2f7;
+}
+.cbv-overview[aria-current="page"] {
+  background: #e6f0fa;
+  box-shadow: inset 2px 0 var(--cbv-accent);
+  color: #124e7c;
+  font-weight: 600;
+}
 .cbv-details {
   overflow: auto;
   overscroll-behavior: contain;
@@ -251,11 +266,6 @@
 }
 .cbv-markdown img {
   max-width: 100%;
-}
-.cbv-preconditions {
-  padding-left: 19px;
-  margin: 10px 0;
-  font-size: 13px;
 }
 .cbv details {
   color: var(--cbv-muted);

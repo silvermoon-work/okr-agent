@@ -7,6 +7,8 @@ import type { CheckBundleSpec } from "@silvermoon-work/check-bundle-viewer";
 export const discussionSpec: CheckBundleSpec = {
   specVersion: "1.0",
   name: "TypeScript 项目检查（有序讨论 mock）",
+  description:
+    "未实现的讨论 mock：描述项目身份、共享配置、成员发现与文档的检查范围；不执行检查，也不展示任何已执行事实。",
   parameter: structuredClone(typescriptProjectSpec.parameter),
   checkpoints: [
     {
@@ -14,9 +16,11 @@ export const discussionSpec: CheckBundleSpec = {
       title: "识别项目",
       description:
         "确认 **TypeScript 项目身份** 与检查范围。这里只讨论定义，不是某次执行结果。",
+      instructions: "讨论如何按 Rules 识别项目及范围；mock 不执行检查。",
+      output: { description: "讨论 mock，尚未实现；成功输出数据待定义。" },
       rules: [
         {
-          code: "typescript-project-invalid",
+          code: "typescript-project-valid",
           description:
             "`projectDirectory` 必须具备可明确识别的 TypeScript 身份与受支持结构。",
         },
@@ -27,9 +31,11 @@ export const discussionSpec: CheckBundleSpec = {
       title: "共享检查配置",
       description:
         "核验项目适用的共享配置；所有检查点读取同一个任务 Target，不构造成员参数。",
+      instructions: "讨论各项配置的适用范围及缺失时的处理；不执行目标代码。",
+      output: { description: "讨论 mock，尚未实现，暂无输出数据。" },
       rules: [
         {
-          code: "configuration-missing",
+          code: "configuration-present",
           description: "适用的 TypeScript 与测试配置必须存在且可读取。",
         },
       ],
@@ -39,13 +45,16 @@ export const discussionSpec: CheckBundleSpec = {
       title: "成员发现",
       description:
         "对 monorepo 确认 workspace 声明所定义的成员范围，不以固定目录布局代替。",
+      instructions:
+        "讨论声明模式如何限定成员，明确不符项；mock 不产生实际成员列表。",
+      output: { description: "讨论 mock，尚未实现；不伪造成员发现结果。" },
       rules: [
         {
-          code: "workspace-members-invalid",
+          code: "workspace-members-valid",
           description: "workspace 声明必须能够解释为**受支持**的成员范围。",
         },
         {
-          code: "workspace-member-missing",
+          code: "workspace-member-present",
           description: "声明所要求的成员目录必须存在。",
         },
       ],
@@ -55,9 +64,12 @@ export const discussionSpec: CheckBundleSpec = {
       title: "全局文档",
       description:
         "核验项目文档的存在与基本约定；参考 [TypeScript 文档](https://www.typescriptlang.org/docs/)。",
+      instructions:
+        "讨论文档编写与 review 流程，不把文档链接或存在本身当成已通过。",
+      output: { description: "讨论 mock，尚未实现，暂无输出数据。" },
       rules: [
         {
-          code: "document-missing",
+          code: "document-present",
           description: "项目必须具备约定的开发与维护说明。",
         },
       ],
@@ -98,7 +110,6 @@ export const fixtures: { id: string; label: string; spec: unknown }[] = [
           type: "object",
           properties: { path: { type: "not-a-json-type" } },
         },
-        preconditions: [],
       },
       checkpoints: [
         {

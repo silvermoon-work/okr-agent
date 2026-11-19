@@ -1,6 +1,9 @@
 $schema: urn:ipfsaw:check-bundle:1
 specVersion: "1.0"
-name: Silvermoon · Idea 有序检查点（设计稿，未实现）
+name: Silvermoon · Idea 推进检查
+description:
+  检查指定 Idea 是否已经完成。若未完成，报告下一个需要通过的
+  checkpoint（推进方向）及其未通过的 Rules（当前卡点）。
 parameter:
   schema:
     type: object
@@ -22,195 +25,596 @@ parameter:
         type: string
         minLength: 1
         description: 待解析的 Idea ID 或 alias；存在性与唯一性由观察检查点核验。
-  preconditions:
-    - 调用方已选定拟观察的用户、仓库和 Idea，并获准在该范围读取必要事实。
-    - 宿主通过独立执行依赖提供真实运行上下文，并明确本次 Git 刷新授权；这些不是
-      Target 字段或 readiness 证明。
-    - 所有检查点共享同一 Target 和本次不可变仓库／Idea 观察，绑定同一
-      HEAD、刷新后的 primary、reducer、revisions
-      与受测对象事实；通过继续，不通过即停止。
-    - 此文件只描述设计，不执行检查、LLM 或项目测试，不代写
-      resume、stage、commit、push 或 clean，也不以日志陈述替代事实核验。
 checkpoints:
-  - id: environment
-    title: Silvermoon 环境前置
-    description:
-      核验 Silvermoon 安装、执行入口、PATH、个人 skill 链接及用户配置。
+  - id: global
+    title: 全局 Silvermoon 已正确配置
+    description: 检查全局 Silvermoon 安装、个人 skill 链接及用户配置是否有效。
+    instructions:
+      你需要确保本次使用的全局 Silvermoon 安装、个人 skill 和用户配置满足下列
+      Rules。逐项定位不符原因，在已有授权范围内处理后重新检查；安装、配置或链接变更仍须获得相应授权，检查本身不自动修复。
     rules:
-      - code: environment-runtime
+      - code: global-runtime-ready
         description:
-          实际运行入口必须是有效 Silvermoon 安装的规范 bin，且 PATH 可发现的首个
-          silvermoon
+          实际运行入口必须是当前 @silvermoon-work/silvermoon 安装的规范 bin，且
+          PATH 可发现的首个 silvermoon
           命令指向同一安装；允许全局链接的开发版本，不要求每次联网查询 registry
           最新版。
-      - code: environment-skill
+      - code: global-skill-linked
         description:
-          个人发现路径必须通过有效链接指向当前安装的 canonical
+          受支持的个人发现路径（.agents/skills/silvermoon 或
+          .copilot/skills/silvermoon）必须通过有效链接指向当前安装的 canonical
           skill，不能是副本、失效链接或其他安装的 skill。
-      - code: environment-configuration
+      - code: global-configuration-valid
         description: 个人配置存在时必须可解析、协议版本受支持、字段合法且语言标签有效；协议允许缺省时，配置可以不存在。
+    output:
+      description:
+        成功后提供已验证的个人语言设置，供当前 Idea
+        的内容语言决策使用；该值只属于本次执行，不是调用方声明的 ready 标记。
+      fields:
+        - name: userLanguage
+          description:
+            规范语言标签或 undefined；允许配置缺省，后续观察按
+            Idea、项目、用户的优先级决定内容语言，不据此推断其他配置存在。
   - id: repository
-    title: 仓库前置
-    description:
-      核验仓库、项目配置、分支跟踪、远端同步与工作区，确保内容已提交并与刷新后的
-      primary 对齐。
+    title: 仓库在可继续推进的状态
+    description: 检查仓库根目录有效、HEAD 关联分支，且工作区没有未提交内容。
+    instructions:
+      你需要先让目标仓库满足继续推进所需的基础状态，再处理后续问题。妥善保留并按授权提交未提交内容，不得通过清理文件绕过检查；本检查点不解析
+      Silvermoon 配置或 Idea 内容。
     rules:
-      - code: repository-root-invalid
-        description: repoRoot 必须存在、为目录，并且是目标 Git 仓库的根目录。
-      - code: project-configuration-invalid
+      - code: repository-root-valid
         description:
-          项目配置必须存在、可按支持的协议解析，并声明有效的 primaryRepository
-          与 primaryBranch。
-      - code: project-layout-invalid
-        description: 基础文件树必须满足安全和容量约束，不接受非法路径重定向、文件类型、越界内容或容量超限。
-      - code: primary-branch-missing
-        description:
-          配置的远端仓库必须存在指定
-          primaryBranch；查询失败或不确定不能视作已确认不存在。
-      - code: branch-detached
+          repoRoot 必须是可安全读取且有有效 HEAD 的 Git
+          仓库根目录，不能是重定向路径或仓库子目录。
+      - code: repository-branch-attached
         description: 当前 HEAD 必须关联本地分支，不能处于 detached HEAD 状态。
-      - code: branch-upstream-mismatch
-        description:
-          当前本地分支必须有 upstream，且其远端仓库和分支与配置的
-          primaryRepository、primaryBranch 一致。
-      - code: primary-sync-required
-        description:
-          HEAD 必须等于本次授权刷新后的远端 primary
-          tip，不能以旧的本地远端跟踪引用代替。
-      - code: worktree-uncommitted
+      - code: repository-worktree-clean
         description:
           工作区必须无已暂存、未暂存或未跟踪的改动，Idea
           草稿和事件也必须已提交；检查本身不执行 stage、commit、push 或 clean。
-      - code: event-history-rewritten
-        description:
-          相对于 primary，已记录的 Idea
-          事件历史必须保持追加，不得删除、修改或重排已有事件。
-      - code: idea-identity-modified
-        description:
-          相对于 primary，已存在 Idea 的 bootstrap 身份字段必须保持不变。
-  - id: observation
-    title: 建立 Idea 观察
-    description:
-      核验所选 Idea 的身份、文件、events 与固定 Check
-      CID，建立有效观察并确认未放弃。
+    output:
+      description:
+        为后续检查建立准确的仓库定位与起始提交，不把 Git
+        状态推断成生命周期批准。
+      fields:
+        - name: root
+          description:
+            已验证的 Git 仓库根目录；后续文件和 Git 观察仅在该范围进行。
+        - name: head
+          description:
+            本次观察开始时的准确提交
+            ID；后续用于校验观察期间仓库没有变化，不可跨执行缓存。
+  - id: branch
+    title: 分支在可继续推进状态
+    description: 检查项目配置和分支跟踪关系有效，且 HEAD 与配置的 primary 同步。
+    instructions:
+      你需要让仓库的 Silvermoon primary 配置与当前分支的跟踪、同步关系满足下列
+      Rules。需要集成并发历史时采用获授权的普通 Git
+      操作并保留双方历史，不擅自移动分支或更改 primary 来绕过检查。
     rules:
-      - code: idea-invalid
+      - code: branch-silvermoon-config-valid
+        description:
+          项目配置必须存在、可按支持的协议解析，并声明有效的 primaryRepository
+          与 primaryBranch。
+      - code: branch-primary-present
+        description:
+          配置的远端仓库必须存在指定
+          primaryBranch；查询失败或不确定不能视作已确认不存在。
+      - code: branch-upstream-aligned
+        description:
+          当前本地分支必须有 upstream，且其远端仓库和分支与配置的
+          primaryRepository、primaryBranch 一致。
+      - code: branch-primary-synchronized
+        description:
+          HEAD 必须等于本次观察的 primary tip。默认获取配置的远端 primary 并以
+          FETCH_HEAD
+          为准；显式本地观察模式读取远端跟踪快照，不代表远端最新状态，
+          也不证明网络新鲜度。检查不执行 pull、merge 或 rebase。
+    output:
+      description:
+        提供本次已经核验的仓库配置与 primary 观察，供当前 Idea
+        观察和最终同步判断复用；包含执行期对象，不是需要序列化的 Task 参数。
+      fields:
+        - name: project
+          description:
+            当前仓库 root 与有效配置对象；用于记录本次观察的配置来源和范围。
+        - name: observed
+          description:
+            本次 HEAD、primary tip、remote、变更事实与 primary
+            配置；后续据此读取准确快照、核验来源和终态同步，不声明跨执行新鲜性。
+  - id: silvermoon-folder
+    title: Silvermoon 数据目录有效
+    description:
+      检查 Silvermoon 数据目录、配置文件及 Idea 容器的路径与读取安全性。
+    instructions:
+      你需要修复下列 Rules 指出的目录、文件类型或路径安全问题，使 Silvermoon
+      数据容器可以安全读取。这里只处理容器，不遍历、迁移或改写其他 Idea 的内容。
+    rules:
+      - code: silvermoon-folder-path-valid
+        description:
+          .silvermoon 必须是普通目录，不能是符号链接、重定向路径或其他文件类型。
+      - code: silvermoon-folder-config-file-valid
+        description:
+          .silvermoon/config.yaml
+          必须是普通文件，路径无重定向且大小不超过协议容量限制。
+      - code: silvermoon-folder-ideas-directory-valid
+        description:
+          首个 Idea 创建前 .silvermoon/i
+          可以不存在；存在时必须是普通安全目录，不能是链接或重定向路径。
+    output:
+      description:
+        成功不新增数据，实际 pass output 为
+        undefined；后续仅承接数据容器已经通过本次检查的事实，不保存可跨运行复用的
+        readiness 标记。
+  - id: idea-folder
+    title: Idea 数据有效
+    description:
+      检查当前 Idea 的协议数据、身份及事件历史有效，并推导后续阶段共用的状态。
+    instructions:
+      你需要为当前选中的 Idea 建立符合下列 Rules 的可信事实，不能把其他 Idea
+      的异常混入本检查点。固定 Check CID
+      缺失、不可信或不支持时按执行错误处理，不猜测最新版替代，也不自动恢复已放弃的
+      Idea。
+    rules:
+      - code: idea-folder-identity-immutable
+        description:
+          当前选中的 Idea 必须保留 primary 中已记录 bootstrap 的
+          version、id、checkCid 和 createdAt 字段值；不校验其他 Idea
+          的身份，JSON 排版或字段顺序变化不构成身份变化。
+      - code: idea-folder-event-history-append-only
+        description:
+          当前选中的 Idea 必须保留 primary 中已记录事件的原始 UTF-8
+          字节的准确前缀，只能追加；不校验其他 Idea 的事件历史。
+      - code: idea-folder-data-valid
         description:
           Idea 必须能够唯一解析，bootstrap、事件、文件树、用例索引及固定 Check
           CID 绑定必须符合现有协议、结构、安全与容量约束。
-      - code: abandoned
+      - code: idea-folder-active
         description:
-          有效事件序列推导的状态必须不是 `state.level =
-          abandoned`；放弃不是完成或跳过门禁，只有显式有效的 resume
-          事实才能恢复，Agent 或 CLI 不得自动代写。
+          Idea 必须处于有效推进状态；显式放弃后，只有授权且有效的 resume
+          事件才能恢复，Agent 或 CLI 不得自动代写。
+    output:
+      description:
+        提供从当前内容、有效 events 和准确 primary 快照推导的 Idea
+        事实，供后续阶段读取同一次 reduce
+        的结果，不再各自解释事件或维护另一套状态。 CLI 的 `silvermoon event
+        replay <idea> --json` 使用同一 reducer，可用于诊断，但其
+        observation.fresh=false，只反映本地跟踪快照，不能替代本 Check
+        的同步验收；state.level=unknown 或 primary 不可用时不能判定通过。
+      fields:
+        - name: state
+          description:
+            执行期 reducer 结果：revisions 是当前内容版本，signed
+            是匹配当前版本及前序向量的 signOff 事件
+            ID，implementation/deployment 是有效验证批次集合的摘要，不是事件
+            ID。level 表示首个未达成的领域阶段，不是已完成阶段；synchronization
+            时 next 表示等待同步的共识阶段。阶段键保持
+            requirements、research、technical、cases、tests。 signed 只包含
+            reducer
+            已走到的有效签署；前序阻塞时不能据后序键缺失单独判断后序阶段。
+        - name: brief
+          description:
+            受控的事实摘要字符串，供失败规则的 brief
+            使用；不包含原始全文，不代表自动发布整个 state 或 Context。
   - id: requirements
-    title: 需求共识与同步
-    description: 核验 requirements 树当前版本的人类确认及 primary 同步。
+    title: 需求共识已确认并同步
+    description: 检查当前需求版本已获用户明确确认，且内容和确认事件已同步。
+    instructions: |
+      ### 判断当前状态
+
+      你需要读取 idea-folder 输出的 state，以事件阶段 requirements
+      判断需求共识。state.level=requirements 表示尚无当前版本的有效确认；
+      state.level=synchronization 且 state.next=requirements
+      表示确认已有效但尚未同步。只有 reducer 已越过本阶段，包括停在后续阶段的同步时，本检查点才达成。
+      缺少有效确认时向用户展示准确内容版本并请求明确决定，不从正文、复选框、Git
+      提交或任意一条旧 signOff 推断批准。
+
+      ### 准备、评审和记录
+
+      1. 编写 `requirements/Spec.md`，用 Markdown 说明问题、目标、范围与非目标、场景和验收标准；全部 `requirements/` 附件也属于签署范围。目录提纲用于帮助 review，不是新增机器可验证的正文模板。
+      2. 向用户展示当前完整材料及变更，明确请求对这个准确版本的确认。用户未同意时继续迭代文档和 review，不记录 `signOff`，也不删除已有事件。
+      3. 用户明确同意后，用 `silvermoon event replay <idea> --json` 读取当前 `state.revisions`、`digest` 和 `observation.primary.tip`。如果材料与用户刚确认的版本不同，重新 review；primary 不可用时先恢复观察能力。
+      4. 准备下面的 JSON。`type=signOff` 本身表示真实确认，新事件不再写 `decision`；历史事件中的 `decision=confirmed` 只按兼容协议读取，不能为简化格式改写旧事件。所有 `<...>` 都必须替换为真实值：`id` 是全新 32 位小写十六进制，`at` 是当前规范 UTC ISO 时间，revision 来自当前回放，不能猜测哈希。
+
+      ```json
+      {
+        "version": 1,
+        "id": "<new-32-hex>",
+        "at": "<current-UTC-ISO-time>",
+        "type": "signOff",
+        "object": "requirements",
+        "revision": "<state.revisions.requirements>",
+        "upstream": {}
+      }
+      ```
+
+      5. 使用 `silvermoon event append <idea> --input <event.json> --expected-digest <digest> --expected-primary <observation.primary.tip> --confirm-human-decision` 追加事件。确认参数只是对已有真实人类决定的记录声明，不是用户授权或身份认证。
+      6. 遇到版本、digest 或 primary 冲突时重新观察并核对用户决定，不盲目重试。按已有授权提交并同步内容和事件，再运行 `silvermoon whats-next <idea> --audience agent`，以对应 Rules 通过为准；本地 replay 不证明网络新鲜度。
     rules:
-      - code: requirements
+      - code: requirements-consensus-confirmed
         description:
-          当前 requirements 必须有匹配准确内容版本的有效显式人类 sign off，且其
-          upstream 为空；受签署范围内的任何变更都须重新确认，reducer 不应停留在
-          `state.level = requirements`。
-      - code: synchronization
+          完整事件历史中必须存在 type=signOff、object=requirements 的事件，其
+          revision 等于 state.revisions.requirements，upstream 为空， 且 reducer
+          将该事件 ID 纳入
+          state.signed.requirements。受签署范围内的任何变更都须重新确认，
+          不能只检查历史上是否出现过 signOff。
+      - code: requirements-synchronized
         description:
-          当前准确需求内容和对应 sign off 必须已同步至本次观察的
-          primary，不得处于 `state.level = synchronization` 且 `state.next =
-          requirements`。
+          reducer 必须确认当前准确需求内容和 state.signed.requirements
+          指向的同一 signOff 事件均存在于本次观察的 primary；若
+          state.level=synchronization 且 state.next=requirements，本 Rule
+          不通过。
+    output:
+      description:
+        成功不新增数据，pass output 为 undefined；后续继续读取 idea-folder
+        的准确 revisions 与签署事实。
   - id: research
-    title: 调研共识与同步
-    description:
-      核验 technical/research.md 当前版本的人类确认及 primary
-      同步，绑定当前需求版本。
+    title: 调研共识已确认并同步
+    description: 检查当前调研问题索引已获用户明确确认，绑定当前需求并完成同步。
+    instructions: |
+      ### 判断当前状态
+
+      你需要读取 idea-folder 输出的 state；本检查点、事件阶段和状态键统一为 research。
+      state.level=research 表示调研确认未达成；
+      state.level=synchronization 且 state.next=research 表示调研确认等待同步。
+      只有 reducer 已越过 research，包括停在后续阶段的同步时，本检查点才达成。
+      索引或前序需求改变后，请求对应准确版本的确认，不沿用失效的旧确认。
+
+      ### 准备、评审和记录
+
+      1. 编写 `technical/research.md`，以 Markdown 问题索引列出需要调研的问题、用户关注点、待查证事实及其影响的技术决策；这里确认的是调研范围，不用未完成的调研结论冒充答案。
+      2. 向用户展示问题索引及其绑定的当前需求版本。用户未明确同意时继续迭代索引，不写 `signOff`；需求改变后也要重新确认。
+      3. 明确同意后，运行 `silvermoon event replay <idea> --json` 核对当前版本、digest 和可用的 primary tip。准备下列事件，替换全部占位符；id 必须为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间。
+
+      ```json
+      {
+        "version": 1,
+        "id": "<new-32-hex>",
+        "at": "<current-UTC-ISO-time>",
+        "type": "signOff",
+        "object": "research",
+        "revision": "<state.revisions.research>",
+        "upstream": {"requirements": "<state.revisions.requirements>"}
+      }
+      ```
+
+      4. 使用 `silvermoon event append <idea> --input <event.json> --expected-digest <digest> --expected-primary <observation.primary.tip> --confirm-human-decision` 记录真实决定。冲突或版本改变时重新观察、核对 review，不伪造确认。
+      5. 按已有授权提交并同步索引和事件，再运行 `silvermoon whats-next <idea> --audience agent` 验收；replay 的本地跟踪快照本身不是同步证明。
     rules:
-      - code: research
+      - code: research-consensus-confirmed
         description:
-          当前调研问题索引必须有匹配准确版本及前序需求向量的有效显式人类 sign
-          off，reducer 不应停留在 `state.level = research`。
-      - code: synchronization
+          完整事件历史中必须存在 object=research 的 signOff， 其 revision 等于
+          state.revisions.research，upstream 恰好包含当前 requirements 版本，且
+          reducer 将该事件 ID 纳入
+          state.signed.research；不以事件存在本身或旧版本确认作为通过依据。
+      - code: research-synchronized
         description:
-          当前准确调研索引、前序需求与对应 sign off 必须已同步至本次观察的
-          primary，不得处于 `state.level = synchronization` 且 `state.next =
-          research`。
+          reducer 必须确认当前准确调研索引、前序需求与 state.signed.research
+          指向的同一 signOff 事件均存在于本次观察的 primary；若
+          state.level=synchronization 且 state.next=research，本 Rule 不通过。
+    output:
+      description:
+        成功不新增数据，pass output 为
+        undefined；后续承接调研共识成立的事实，版本数据仍来自 idea-folder。
   - id: technical
-    title: 技术共识与同步
-    description:
-      核验 technical 树（除 research.md）当前版本的人类确认及 primary
-      同步，绑定当前需求与调研版本。
+    title: 技术共识已确认并同步
+    description: 检查当前技术方案及附件已获用户明确确认，绑定前序版本并完成同步。
+    instructions: |
+      ### 判断当前状态
+
+      你需要读取 idea-folder 输出的 state，以事件阶段 technical 判断技术共识。
+      state.level=technical 表示技术确认未达成；state.level=synchronization 且
+      state.next=technical 表示技术确认等待同步。只有 reducer
+      已越过本阶段，包括停在后续阶段的同步时，本检查点才达成。
+      技术方案、计划、附件及细化材料均属于签署范围，不以微调为由跳过重新确认，也不自行代替用户批准。
+
+      ### 准备、评审和记录
+
+      1. 完成已确认问题范围内的调研，将结论和依据写入 `technical/Spec.md` 及附件，说明方案选择、取舍、接口与数据流、错误处理、实施计划和验证方法；单独签署的 `technical/research.md` 不属于本阶段正文版本。
+      2. 向用户 review 整个当前技术材料及其前序版本。未获明确同意就继续迭代，不写 `signOff`；正文、计划或附件变化均需重新核对确认。
+      3. 明确同意后，通过 `silvermoon event replay <idea> --json` 取得当前 revisions、digest 和可用 primary tip。替换下列全部占位符；id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间，upstream 必须准确且无额外阶段。
+
+      ```json
+      {
+        "version": 1,
+        "id": "<new-32-hex>",
+        "at": "<current-UTC-ISO-time>",
+        "type": "signOff",
+        "object": "technical",
+        "revision": "<state.revisions.technical>",
+        "upstream": {
+          "requirements": "<state.revisions.requirements>",
+          "research": "<state.revisions.research>"
+        }
+      }
+      ```
+
+      4. 使用 `silvermoon event append <idea> --input <event.json> --expected-digest <digest> --expected-primary <observation.primary.tip> --confirm-human-decision` 追加真实确认。版本或并发冲突时重新观察并核对决定。
+      5. 按已有授权提交并同步内容和事件，再运行 `silvermoon whats-next <idea> --audience agent`；本地回放到后续阶段不能代替同步 Rule。
     rules:
-      - code: technical
+      - code: technical-consensus-confirmed
         description:
-          当前 Technical Spec 及补充材料必须有匹配准确版本且恰好绑定全部前序
-          revisions 的有效显式人类 sign off，reducer 不应停留在 `state.level =
-          technical`。
-      - code: synchronization
+          完整事件历史中必须存在 object=technical 的 signOff， 其 revision 等于
+          state.revisions.technical，upstream 恰好绑定当前
+          requirements、research 版本，且 reducer 将该事件 ID 纳入
+          state.signed.technical。当前 Technical Spec
+          及全部补充材料共同决定该版本。
+      - code: technical-synchronized
         description:
-          当前准确技术内容、全部前序内容与对应 sign off 必须已同步至本次观察的
-          primary，不得处于 `state.level = synchronization` 且 `state.next =
-          technical`。
-  - id: cases
-    title: 用例索引共识与同步
-    description:
-      核验 tests/cases.json 当前版本的人类确认及 primary
-      同步，绑定全部前序版本。
+          reducer 必须确认当前准确技术内容、全部前序内容与
+          state.signed.technical 指向的同一 signOff 事件均存在于本次观察的
+          primary；若 state.level=synchronization 且 state.next=technical，本
+          Rule 不通过。
+    output:
+      description:
+        成功不新增数据，pass output 为 undefined；后续复用 idea-folder
+        的技术与前序版本向量，不生成新的签署事件。
+  - id: test-index
+    title: 用例索引共识已确认并同步
+    description: 检查实现与部署用例索引完整、已获用户明确确认并完成同步。
+    instructions: |
+      ### 判断当前状态
+
+      你需要读取 idea-folder 输出的 state；本检查点对应历史事件阶段 cases，不是 test-index。
+      state.level=cases 表示用例索引确认未达成；state.level=synchronization 且
+      state.next=cases 表示索引确认等待同步。只有 reducer
+      已越过 cases，包括停在后续阶段的同步时，本检查点才达成。
+      先把实现和部署用例索引表达完整，再请求准确版本确认；不能用正文或口头约定替代机器索引。
+
+      ### 准备、评审和记录
+
+      1. 在 `tests/cases.json` 编写协议 v1 JSON 索引。每个 case 的 id 必须唯一，使用大写字母开头的大写字母、数字或连字符；同时列出真实需要的实现和部署环境。以下仅示意结构，不能将示例环境或两个 case 当成项目的完整范围。
+
+      ```json
+      {
+        "version": 1,
+        "cases": [
+          {"id": "I-01", "phase": "implementation", "environment": "local", "subject": "git-head"},
+          {"id": "D-01", "phase": "deployment", "environment": "staging", "subject": "implementation"}
+        ]
+      }
+      ```
+
+      2. 与用户 review 用例范围、phase、environment、subject 及绑定的前序版本。未明确同意就迭代索引，不写 `signOff`。详细操作正文留到 test-cases，但不能遗漏索引应声明的用例。
+      3. 明确同意后，用 `silvermoon event replay <idea> --json` 核对当前 revisions、digest 和可用 primary tip。替换下列全部占位符，id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间。
+
+      ```json
+      {
+        "version": 1,
+        "id": "<new-32-hex>",
+        "at": "<current-UTC-ISO-time>",
+        "type": "signOff",
+        "object": "cases",
+        "revision": "<state.revisions.cases>",
+        "upstream": {
+          "requirements": "<state.revisions.requirements>",
+          "research": "<state.revisions.research>",
+          "technical": "<state.revisions.technical>"
+        }
+      }
+      ```
+
+      4. 使用 `silvermoon event append <idea> --input <event.json> --expected-digest <digest> --expected-primary <observation.primary.tip> --confirm-human-decision` 记录真实确认，冲突时重新观察和核对 review。
+      5. 按已有授权提交并同步索引与事件，再运行 `silvermoon whats-next <idea> --audience agent` 确认对应 Rules 已通过。
     rules:
-      - code: cases
+      - code: test-index-consensus-confirmed
         description:
-          当前用例索引必须有匹配准确版本且恰好绑定全部前序 revisions
-          的有效显式人类 sign off，reducer 不应停留在 `state.level = cases`。
-      - code: synchronization
+          当前 tests/cases.json
+          必须同时包含实现和部署用例，明确阶段、环境与受测对象。完整事件历史中必须存在
+          object=cases 的 signOff，其 revision 等于
+          state.revisions.cases，upstream 恰好绑定当前
+          requirements、research、technical 版本，且 reducer 将该事件 ID 纳入
+          state.signed.cases。
+      - code: test-index-synchronized
         description:
-          当前准确用例索引、全部前序内容与对应 sign off 必须已同步至本次观察的
-          primary，不得处于 `state.level = synchronization` 且 `state.next =
-          cases`。
-  - id: tests
-    title: 测试共识与同步
-    description:
-      核验 tests 树（除 cases.json）当前版本的人类确认及 primary
-      同步，绑定全部前序版本。
+          reducer 必须确认当前准确用例索引、全部前序内容与 state.signed.cases
+          指向的同一 signOff 事件均存在于本次观察的 primary；若
+          state.level=synchronization 且 state.next=cases，本 Rule 不通过。
+    output:
+      description:
+        成功不新增数据，pass output 为 undefined；后续用例和版本事实仍由
+        idea-folder 提供，不能以正文替代机器索引。
+  - id: test-cases
+    title: 测试共识已确认并同步
+    description: 检查详细测试用例及附件已获用户明确确认，绑定当前用例索引并完成同步。
+    instructions: |
+      ### 判断当前状态
+
+      你需要读取 idea-folder 输出的 state；本检查点对应历史事件阶段 tests，不是 test-cases。
+      state.level=tests 表示详细测试用例确认未达成；state.level=synchronization 且
+      state.next=tests 表示确认等待同步。只有 reducer 已进入 implementation
+      或后续阶段，本检查点才达成。测试说明、附件及正文细化均属于签署范围，必须绑定当前用例索引；
+      变更后重新确认，不推断额外的人类决定。
+
+      ### 准备、评审和记录
+
+      1. 在 `tests/Spec.md` 及附件中按已确认 case id 编写详细用例：环境与受测对象、前置准备、输入、操作步骤、预期结果，以及应保存的证据和采集方式。`tests/` 中除独立索引 `cases.json` 外的全部材料共同参与本阶段签署。
+      2. 与用户 review 所有实现和部署用例及其前序版本。未明确同意就继续迭代正文，不写 `signOff`；若需要新增或改变索引，回到 test-index 重新确认受影响的版本。
+      3. 明确同意后，用 `silvermoon event replay <idea> --json` 核对 revisions、digest 和可用 primary tip。替换下列全部占位符，id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间。
+
+      ```json
+      {
+        "version": 1,
+        "id": "<new-32-hex>",
+        "at": "<current-UTC-ISO-time>",
+        "type": "signOff",
+        "object": "tests",
+        "revision": "<state.revisions.tests>",
+        "upstream": {
+          "requirements": "<state.revisions.requirements>",
+          "research": "<state.revisions.research>",
+          "technical": "<state.revisions.technical>",
+          "cases": "<state.revisions.cases>"
+        }
+      }
+      ```
+
+      4. 使用 `silvermoon event append <idea> --input <event.json> --expected-digest <digest> --expected-primary <observation.primary.tip> --confirm-human-decision` 记录真实确认；冲突或内容变化时重新观察并核对用户决定。
+      5. 按已有授权提交并同步测试材料和事件，再运行 `silvermoon whats-next <idea> --audience agent`。通过前不要把测试计划当成已经执行的验证证据。
     rules:
-      - code: tests
+      - code: test-cases-consensus-confirmed
         description:
-          当前 Test Spec 及补充材料必须有匹配准确版本且恰好绑定全部前序
-          revisions 的有效显式人类 sign off，reducer 不应停留在 `state.level =
-          tests`。
-      - code: synchronization
+          完整事件历史中必须存在 object=tests 的 signOff， 其 revision 等于
+          state.revisions.tests，upstream 恰好绑定当前
+          requirements、research、technical、cases 版本，且 reducer 将该事件 ID
+          纳入 state.signed.tests。当前 Test Spec 及全部补充材料共同决定该版本。
+      - code: test-cases-synchronized
         description:
-          当前准确测试内容、全部前序内容与对应 sign off 必须已同步至本次观察的
-          primary，不得处于 `state.level = synchronization` 且 `state.next =
-          tests`。
+          reducer 必须确认当前准确测试内容、全部前序内容与 state.signed.tests
+          指向的同一 signOff 事件均存在于本次观察的 primary；若
+          state.level=synchronization 且 state.next=tests，本 Rule 不通过。
+    output:
+      description:
+        成功不新增数据，pass output 为
+        undefined；后续证据检查承接五个共识均成立的事实，不额外保存 approved
+        标记。
   - id: implementation
-    title: 实现验收
-    description: 核验全部必需实现环境的最新证据批次，确认用例完整通过且版本、受测提交与证据匹配。
+    title: 实现验收已通过并同步
+    description: 检查实现验收证据完整有效，且实现、证据和验证事件已同步。
+    instructions: |
+      ### 判断当前状态
+
+      你需要读取 idea-folder 输出的 state：state.level=implementation
+      表示尚无完整有效的实现验证结果；只有 reducer 生成 state.implementation
+      摘要并进入 deployment 或 completed，才表明实现证据已达成，仍须通过独立的同步 Rule。
+      缺少证据时完成实现，依据已确认用例在所有必需实现环境完成验证，保存真实通过证据，并用
+      verify events 记录绑定准确实现版本的结果。随后将实现、证据和 events
+      提交并同步至项目配置的 primary（例如 origin/main），全部满足下列 Rules
+      后才能进入部署。缺失、失败或失效时按既有授权重新验证并记录；本 Check
+      只核验事实，不自动执行实现、测试、提交或推送，也不保证日志陈述本身真实。
+
+      ### 验证、记录和同步
+
+      1. 按已确认需求和技术方案完成实现，针对准确的受测提交，在索引要求的每个实现环境执行该环境全部实现用例。依照测试说明把真实、非空证据保存到当前 Idea 的 `evidence/implementation/`。
+      2. 验证结果由 Agent 如实记录，不增加人类结果 sign off。失败或错误也保留真实记录，修复后重新验证；不能将失败写成 pass，或跳过新失败而选旧成功。
+      3. 用 `silvermoon event replay <idea> --json` 核对当前 revisions、digest 和可用 primary tip。每个实现环境准备一个独立 verify 批次，覆盖该环境的全部 case；下例仅展示一个结果项，实际必须展开完整集合。
+
+      ```json
+      {
+        "version": 1,
+        "id": "<new-32-hex>",
+        "at": "<current-UTC-ISO-time>",
+        "type": "verify",
+        "batch": {
+          "id": "<unique-batch-id>",
+          "phase": "implementation",
+          "revisions": {
+            "requirements": "<state.revisions.requirements>",
+            "research": "<state.revisions.research>",
+            "technical": "<state.revisions.technical>",
+            "cases": "<state.revisions.cases>",
+            "tests": "<state.revisions.tests>"
+          },
+          "subject": "<exact-tested-commit-SHA>",
+          "environment": "<required-implementation-environment>",
+          "results": [
+            {"case": "<actual-case-id>", "result": "pass", "evidence": [
+              {"path": "evidence/implementation/<actual-file>", "digest": "<sha256-of-raw-evidence-bytes>"}
+            ]}
+          ]
+        }
+      }
+      ```
+
+      4. 替换所有占位符：事件 id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间，batch id 使用唯一的字母数字开头标识（允许点、下划线、连字符，最长 64 字符）。证据 digest 为原始文件字节的 `sha256:<64位小写十六进制>`。subject 必须是真正受测的提交，不拿追加事件后的 HEAD 冒充；失败时 result 如实为 fail 或 error。
+      5. 使用 `silvermoon event append <idea> --input <event.json> --expected-digest <digest> --expected-primary <observation.primary.tip>` 追加；verify 不需要 `--confirm-human-decision`。每次追加后重新回放取得下一个准确 digest，冲突时重新观察，不盲目复用旧输入。
+      6. 按已有授权将实现、证据及 events 提交并同步至配置的 primary，再运行 `silvermoon whats-next <idea> --audience agent`。只有 evidence-valid 和 synchronized 两条 Rules 都通过，才能推进部署；`state.implementation` 存在不等于已同步。
     rules:
-      - code: implementation
+      - code: implementation-evidence-valid
         description:
-          五个准确版本的共识及各自 primary
-          同步满足后，每个必需实现环境的最新批次必须完整覆盖其全部实现用例并通过，绑定当前五个
-          revision、准确受测提交，且证据路径及内容哈希有效；reducer 不应停留在
-          `state.level =
-          implementation`。新失败、错误或不完整批次使同环境旧成功批次失效；后续提交只增加本
+          五个准确版本的共识及各自 primary 同步满足后，reducer 从 type=verify、
+          batch.phase=implementation 的 events
+          中，按每个必需实现环境选最后一个批次。
+          各批次必须完整覆盖该环境的全部实现用例并通过，绑定当前五个 revision、
+          准确受测提交，且证据路径及内容哈希有效。全部批次有效后才生成
+          state.implementation，其值是有效批次集合摘要，不是某条 verify 事件
+          ID。 新失败、错误或不完整批次使同环境旧成功批次失效；后续提交只增加本
           Idea
           事件／证据时不使受测代码过期，其他受跟踪内容变化必须重新验证；Check
           只核验事实绑定，不执行 LLM 或项目测试，也不保证日志陈述真实。
+      - code: implementation-synchronized
+        description:
+          被验证的实现版本、实现证据及对应 verify events
+          必须已提交并同步至本次观察的 primary。工作区必须无改动，HEAD
+          必须等于本次观察的 primary tip；不能以本地 events、手写状态或 push
+          命令成功替代同步事实。
+    output:
+      description:
+        成功不新增数据，pass output 为
+        undefined；部署检查承接实现验收已通过且结果已同步的事实，继续使用
+        idea-folder 中当前有效实现批次集合的摘要，不接受外部声明的成功结果。
   - id: deployment
-    title: 部署验收
-    description: 核验全部必需部署环境的最新证据批次，确认完整通过且绑定当前实现批次集合。
+    title: 部署验收已通过并同步
+    description: 检查部署验收绑定当前已验收实现，且部署证据和验证事件已最终同步。
+    instructions: |
+      ### 判断当前状态
+
+      你需要读取 idea-folder 输出的 state：state.level=deployment
+      表示尚无绑定当前实现的完整部署验证结果；只有 reducer 生成 state.deployment
+      摘要并进入 completed，才表明部署证据已达成，仍须通过独立的最终同步 Rule。
+      缺少证据时部署已经验收并同步的实现版本，在所有必需部署环境完成验证，保存真实通过证据，并用
+      verify events
+      记录绑定部署版本、当前实现验收结果及证据的结果。随后将部署证据和 events
+      提交并同步至项目配置的 primary（例如 origin/main），全部满足下列 Rules 后
+      Idea 才算完成。不能以部署命令成功替代验收证据，不增加额外的人类结果 sign
+      off，也不把本检查点当作部署操作授权或自动执行提交、推送。
+
+      ### 验证、记录和同步
+
+      1. 仅在实现 checkpoint 已通过后，按已有部署授权部署该已验收并同步的实现。在索引要求的每个部署环境执行全部部署用例，按测试说明将真实、非空证据保存到 `evidence/deployment/`。
+      2. 用 `silvermoon event replay <idea> --json` 核对当前 revisions、digest、可用 primary tip 和 `state.implementation`。该实现摘要必须仍与受部署的验收结果一致；实现发生变化就先回到实现验收，不复用旧部署证据。
+      3. 每个部署环境准备一个覆盖其全部 case 的 verify 批次，绑定准确受测提交和当前实现批次集合摘要。下例仅展示一个结果项，实际必须覆盖完整集合，不以部署命令退出成功代替验收。
+
+      ```json
+      {
+        "version": 1,
+        "id": "<new-32-hex>",
+        "at": "<current-UTC-ISO-time>",
+        "type": "verify",
+        "batch": {
+          "id": "<unique-batch-id>",
+          "phase": "deployment",
+          "revisions": {
+            "requirements": "<state.revisions.requirements>",
+            "research": "<state.revisions.research>",
+            "technical": "<state.revisions.technical>",
+            "cases": "<state.revisions.cases>",
+            "tests": "<state.revisions.tests>"
+          },
+          "subject": "<exact-tested-commit-SHA>",
+          "environment": "<required-deployment-environment>",
+          "implementation": "<state.implementation>",
+          "results": [
+            {"case": "<actual-case-id>", "result": "pass", "evidence": [
+              {"path": "evidence/deployment/<actual-file>", "digest": "<sha256-of-raw-evidence-bytes>"}
+            ]}
+          ]
+        }
+      }
+      ```
+
+      4. 替换全部占位符，事件 id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间；batch id 是唯一的字母数字开头标识（允许点、下划线、连字符，最长 64 字符）。证据 digest 为原始字节的 `sha256:<64位小写十六进制>`。implementation 是整个有效实现批次集合的摘要，不是单条 event 或 batch 的 id；失败结果如实为 fail 或 error。
+      5. 使用 `silvermoon event append <idea> --input <event.json> --expected-digest <digest> --expected-primary <observation.primary.tip>` 追加真实结果，不新增人类结果确认。每次追加后重新回放取得下一个准确 digest；冲突时重新观察。
+      6. 按已有授权提交并同步部署证据和 events，最后运行 `silvermoon whats-next <idea> --audience agent`。只有全部 Rules 通过，才可宣称 Idea 完成；即使本地 replay 已返回 `state.level=completed`，也不能省略最终同步检查。
     rules:
-      - code: deployment
+      - code: deployment-evidence-valid
         description:
-          每个必需部署环境必须具备当前完整通过批次，满足同样的版本、受测对象、证据路径及哈希校验，并绑定当前有效实现批次集合的准确摘要；reducer
-          不应停留在 `state.level =
-          deployment`。新实现批次使旧实现摘要对应的部署证据失效；不增加人类实现／部署结果
+          reducer 从 type=verify、batch.phase=deployment 的 events
+          中，按每个必需部署环境选最后一个批次。各批次必须完整通过，满足当前版本、
+          受测对象、证据路径及哈希校验，且 batch.implementation 等于当前
+          state.implementation 摘要。全部批次有效后才生成
+          state.deployment，并返回
+          state.level=completed；这只证明领域验收事实，还不能替代独立的最终同步检查。
+          新实现批次使旧实现摘要对应的部署证据失效；不增加人类实现／部署结果
           sign off，不以部署命令返回成功替代 Evidence。
-  - id: completion
-    title: 完成与终态同步
-    description: 核验完成状态与最终事件、证据的提交及 primary 同步。
-    rules:
-      - code: completion-unsynchronized
+      - code: deployment-synchronized
         description:
-          reducer 必须为
-          completed，且当前事件与证据均已提交并同步，工作区无改动、HEAD
-          等于本次观察到的 primary tip，才可最终通过；不接受手写 completed
-          标记。若前序检查点通过而同一观察的 reducer 结论不是
-          completed，须将内部前置／状态映射不一致作为执行错误传播，不能默认通过。
+          当前部署证据与对应 verify events 必须已提交并同步至本次观察的
+          primary，工作区无改动、HEAD 等于本次观察的 primary
+          tip，才可最终通过；不能以本地 events、手写 completed 标记或 push
+          命令成功替代同步事实。若全部验收通过而同一观察的 reducer 结论不是
+          completed，须将内部状态不一致作为执行错误传播，而不是另设完成检查点或默认通过。
+    output:
+      description:
+        成功不新增 Context 数据，pass output 为 undefined；整个 Task
+        可以报告通过，但不自动写事件、发布或执行其他操作。

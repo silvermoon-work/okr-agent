@@ -19,6 +19,10 @@
       "types": "./dist/check.d.ts",
       "import": "./dist/check.js"
     },
+    "./commit-check": {
+      "types": "./dist/commit-check.d.ts",
+      "import": "./dist/commit-check.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
@@ -30,6 +34,7 @@
     "skills",
     "references",
     "check.build.yaml",
+    "commit-check.build.yaml",
     "README.md",
     "LICENSE"
   ],

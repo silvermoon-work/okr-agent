@@ -23,11 +23,11 @@
 配置和 TS 文件可位于目标范围内的子目录；monorepo 也可以由子 package 的
 TypeScript 依赖提供身份依据。
 
-身份不成立只报告 `typescript-project-invalid`，说明具体原因，不进入后续检查点。
+身份不成立只报告 `typescript-project-valid`，说明具体原因，不进入后续检查点。
 身份成立后进入 workspace 检查点；single repo 不要求 workspace 声明。monorepo
 要求根 `pnpm-workspace.yaml` 是合法 YAML 对象，
 显式包含非空 `packages` 数组，每项为非空白字符串。缺少文件、不是普通
-文件或声明结构非法时报告 `workspace-configuration-invalid`，不回退到
+文件或声明结构非法时报告 `workspace-configuration-valid`，不回退到
 manifest 的 `workspaces`。意外 I/O 和链接重定向仍为执行故障。
 
 成员发现将遵循 pnpm 的模式语义，不限定 `apps/`、`packages/` 布局；

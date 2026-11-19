@@ -152,7 +152,9 @@ fragment 恢复所选节点，
 新版候选 [`@silvermoon-work/silvermoon`](packages/silvermoon/README.md)
 提供基于 Task Engine / Checker 的 CLI；私有
 [`@silvermoon-work/check.silvermoon`](packages/check.silvermoon/README.md)
-交付对应 CAR。新 Idea 仅位于 `.silvermoon/i`，使用五个准确版本的
+分别交付 Idea 推进与提交合法性两个独立的 Check Task/CAR。`whats-next`
+走前者；`check --staged` 走后者，可用于 commit hook，不要求工作区洁净、
+upstream 就绪或 Idea 完成。新 Idea 仅位于 `.silvermoon/i`，使用五个准确版本的
 sign off、Events 和实现/部署 Evidence；旧 `.silvermoon/ideas` 仅留档，不迁移、
 不补 CID。候选构建和验证不会替换当前全局旧 CLI 或个人 skill；正式发布、安装及
 试用分别遵守各自授权，不能把本地候选视为已发布版本。

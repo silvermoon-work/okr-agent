@@ -15,8 +15,13 @@ import {
   inspectDevice,
   type Device,
 } from "../src/device.js";
-import { silvermoonCheckpoints, snapshotCheckpoints } from "../src/check.js";
-import { Target } from "../src/contract.js";
+import { silvermoonCheckpoints } from "../src/check.js";
+import {
+  Target,
+  checkpointIds,
+  consensusCheckpointIds,
+  consensusRuleCodes,
+} from "../src/contract.js";
 import {
   bundledArtifact,
   observe as observeTarget,
@@ -29,13 +34,21 @@ import {
   idea,
   reduce,
   SilvermoonError,
+  validateAppend,
   type State,
 } from "../src/domain.js";
 import { createIdea, appendEvent } from "../src/write.js";
+import { commitCheckpoints } from "../src/commit-check.js";
 import * as deviceReads from "../src/device.js";
 import * as repositoryReads from "../src/repository.js";
 import { git, selectIdea, readProject } from "../src/repository.js";
-import type { Input } from "../src/contract.js";
+import type {
+  Operation,
+  Runtime,
+  Target as TargetValue,
+} from "../src/contract.js";
+
+type Request = { target: TargetValue; runtime: Runtime; operation: Operation };
 import {
   add,
   batch,
@@ -83,8 +96,10 @@ async function device(): Promise<Device> {
   else await symlink(entry, join(path, "silvermoon"));
   return { entry, home, path };
 }
-async function target(): Promise<{ target: Input; remote: string }> {
-  const { root, remote } = await repository();
+async function target(
+  options: { idea?: boolean } = {},
+): Promise<{ target: Request; remote: string }> {
+  const { root, remote } = await repository(options);
   await git(root, [
     "remote",
     "set-url",
@@ -105,7 +120,7 @@ async function target(): Promise<{ target: Input; remote: string }> {
   };
 }
 function observe(
-  request: Input,
+  request: Request,
   options: Parameters<typeof observeTarget>[1] = {},
 ) {
   return observeTarget(request.target, {
@@ -114,21 +129,27 @@ function observe(
     ...options,
   });
 }
-async function graph(target: Input, bundle = cid) {
+async function graph(
+  target: Request,
+  bundle = cid,
+  afterCheckpoint?: (node: ReportNode) => Promise<void>,
+) {
   const nodes: ReportNode[] = [];
   const options = {
     signal: new AbortController().signal,
-    log: (node: ReportNode) => {
+    log: async (node: ReportNode) => {
       nodes.push(node);
+      await afterCheckpoint?.(node);
     },
   };
   const report =
     target.operation.mode === "snapshot"
       ? await executeCheck({
           ...options,
-          checkpoints: snapshotCheckpoints(target.runtime),
+          checkpoints: commitCheckpoints(target.runtime),
           target: {
-            ...target.target,
+            userHome: target.target.userHome,
+            repoRoot: target.target.repoRoot!,
             snapshot: target.operation.snapshot ?? "HEAD",
           },
         })
@@ -147,6 +168,63 @@ async function graph(target: Input, bundle = cid) {
   return { ...report, problems: report.pass ? [] : report.problems, nodes };
 }
 describe("Ordered checkpoints and the real offline Engine", () => {
+  it("reports a behind branch as an unmet synchronization rule, not an execution fault", async () => {
+    const { target: input, remote } = await target();
+    const root = input.target.repoRoot!;
+    const previous = await git(root, ["rev-parse", "HEAD"]);
+    await git(root, ["remote", "set-url", "origin", remote]);
+    await writeFile(join(root, "source.txt"), "A newer primary commit.\n");
+    await sync(root);
+    await git(root, [
+      "remote",
+      "set-url",
+      "origin",
+      "https://github.com/example/project.git",
+    ]);
+    await git(root, ["switch", "-c", "lagging", previous]);
+    await git(root, ["branch", "--set-upstream-to=origin/main", "lagging"]);
+    expect(await graph(input)).toMatchObject({
+      problems: [{ checkpoint: "branch", code: "branch-primary-synchronized" }],
+    });
+  });
+
+  it.each(["directory", "config-file", "ideas-directory"] as const)(
+    "owns the Silvermoon %s layout condition after repository and branch acceptance",
+    async (kind) => {
+      const { target: input } = await target();
+      const base = join(input.target.repoRoot!, ".silvermoon");
+      const fault = new SilvermoonError("path", "Unsafe Silvermoon layout");
+      if (kind === "config-file")
+        vi.spyOn(repositoryReads, "readRegular").mockRejectedValueOnce(fault);
+      else {
+        const read = repositoryReads.regular;
+        vi.spyOn(repositoryReads, "regular").mockImplementation(
+          async (path, directory) => {
+            if (path === (kind === "directory" ? base : join(base, "i")))
+              throw fault;
+            await read(path, directory);
+          },
+        );
+      }
+      const result = await graph(input);
+      expect(result.problems).toMatchObject([
+        {
+          checkpoint: "silvermoon-folder",
+          code:
+            kind === "directory"
+              ? "silvermoon-folder-path-valid"
+              : `silvermoon-folder-${kind}-valid`,
+        },
+      ]);
+      expect(result.nodes.map(({ checkpoint }) => checkpoint)).toEqual([
+        "global",
+        "repository",
+        "branch",
+        "silvermoon-folder",
+      ]);
+    },
+  );
+
   it("completes consensus and evidence using only an owned local primary, then rolls back changed signed content", async () => {
     const { root, remote } = await repository({ idea: false });
     const currentDevice = await device();
@@ -188,7 +266,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       });
     };
     expect(await run(undefined, join(remote, "not-authorized"))).toMatchObject({
-      problems: [{ code: "branch-upstream-mismatch" }],
+      problems: [{ code: "branch-upstream-aligned" }],
     });
     expect(await run()).toMatchObject({ pass: true });
     const created = await createIdea(root, cid, {
@@ -251,7 +329,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       if (gate === "technical")
         await put("technical/details.md", "Signed support must be covered.\n");
       await sync(root);
-      const state = await observe(gate);
+      const state = await observe(consensusRuleCodes[gate]);
       await appendEvent(
         root,
         created.id,
@@ -265,7 +343,6 @@ describe("Ordered checkpoints and the real offline Engine", () => {
                 .slice(0, index)
                 .map((prior) => [prior, state.revisions[prior]]),
             ),
-            decision: "confirmed",
           }),
           at: new Date().toISOString(),
         },
@@ -277,7 +354,9 @@ describe("Ordered checkpoints and the real offline Engine", () => {
         },
       );
       expect(await run(created.id)).toMatchObject({
-        problems: [{ checkpoint: "repository", code: "worktree-uncommitted" }],
+        problems: [
+          { checkpoint: "repository", code: "repository-worktree-clean" },
+        ],
       });
       const project = await readProject(root);
       const primary = await readProject(
@@ -298,7 +377,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       const content = `Local Git checkpoint evidence for ${phase}.\n`;
       await put(path, content);
       await sync(root);
-      const state = await observe(phase);
+      const state = await observe(`${phase}-evidence-valid`);
       await appendEvent(
         root,
         created.id,
@@ -347,7 +426,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       "Material revision invalidates signoff.\n",
     );
     await sync(root);
-    await observe("technical");
+    await observe("technical-consensus-confirmed");
     expect(
       await readFile(join(root, ".silvermoon", "config.yaml"), "utf8"),
     ).toBe(before);
@@ -363,7 +442,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     vi.spyOn(repositoryReads, "observedIdeaState").mockResolvedValueOnce(state);
     const result = await graph(input);
     expect(result.problems).toMatchObject([
-      { checkpoint: "requirements", code: "synchronization" },
+      { checkpoint: "requirements", code: "requirements-synchronized" },
     ]);
     expect(result.references).toEqual([
       {
@@ -387,7 +466,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     ]);
     const result = await graph(input);
     expect(result.problems).toMatchObject([
-      { checkpoint: "implementation", code: "implementation" },
+      { checkpoint: "implementation", code: "implementation-evidence-valid" },
     ]);
     expect(result.nodes.at(-1)?.checkpoint).toBe("implementation");
   });
@@ -437,33 +516,114 @@ describe("Ordered checkpoints and the real offline Engine", () => {
         );
       }
       const observed = await graph(input);
-      expect(observed.nodes.at(-1)?.checkpoint).toBe("environment");
+      expect(observed.nodes.at(-1)?.checkpoint).toBe("global");
       expect(observed.problems[0].code).toBe(
         kind === "encoding"
-          ? "environment-configuration"
+          ? "global-configuration-valid"
           : kind === "missing-skill"
-            ? "environment-skill"
-            : "environment-runtime",
+            ? "global-skill-linked"
+            : "global-runtime-ready",
       );
     },
   );
 
   it.each([
-    ["primary-branch-missing", "primary-branch-missing"],
-    ["history", "event-history-rewritten"],
-    ["identity", "idea-identity-modified"],
-    ["git-status", "worktree-uncommitted"],
-    ["primary", "branch-upstream-mismatch"],
+    ["primary-branch-missing", "branch-primary-present"],
+    ["git-status", "repository-worktree-clean"],
+    ["primary", "branch-upstream-aligned"],
   ] as const)(
     "maps the validated %s repository fact to its declared rule",
     async (code, expected) => {
       const { target: input } = await target();
-      vi.spyOn(repositoryReads, "primary").mockRejectedValueOnce(
+      vi.spyOn(repositoryReads, "observeRepository").mockRejectedValueOnce(
         new SilvermoonError(code, "Repository invariant"),
       );
-      expect((await graph(input)).problems).toMatchObject([
-        { checkpoint: "repository", code: expected },
+      if (code === "git-status")
+        await expect(graph(input)).rejects.toThrow("Repository invariant");
+      else
+        expect((await graph(input)).problems).toMatchObject([
+          { checkpoint: "branch", code: expected },
+        ]);
+    },
+  );
+
+  it.each([
+    ["history", "idea-folder-event-history-append-only"],
+    ["identity", "idea-folder-identity-immutable"],
+  ] as const)(
+    "owns the selected Idea %s protection in observation, not repository readiness",
+    async (code, expected) => {
+      const { target: input } = await target();
+      vi.spyOn(repositoryReads, "verifyIdeaHistory").mockImplementationOnce(
+        () => {
+          throw new SilvermoonError(code, "Selected Idea protection");
+        },
+      );
+      const result = await graph(input);
+      expect(result.problems).toMatchObject([
+        { checkpoint: "idea-folder", code: expected },
       ]);
+      expect(result.nodes.at(-1)?.checkpoint).toBe("idea-folder");
+    },
+  );
+
+  it.each(["git-context", "concurrent-edit", "internal"] as const)(
+    "keeps selected Idea %s faults distinct from invalid protocol data",
+    async (code) => {
+      const { target: input } = await target();
+      const error = new SilvermoonError(code, "Idea observation failed");
+      vi.spyOn(repositoryReads, "readIdeaProject").mockRejectedValueOnce(error);
+      await expect(graph(input)).rejects.toBe(error);
+    },
+  );
+
+  it.each(["other", "selected"] as const)(
+    "validates only the selected Idea, with malformed %s metadata committed",
+    async (scope) => {
+      const { target: input, remote } = await target();
+      const broken = scope === "selected" ? id : "202611171610bbbb";
+      const file = join(
+        input.target.repoRoot!,
+        ".silvermoon",
+        "i",
+        broken,
+        "idea.json",
+      );
+      await mkdir(join(file, ".."), { recursive: true });
+      await writeFile(file, "{");
+      await git(input.target.repoRoot!, [
+        "remote",
+        "set-url",
+        "origin",
+        remote,
+      ]);
+      await sync(input.target.repoRoot!);
+      await git(input.target.repoRoot!, [
+        "remote",
+        "set-url",
+        "origin",
+        "https://github.com/example/project.git",
+      ]);
+      const result = await graph(input);
+      expect(result.problems).toMatchObject([
+        {
+          checkpoint: scope === "selected" ? "idea-folder" : "requirements",
+          code:
+            scope === "selected"
+              ? "idea-folder-data-valid"
+              : "requirements-consensus-confirmed",
+        },
+      ]);
+      if (scope === "other")
+        expect(
+          await graph({
+            ...input,
+            target: {
+              userHome: input.target.userHome,
+              repoRoot: input.target.repoRoot!,
+            },
+          }),
+        ).toMatchObject({ pass: true });
     },
   );
 
@@ -471,16 +631,16 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     const { target: input } = await target();
     const error = new Error("Transport failed");
     const observePrimary = vi
-      .spyOn(repositoryReads, "primary")
+      .spyOn(repositoryReads, "observeRepository")
       .mockRejectedValueOnce(error);
     await expect(graph(input)).rejects.toBe(error);
     observePrimary.mockRestore();
     const read = vi
-      .spyOn(repositoryReads, "readProject")
+      .spyOn(repositoryReads, "readRepository")
       .mockRejectedValueOnce(error);
     await expect(graph(input)).rejects.toBe(error);
     read.mockRestore();
-    vi.spyOn(repositoryReads, "snapshotHistory").mockRejectedValueOnce(error);
+    vi.spyOn(repositoryReads, "readProject").mockRejectedValueOnce(error);
     await expect(
       graph({ ...input, operation: { mode: "snapshot" } }),
     ).rejects.toBe(error);
@@ -507,12 +667,15 @@ describe("Ordered checkpoints and the real offline Engine", () => {
         "https://github.com/example/project.git",
       ]);
       const result = await graph(input);
-      expect(result.problems).toMatchObject([{ checkpoint: gate, code: gate }]);
-      expect(result.nodes.at(-1)?.checkpoint).toBe(gate);
+      const checkpoint = consensusCheckpointIds[gate];
+      expect(result.problems).toMatchObject([
+        { checkpoint, code: consensusRuleCodes[gate] },
+      ]);
+      expect(result.nodes.at(-1)?.checkpoint).toBe(checkpoint);
       expect(result.references).toEqual([
         {
-          checkpoint: gate,
-          documentation: `references/checkpoints/${gate}.md`,
+          checkpoint,
+          documentation: `references/checkpoints/${checkpoint}.md`,
         },
       ]);
     },
@@ -528,18 +691,18 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       "unknown: true",
     );
     await rm(join(current.home, ".agents", "skills", "silvermoon"));
-    const input: Input = {
+    const input: Request = {
       target: { userHome: current.home },
       runtime: { entry: current.entry, path: current.path },
       operation: { mode: "lifecycle" },
     };
     const result = await graph(input);
     expect(result.problems.map(({ code }) => code)).toEqual([
-      "environment-configuration",
-      "environment-skill",
+      "global-configuration-valid",
+      "global-skill-linked",
     ]);
     expect(result.nodes.map(({ checkpoint }) => checkpoint)).toEqual([
-      "environment",
+      "global",
     ]);
     expect(result.references).toHaveLength(1);
     expect(result).not.toHaveProperty("output");
@@ -548,13 +711,22 @@ describe("Ordered checkpoints and the real offline Engine", () => {
   it.each(["configuration", "detached", "upstream", "selector"] as const)(
     "attributes invalid %s to the checkpoint that can actually establish it",
     async (kind) => {
-      const { target: input } = await target();
+      const { target: input, remote } = await target();
       const root = input.target.repoRoot!;
-      if (kind === "configuration")
+      if (kind === "configuration") {
         await writeFile(
           join(root, ".silvermoon", "config.yaml"),
           "invalid: true",
         );
+        await git(root, ["remote", "set-url", "origin", remote]);
+        await sync(root);
+        await git(root, [
+          "remote",
+          "set-url",
+          "origin",
+          "https://github.com/example/project.git",
+        ]);
+      }
       if (kind === "detached") await git(root, ["switch", "--detach", "HEAD"]);
       if (kind === "upstream") await git(root, ["branch", "--unset-upstream"]);
       const request =
@@ -562,10 +734,10 @@ describe("Ordered checkpoints and the real offline Engine", () => {
           ? { ...input, target: { ...input.target, idea: "missing" } }
           : input;
       const expected = {
-        configuration: "project-configuration-invalid",
-        detached: "branch-detached",
-        upstream: "branch-upstream-mismatch",
-        selector: "idea-invalid",
+        configuration: "branch-silvermoon-config-valid",
+        detached: "repository-branch-attached",
+        upstream: "branch-upstream-aligned",
+        selector: "idea-folder-data-valid",
       }[kind];
       expect((await graph(request)).problems).toMatchObject([
         { code: expected },
@@ -573,7 +745,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     },
   );
 
-  it("reports both an unsynchronized commit and dirty content in one repository document", async () => {
+  it("requires a clean repository before checking branch synchronization", async () => {
     const { target: input } = await target();
     const root = input.target.repoRoot!;
     await writeFile(join(root, "source.txt"), "A new local commit.\n");
@@ -582,11 +754,16 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     await writeFile(join(root, "draft.txt"), "Uncommitted content.\n");
     const result = await graph(input);
     expect(result.problems.map(({ code }) => code)).toEqual([
-      "worktree-uncommitted",
-      "primary-sync-required",
+      "repository-worktree-clean",
     ]);
     expect(result.references).toHaveLength(1);
     expect(result.nodes.at(-1)?.checkpoint).toBe("repository");
+    await rm(join(root, "draft.txt"));
+    const branch = await graph(input);
+    expect(branch.problems).toMatchObject([
+      { checkpoint: "branch", code: "branch-primary-synchronized" },
+    ]);
+    expect(branch.references).toHaveLength(1);
   });
 
   it("stops an explicitly abandoned Idea before all consensus checkpoints", async () => {
@@ -605,9 +782,9 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     ]);
     const result = await graph(input);
     expect(result.problems).toMatchObject([
-      { checkpoint: "observation", code: "abandoned" },
+      { checkpoint: "idea-folder", code: "idea-folder-active" },
     ]);
-    expect(result.nodes.at(-1)?.checkpoint).toBe("observation");
+    expect(result.nodes.at(-1)?.checkpoint).toBe("idea-folder");
   });
 
   it("requires deployment drafts to be committed before reusing the tested-ancestor facts", async () => {
@@ -644,7 +821,9 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       "Deployment draft evidence after implementation commit.\n",
     );
     expect(await graph(input)).toMatchObject({
-      problems: [{ checkpoint: "repository", code: "worktree-uncommitted" }],
+      problems: [
+        { checkpoint: "repository", code: "repository-worktree-clean" },
+      ],
     });
     await git(input.target.repoRoot!, ["remote", "set-url", "origin", remote]);
     await sync(input.target.repoRoot!);
@@ -657,7 +836,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     const observed = await graph(input);
     expect(observed.nodes.at(-1)?.checkpoint).toBe("deployment");
     expect(observed.problems.map((problem) => problem.code)).toEqual([
-      "deployment",
+      "deployment-evidence-valid",
     ]);
     const brief = JSON.parse(observed.problems[0].brief) as {
       implementation: string;
@@ -737,7 +916,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       runtime: { ...input.runtime, path: "" },
     });
     expect(failedDevice.problems.map((problem) => problem.code)).toEqual([
-      "environment-runtime",
+      "global-runtime-ready",
     ]);
     expect(failedDevice.nodes).toHaveLength(1);
     const missing = await graph({
@@ -745,16 +924,18 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       target: { ...input.target, repoRoot: await scratch() },
     });
     expect(missing.problems.map((problem) => problem.code)).toEqual([
-      "repository-root-invalid",
+      "repository-root-valid",
     ]);
     const current = await graph(input);
     expect(current.problems.map((problem) => problem.code)).toEqual([
-      "requirements",
+      "requirements-consensus-confirmed",
     ]);
     expect(current.nodes.map((node) => node.checkpoint)).toEqual([
-      "environment",
+      "global",
       "repository",
-      "observation",
+      "branch",
+      "silvermoon-folder",
+      "idea-folder",
       "requirements",
     ]);
     expect(JSON.stringify(current.nodes)).not.toContain("runtime");
@@ -785,24 +966,24 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       }),
     ).toMatchObject({
       pass: false,
-      problems: [{ code: "repository-root-invalid" }],
+      problems: [{ code: "repository-root-valid" }],
     });
-    expect(
-      await graph({
+    await expect(
+      graph({
         ...input,
         target: { userHome: input.target.userHome },
         operation: { mode: "snapshot" },
       }),
-    ).toMatchObject({ pass: false, problems: [{ code: "snapshot" }] });
+    ).rejects.toThrow(/target/i);
     const noIdea = { ...input, target: { ...input.target } };
     delete noIdea.target.idea;
     expect(await graph(noIdea)).toMatchObject({ pass: true });
     await writeFile(join(input.target.repoRoot!, "unrelated.txt"), "preserve");
     expect(await graph(noIdea)).toMatchObject({
-      problems: [{ code: "worktree-uncommitted" }],
+      problems: [{ code: "repository-worktree-clean" }],
     });
     expect(await graph(input)).toMatchObject({
-      problems: [{ code: "worktree-uncommitted" }],
+      problems: [{ code: "repository-worktree-clean" }],
     });
     const aborted = new AbortController();
     aborted.abort(new Error("Cancelled graph"));
@@ -818,8 +999,118 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       }),
     ).rejects.toThrow(/Cancelled/);
   });
+  it("executes the delivered Idea CAR through every consensus and both synchronized verification phases", async () => {
+    const { target: input, remote } = await target({ idea: false });
+    const root = input.target.repoRoot!;
+    const artifact = await bundledArtifact();
+    let source = files();
+    for (const path of ["idea.json", "events.jsonl"])
+      source.set(
+        path,
+        Buffer.from(
+          new TextDecoder()
+            .decode(source.get(path))
+            .replaceAll(cid, artifact.cid),
+        ),
+      );
+    const publish = async () => {
+      await materialize(root, source);
+      await git(root, ["remote", "set-url", "origin", remote]);
+      await sync(root);
+      await git(root, [
+        "remote",
+        "set-url",
+        "origin",
+        "https://github.com/example/project.git",
+      ]);
+    };
+    const gap = async (checkpoint: string, code: string) => {
+      const report = await observe(input, {
+        cid: artifact.cid,
+        artifacts: [artifact],
+      });
+      expect(report.checkCid).toBe(artifact.cid);
+      expect(report.result).toMatchObject({
+        pass: false,
+        problems: [{ checkpoint, code }],
+      });
+      expect(report.result.references).toHaveLength(1);
+      const reference = report.result.references[0]!;
+      expect(reference.checkpoint).toBe(checkpoint);
+      const document = report.documents.find(
+        ({ cid }) => cid === reference.documentation,
+      );
+      expect(document?.text).toContain("## Agent instructions");
+      expect(document?.text).toContain(`\`${code}\``);
+      return report;
+    };
+    await publish();
+    for (const gate of gates) {
+      await gap(consensusCheckpointIds[gate], consensusRuleCodes[gate]);
+      source = sign(source, gate);
+      await publish();
+    }
+    await gap("implementation", "implementation-evidence-valid");
+    const tested = await git(root, ["rev-parse", "HEAD"]);
+    let current = idea(source, id);
+    source = add(
+      source,
+      event({
+        type: "verify",
+        batch: { ...batch(current), subject: tested },
+      }),
+    );
+    await materialize(root, source);
+    await gap("repository", "repository-worktree-clean");
+    await git(root, ["add", "--all"]);
+    await git(root, ["commit", "-m", "Record implementation verification"]);
+    await gap("branch", "branch-primary-synchronized");
+    await publish();
+    const pendingDeployment = await gap(
+      "deployment",
+      "deployment-evidence-valid",
+    );
+    current = idea(source, id);
+    const implementation = reduce(current, {
+      primary: current,
+      head: tested,
+    }).implementation;
+    if (!implementation)
+      throw new Error("Expected valid implementation evidence.");
+    expect(pendingDeployment.result.problems?.[0]?.brief).toContain(
+      implementation,
+    );
+    source = add(
+      source,
+      event({
+        type: "verify",
+        batch: {
+          ...batch(current, "deployment", implementation),
+          subject: await git(root, ["rev-parse", "HEAD"]),
+        },
+      }),
+    );
+    await materialize(root, source);
+    await gap("repository", "repository-worktree-clean");
+    await git(root, ["add", "--all"]);
+    await git(root, ["commit", "-m", "Record deployment verification"]);
+    await gap("branch", "branch-primary-synchronized");
+    await publish();
+    const completed = await observe(input, {
+      cid: artifact.cid,
+      artifacts: [artifact],
+    });
+    expect(completed.checkCid).toBe(artifact.cid);
+    expect(completed.result.pass).toBe(true);
+    expect(completed.result.references).toEqual([]);
+    expect(completed.result).not.toHaveProperty("problems");
+    expect(completed.documents).toHaveLength(1);
+    expect(completed.documents[0]?.text).toContain(
+      "检查指定 Idea 是否已经完成",
+    );
+  }, 60_000);
   it("reobserves the same CID + stable Target in separate real Engines, reads docs offline, and respects pinned CID/trust", async () => {
-    const { target: input, remote } = await target();
+    const { target: input, remote } = await target({ idea: false });
     const artifact = await bundledArtifact();
     const currentFiles = files();
     for (const [path, bytes] of currentFiles)
@@ -842,7 +1133,9 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     const first = await observe(input);
     expect(first.checkCid).toBe(artifact.cid);
     expect(first.result.pass).toBe(false);
-    expect(first.result.problems?.[0]?.code).toBe("requirements");
+    expect(first.result.problems?.[0]?.code).toBe(
+      "requirements-consensus-confirmed",
+    );
     expect(first.result.problems?.[0]).toMatchObject({
       checkpoint: "requirements",
     });
@@ -865,7 +1158,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       artifacts: [artifact],
     });
     expect(second.target).toEqual(first.target);
-    expect(second.result.problems?.[0]?.code).toBe("worktree-uncommitted");
+    expect(second.result.problems?.[0]?.code).toBe("repository-worktree-clean");
     expect(second.result.problems?.[0]?.brief).not.toBe(
       first.result.problems?.[0]?.brief,
     );
@@ -890,7 +1183,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
   }, 20_000);
   it("distinguishes Engine faults, cancellation and timeout from business gaps and awaits release", async () => {
     const current = await device();
-    const input: Input = {
+    const input: Request = {
       target: { userHome: current.home },
       operation: { mode: "lifecycle" },
       runtime: { entry: current.entry, path: current.path },
@@ -910,9 +1203,94 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     const invalid = {
       ...input,
       operation: { mode: "unsupported" },
-    } as unknown as Input;
-    await expect(observe(invalid)).rejects.toThrow(/rejected|did not complete/);
+    } as unknown as Request;
+    await expect(observe(invalid)).rejects.toThrow(/operation/);
   }, 20_000);
+  it("provides protocol-valid signoff and verification JSON instructions for every post-folder stage", async () => {
+    const artifact = await bundledArtifact();
+    const car = await readTaskBundleCar(
+      new Blob([Uint8Array.from(await readFile(artifact.path))]).stream(),
+    );
+    const store = IpfsStore.fromClient({ block: car.block });
+    const tested = "a".repeat(40);
+    let source = files();
+    try {
+      for (const [index, checkpoint] of checkpointIds.slice(5).entries()) {
+        const document = await store.resolveContent(
+          (await import("multiformats/cid")).CID.parse(artifact.cid),
+          `resources/references/checkpoints/${checkpoint}.md`,
+        );
+        const markdown = await readDocument(store, document.toString());
+        expect(markdown).toContain("## Description");
+        expect(markdown).toContain("## Agent instructions");
+        const current = idea(source, id);
+        const state = reduce(current, { primary: current, head: tested });
+        const phase =
+          checkpoint === "deployment" ? "deployment" : "implementation";
+        const replacements: Record<string, string> = {
+          "new-32-hex": String(index + 1).padStart(32, "0"),
+          "current-UTC-ISO-time": new Date().toISOString(),
+          "unique-batch-id": `${checkpoint}-verification`,
+          "exact-tested-commit-SHA": tested,
+          "required-implementation-environment": "local",
+          "required-deployment-environment": "staging",
+          "actual-case-id": phase === "implementation" ? "I-01" : "D-01",
+          "actual-file": "run.txt",
+          "sha256-of-raw-evidence-bytes": digest(
+            current.files.get(`evidence/${phase}/run.txt`)!,
+          ),
+          ...Object.fromEntries(
+            gates.map((gate) => [
+              `state.revisions.${gate}`,
+              state.revisions[gate],
+            ]),
+          ),
+          ...(state.implementation
+            ? { "state.implementation": state.implementation }
+            : {}),
+        };
+        let appended = 0;
+        for (const match of markdown.matchAll(/```json\n([\s\S]*?)\n```/g)) {
+          const json = match[1]!.replace(
+            /<([^<>]+)>/g,
+            (_match, key: string) => {
+              const value = replacements[key];
+              if (value === undefined)
+                throw new Error(`Unknown instruction placeholder: ${key}`);
+              return value;
+            },
+          );
+          const payload: unknown = JSON.parse(json);
+          if (typeof payload !== "object" || payload === null)
+            throw new Error("Expected an instruction JSON object.");
+          if (!("type" in payload)) {
+            const indexed = new Map(source);
+            indexed.set("tests/cases.json", Buffer.from(canonical(payload)));
+            expect(() => idea(indexed, id)).not.toThrow();
+            continue;
+          }
+          const candidate = new Map(source);
+          candidate.set(
+            "events.jsonl",
+            Buffer.from(current.eventSource + canonical(payload) + "\n"),
+          );
+          const next = idea(candidate, id);
+          validateAppend(current, next.events.at(-1)!, state, true);
+          source = candidate;
+          appended++;
+        }
+        expect(appended, checkpoint).toBe(1);
+      }
+      const current = idea(source, id);
+      const completed = reduce(current, { primary: current, head: tested });
+      expect(completed.level).toBe("completed");
+      expect(completed.implementation).toMatch(/^sha256:/);
+      expect(completed.deployment).toMatch(/^sha256:/);
+    } finally {
+      await store.close();
+      await car.close();
+    }
+  });
   it("reads exact documentation and reports bad CID, missing blocks, wrong kind, UTF-8, budget and cancellation explicitly", async () => {
     const artifact = await bundledArtifact();
     const car = await readTaskBundleCar(
@@ -975,7 +1353,11 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       "origin",
       "https://github.com/example/project.git",
     ]);
-    expect(await graph(input)).toMatchObject({ pass: true });
+    const passed = await graph(input);
+    expect(passed).toMatchObject({ pass: true });
+    expect(passed.nodes.map(({ checkpoint }) => checkpoint)).toEqual(
+      checkpointIds,
+    );
     const originalObservation = repositoryReads.observedIdeaState;
     const concurrent = vi
       .spyOn(repositoryReads, "observedIdeaState")
@@ -989,11 +1371,39 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       });
     expect(await graph(input)).toMatchObject({
       problems: [
-        { checkpoint: "completion", code: "completion-unsynchronized" },
+        { checkpoint: "implementation", code: "implementation-synchronized" },
       ],
     });
     concurrent.mockRestore();
     await rm(join(input.target.repoRoot!, "concurrent.txt"));
+    for (const change of ["worktree", "head"] as const) {
+      const duringDeployment = await graph(input, cid, async (node) => {
+        if (node.checkpoint !== "implementation" || !node.pass) return;
+        await writeFile(
+          join(input.target.repoRoot!, "concurrent.txt"),
+          "Changed after implementation acceptance.\n",
+        );
+        if (change === "head") {
+          await git(input.target.repoRoot!, ["add", "concurrent.txt"]);
+          await git(input.target.repoRoot!, [
+            "commit",
+            "-m",
+            "Concurrent commit",
+          ]);
+        }
+      });
+      expect(duringDeployment).toMatchObject({
+        problems: [
+          { checkpoint: "deployment", code: "deployment-synchronized" },
+        ],
+      });
+      expect(duringDeployment.nodes.at(-2)).toMatchObject({
+        checkpoint: "implementation",
+        pass: true,
+      });
+      if (change === "worktree")
+        await rm(join(input.target.repoRoot!, "concurrent.txt"));
+    }
     await writeFile(
       join(
         input.target.repoRoot!,
@@ -1006,7 +1416,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       "Changed signed supplemental plan",
     );
     expect(await graph(input)).toMatchObject({
-      problems: [{ code: "worktree-uncommitted" }],
+      problems: [{ code: "repository-worktree-clean" }],
     });
     await git(input.target.repoRoot!, ["remote", "set-url", "origin", remote]);
     await sync(input.target.repoRoot!);
@@ -1018,7 +1428,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     ]);
     const changed = await graph(input);
     expect(changed.problems.map((problem) => problem.code)).toEqual([
-      "technical",
+      "technical-consensus-confirmed",
     ]);
     const selected = selectIdea(await readProject(input.target.repoRoot!), id);
     expect(digest(canonical(selected.revisions))).not.toBe(
@@ -1028,7 +1438,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       cid,
       { runtime: input.runtime },
       input.target,
-    ).find((checkpoint) => checkpoint.id === "observation")!;
+    ).find((checkpoint) => checkpoint.id === "idea-folder")!;
     await expect(
       observation.invoke(input.target, {
         signal: new AbortController().signal,
@@ -1068,7 +1478,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     }
     expect(encoded.cid).not.toBe(original.cid);
     const current = await device();
-    const input: Input = {
+    const input: Request = {
       target: { userHome: current.home },
       operation: { mode: "lifecycle" },
       runtime: { entry: current.entry, path: current.path },

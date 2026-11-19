@@ -85,7 +85,7 @@ const eventsSchema = Type.Union([
       object: gateSchema,
       revision: digestSchema,
       upstream: Type.Partial(vectorSchema),
-      decision: Type.Literal("confirmed"),
+      decision: Type.Optional(Type.Literal("confirmed")),
     },
     closed,
   ),
@@ -751,7 +751,12 @@ export function validateAppend(
     "event-conflict",
     "Event request ID already exists.",
   );
-  if (event.type === "signOff")
+  if (event.type === "signOff") {
+    invariant(
+      !Object.hasOwn(event, "decision"),
+      "events",
+      "New signOff events must omit the legacy decision field.",
+    );
     invariant(
       confirmed &&
         event.object === state.level &&
@@ -759,6 +764,7 @@ export function validateAppend(
       "decision",
       "Explicit human decision confirmation and the exact current gate/vector are required; a flag is not authentication.",
     );
+  }
   if (event.type === "verify") {
     invariant(
       ["implementation", "deployment", "completed"].includes(state.level) &&

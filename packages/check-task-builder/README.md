@@ -47,6 +47,43 @@ binary: []
 outDirectory: dist/text-check
 ```
 
+可选 `references: references/idea` 选择相对配置所在目录的安全子目录；
+默认值为 `references`。该字段只由 Check Builder 使用，不传给上游 Task Builder。
+
+可选 `spec: ../../docs/my-task.yaml` 启用 Task
+Spec 驱动文档；不提供时保持手写文档行为。
+Spec 为 `$schema: urn:ipfsaw:check-bundle:1`、`specVersion: "1.0"`，
+包含 `name`、必需的非空根 `description`、全局 `parameter: {schema}` 和有序
+`checkpoints: [{id, title?, description, instructions, rules, output}]`。
+根 `description` 写整个 Task 的自然语言目标与范围；Checkpoint 的
+`description` 简述本步检查什么、保证什么；必填、非空的 `instructions`
+以 Markdown 独立编写给 Agent 的材料准备、review、事件记录和失败迭代指示，
+可含原样保留的 JSON 代码块，不会自动执行；`rules: [{code, description}]`
+是唯一验收列表；
+`output: {description, fields?: [{name, description}]}`
+只记录成功 Context 值的用途和边界，
+不是输出 JSON
+Schema 或运行时验证。fields 仅用于对象输出，若提供必须非空且名称唯一。
+
+Spec 路径相对构建配置目录，以所提供文件树根为边界归一化：
+允许树内的 `../../docs/...`，拒绝越界、绝对路径、URL、反斜线和 glob。
+`spec` 不传给上游 Builder。输入最多 1 MiB，严格 UTF-8、安全 YAML，
+拒绝 alias/循环引用及自定义 tag；不执行 Spec 内容、展开 include 或请求网络。
+Checkpoint 文档复用 SDK 渲染器验证，ID 与顺序必须匹配编译后契约的 checkpoint
+ID，
+所有 Rule code 的并集必须恰好匹配契约的全局 RuleCode，禁止每条 Rule 的独立文档。
+
+文档只存在于只读虚拟文件树覆盖层，不改写源文件：生成
+`resources/references/check.md`（Task 目标/范围指引、全局参数 schema 各一次）和
+`resources/references/checkpoints/<id>.md`（独立的概述、Agent 指示、规则与成功输出说明）。
+源树缺失文档或目录时可生成；已有非空、有效 UTF-8 文档附加在
+`Supplementary guidance` 下，适合维护诊断步骤而非重复验收条件。
+读取错误、大小写不符、空白/无效编码文档、未声明的 Checkpoint Markdown
+及路径/文件容量限制仍会导致构建失败。自定义 `references/idea`、
+`references/commit` 子树同样支持此模式；附件保持原映射。生成器不复制编译器。
+Task 根、parameter 和 Checkpoint 均不支持 `preconditions`；
+旧字段作为未知字段拒绝，不提供兼容别名。
+
 生成入口使用 `defineCheckpoint` 和 `runCheck(contract,{checkpoints})`，
 按列表顺序执行，首个失败 Checkpoint 停止后续步骤。
 输出 `pass`、`documentation`、`references` 和失败时的 `problems`；
@@ -98,7 +135,10 @@ API 调用须迁移，随后重建子包和父包并更新 CID。
 这些约定路径严格区分大小写，包括在 Windows 上构建时。未声明的 Checkpoint
 Markdown、缺失/空白/无效编码文档均构建失败；不要求 frontmatter，不抓取全部 Markdown 链接。收录整个有效
 `references/`
-子树，保持图片和相对链接路径，无需逐一列出参考资源。二进制参考附件沿用上游规则，在
+子树（或 `references` 指定的子树），统一映射到 `resources/references/`，
+保持图片和相对链接路径，无需逐一列出参考资源。仅选择的子树参与文档校验和收录；
+自定义目录仍须提供相同的 `check.md` 和 `checkpoints/` 结构。
+二进制参考附件沿用上游规则，在
 `binary` 中选择输出路径，例如
 `resources/references/**/*.png`。不可交付的路径明确失败，不静默省略。上游资源选择排除点开头的路径及
 `node_modules`；参考目录出现这些路径时明确拒绝，而不是漏掉资源后声称完整构建。

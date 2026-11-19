@@ -11,13 +11,20 @@ import {
   MemoryStore,
   newId,
 } from "@silvermoon-work/task-engine";
-import type { Input, Operation, Runtime, Target } from "./contract.js";
+import {
+  Operation,
+  type Input,
+  type Runtime,
+  type Target,
+} from "./contract.js";
+import type { CommitTarget, Input as CommitInput } from "./commit-contract.js";
 import { currentDevice } from "./device.js";
 import { invariant, text, SilvermoonError } from "./domain.js";
 
 export interface Artifact {
   readonly cid: string;
   readonly path: string;
+  readonly kind?: "idea" | "commit";
 }
 export interface Result {
   readonly pass: boolean;
@@ -35,7 +42,7 @@ export interface Result {
 export interface Report {
   readonly schema: "silvermoon/v2";
   readonly checkCid: string;
-  readonly target: Target;
+  readonly target: Target | CommitTarget;
   readonly result: Result;
   readonly documents: readonly {
     readonly cid: string;
@@ -62,9 +69,12 @@ const resultSchema = Type.Object({
     ),
   ),
 });
-export async function bundledArtifact(): Promise<Artifact> {
+export async function bundledArtifact(
+  kind: "idea" | "commit" = "idea",
+): Promise<Artifact> {
+  const name = kind === "commit" ? "commit-check" : "check";
   const binding: unknown = JSON.parse(
-    await readFile(new URL("../dist/check.json", import.meta.url), "utf8"),
+    await readFile(new URL(`../dist/${name}.json`, import.meta.url), "utf8"),
   );
   invariant(
     binding &&
@@ -79,7 +89,8 @@ export async function bundledArtifact(): Promise<Artifact> {
   CID.parse(binding.cid);
   return {
     cid: binding.cid,
-    path: fileURLToPath(new URL("../dist/check.car", import.meta.url)),
+    path: fileURLToPath(new URL(`../dist/${name}.car`, import.meta.url)),
+    kind,
   };
 }
 export async function readDocument(
@@ -131,25 +142,56 @@ export async function observe(
     readonly runtime?: Runtime;
   } = {},
 ): Promise<Report> {
+  const operation = options.operation ?? { mode: "lifecycle" };
+  invariant(
+    Value.Check(Operation, operation),
+    "input",
+    "Unsupported Check operation.",
+  );
+  const kind = operation.mode === "snapshot" ? "commit" : "idea";
+  if (kind === "commit")
+    invariant(
+      target.repoRoot,
+      "input",
+      "Commit validation requires an explicit Git repository root.",
+    );
   const device = currentDevice();
-  const input: Input = {
-    target,
-    operation: options.operation ?? { mode: "lifecycle" },
-    runtime: options.runtime ?? {
-      entry: device.entry,
-      path: device.path,
-      ...(process.env.SSH_AUTH_SOCK
-        ? { sshAuthSock: process.env.SSH_AUTH_SOCK }
-        : {}),
-    },
+  const runtime = options.runtime ?? {
+    entry: device.entry,
+    path: device.path,
+    ...(process.env.SSH_AUTH_SOCK
+      ? { sshAuthSock: process.env.SSH_AUTH_SOCK }
+      : {}),
   };
-  const artifacts = options.artifacts ?? [await bundledArtifact()];
+  const input: Input | CommitInput =
+    kind === "commit"
+      ? {
+          target: {
+            userHome: target.userHome,
+            repoRoot: target.repoRoot!,
+            snapshot: operation.snapshot ?? "HEAD",
+          },
+          runtime,
+        }
+      : {
+          target,
+          runtime,
+          ...(operation.refresh === undefined
+            ? {}
+            : { refresh: operation.refresh }),
+        };
+  const artifacts = options.artifacts ?? [await bundledArtifact(kind)];
   const selectedCid = options.cid ?? artifacts[0]?.cid;
   const artifact = artifacts.find((item) => item.cid === selectedCid);
   invariant(
     artifact,
     "untrusted-check",
     "The pinned Check CID is unavailable or not explicitly trusted by this host; never fall back to the current default.",
+  );
+  invariant(
+    artifact.kind === undefined || artifact.kind === kind,
+    "untrusted-check",
+    "The selected Check artifact belongs to a different task.",
   );
   const car = await readTaskBundleCar(
     new Blob([Uint8Array.from(await readFile(artifact.path))]).stream(),
@@ -264,7 +306,7 @@ export async function observe(
     return {
       schema: "silvermoon/v2",
       checkCid: artifact.cid,
-      target,
+      target: input.target,
       result,
       documents,
     };

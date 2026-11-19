@@ -1,11 +1,14 @@
 import type { Static, TObject } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { portableIdentifier } from "./contracts.js";
+import {
+  validateCheckpointRules,
+  validateOutputDocumentation,
+  type OutputDocumentation,
+  type Rule,
+} from "./documentation.js";
 
-export interface Rule<Code extends string = string> {
-  readonly code: Code;
-  readonly description: string;
-}
+export type { Rule } from "./documentation.js";
 export interface RuleFailure<Code extends string = string> {
   readonly code: Code;
   readonly brief: string;
@@ -32,7 +35,9 @@ export interface CheckpointDefinition<
   readonly id: string;
   readonly target: Schema;
   readonly description: string;
+  readonly instructions?: string;
   readonly rules: readonly [Rule<Code>, ...Rule<Code>[]];
+  readonly output?: OutputDocumentation;
   readonly accepts: (target: unknown) => boolean;
   readonly invoke: (
     target: unknown,
@@ -96,7 +101,9 @@ export function defineCheckpoint<
   readonly id: string;
   readonly target: Schema;
   readonly description: string;
+  readonly instructions?: string;
   readonly rules: Rules;
+  readonly output?: OutputDocumentation;
   readonly check: (
     target: Static<Schema>,
     context: CheckpointContext,
@@ -105,15 +112,27 @@ export function defineCheckpoint<
   if (!portableIdentifier(definition.id) || !nonempty(definition.description))
     throw new Error("Invalid checkpoint ID or description.");
   if (
-    !Array.isArray(definition.rules) ||
-    !definition.rules.length ||
-    definition.rules.some(
-      (rule) => !portableIdentifier(rule.code) || !nonempty(rule.description),
-    ) ||
-    new Set(definition.rules.map((rule) => rule.code)).size !==
-      definition.rules.length
+    definition.instructions !== undefined &&
+    !nonempty(definition.instructions)
   )
-    throw new Error("Invalid or duplicate checkpoint rules.");
+    throw new Error("Invalid checkpoint instructions.");
+  validateCheckpointRules(definition.rules);
+  if (definition.output !== undefined)
+    validateOutputDocumentation(definition.output);
+  const output = definition.output
+    ? Object.freeze({
+        description: definition.output.description,
+        ...(definition.output.fields
+          ? {
+              fields: Object.freeze(
+                definition.output.fields.map((field) =>
+                  Object.freeze({ ...field }),
+                ),
+              ),
+            }
+          : {}),
+      })
+    : undefined;
   const target = Value.Clone(definition.target);
   const rules = Object.freeze(
     definition.rules.map((rule) => Object.freeze({ ...rule })),
@@ -122,8 +141,12 @@ export function defineCheckpoint<
   const result = Object.freeze({
     id: definition.id,
     description: definition.description,
+    ...(definition.instructions !== undefined
+      ? { instructions: definition.instructions }
+      : {}),
     target,
     rules,
+    ...(output ? { output } : {}),
     accepts: (input: unknown) => Value.Check(target, input),
     invoke: async (input: unknown, context: CheckpointContext) => {
       context.signal.throwIfAborted();

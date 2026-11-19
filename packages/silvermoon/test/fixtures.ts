@@ -96,7 +96,6 @@ export function sign(source: Files, gate: Gate): Map<string, Uint8Array> {
       object: gate,
       revision: current.revisions[gate],
       upstream: vectorAt(current.revisions, gate),
-      decision: "confirmed",
     }),
   );
 }

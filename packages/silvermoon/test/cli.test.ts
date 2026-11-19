@@ -173,7 +173,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     expect((await cli(["whats-next", id, "--json"], outside)).exit).toBe(1);
     expect((await cli(["check", "--json"], outside)).exit).toBe(1);
     absentRoot.mockRestore();
-    const { root, remote } = await repository();
+    const { root, remote } = await repository({ idea: false });
     const artifact = await bundledArtifact();
     const candidate = files();
     for (const [path, bytes] of candidate)
@@ -263,14 +263,17 @@ describe("CLI retained commands, presentation and explicit errors", () => {
         root,
       );
       expect(current.exit).toBe(0);
-      expect(current.stdout).toContain("## environment-runtime");
+      expect(current.stdout).toContain("## global-runtime-ready");
       expect(current.stdout).toContain("Documentation");
     }
     const structured = await cli(["whats-next", "--json"], root);
     expect(structured.exit).toBe(0);
     expect(structured.json()).toMatchObject({
       schema: "silvermoon/v2",
-      result: { pass: false, problems: [{ code: "environment-runtime" }] },
+      result: {
+        pass: false,
+        problems: [{ code: "global-runtime-ready" }],
+      },
     });
     const snapshot = await cli(["check", "--worktree", "--json"], root);
     expect(snapshot.exit).toBe(0);
@@ -462,7 +465,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
   }, 20_000);
   it("runs the actual independent candidate bin without a global link and preserves installed legacy paths", async () => {
     const home = await scratch();
-    const { root } = await repository();
+    const { root } = await repository({ idea: false });
     const artifact = await bundledArtifact();
     const candidate = files();
     for (const [path, bytes] of candidate)
@@ -514,7 +517,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     );
     expect(JSON.parse(report.stdout) as unknown).toMatchObject({
       checkCid: artifact.cid,
-      result: { problems: [{ code: "environment-runtime" }] },
+      result: { problems: [{ code: "global-runtime-ready" }] },
     });
     expect(
       await readFile(join(root, ".silvermoon", "i", id, "idea.json"), "utf8"),

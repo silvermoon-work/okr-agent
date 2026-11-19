@@ -19,9 +19,13 @@ export const workspace = defineCheckpoint({
   id: "workspace",
   target: Input,
   description: "核验 monorepo 的 pnpm workspace 配置。",
+  output: {
+    description:
+      "成功不新增数据，pass output 为 undefined；只确认适用的 workspace 声明有效，不代表成员已发现或构建成功。",
+  },
   rules: [
     {
-      code: "workspace-configuration-invalid",
+      code: "workspace-configuration-valid",
       description:
         "monorepo 必须提供合法的 pnpm-workspace.yaml，显式声明非空 packages 字符串数组。",
     },
@@ -29,20 +33,18 @@ export const workspace = defineCheckpoint({
   check: async (
     target,
     context,
-  ): Promise<
-    CheckpointResult<undefined, "workspace-configuration-invalid">
-  > => {
+  ): Promise<CheckpointResult<undefined, "workspace-configuration-valid">> => {
     const { signal } = context;
     if (context.outputOf(project).kind === "single-repo")
       return { pass: true, output: undefined };
     const path = join(target.projectDirectory, "pnpm-workspace.yaml");
     const invalid = (
       reason: string,
-    ): CheckpointResult<undefined, "workspace-configuration-invalid"> => ({
+    ): CheckpointResult<undefined, "workspace-configuration-valid"> => ({
       pass: false,
       problems: [
         {
-          code: "workspace-configuration-invalid",
+          code: "workspace-configuration-valid",
           brief: `${path}: ${reason}`,
         },
       ],

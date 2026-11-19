@@ -4,7 +4,9 @@
     ".node-version",
     "tsconfig.json",
     "vitest.config.ts",
-    "scripts/lib/tools.mjs"
+    "scripts/lib/tools.mjs",
+    "docs/silvermoon-single-checker.yaml",
+    "docs/silvermoon-commit-check.yaml"
   ],
   "tasks": {
     "build": {

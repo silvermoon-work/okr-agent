@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { gitEnvironment } from "./git-context.js";
 import {
   SilvermoonError,
+  canonical,
   digest,
   idea,
   ideaFacts,
@@ -16,6 +17,7 @@ import {
   repositoryIdentity,
   reduce,
   safeRelative,
+  text,
   validIdeaId,
   type Files,
   type Idea,
@@ -31,6 +33,7 @@ export interface Project {
   readonly config: ProjectConfig;
   readonly ideas: ReadonlyMap<string, Idea>;
 }
+export type Repository = Pick<Project, "root" | "config">;
 export async function git(
   root: string,
   args: readonly string[],
@@ -136,7 +139,11 @@ export async function readRegular(
     await handle.close();
   }
 }
-async function worktree(root: string, signal?: AbortSignal): Promise<Files> {
+async function worktree(
+  root: string,
+  signal?: AbortSignal,
+  id?: string,
+): Promise<Files> {
   const files = new Map<string, Uint8Array>();
   const config = join(root, ".silvermoon", "config.yaml");
   await protectedPath(root, config);
@@ -168,13 +175,20 @@ async function worktree(root: string, signal?: AbortSignal): Promise<Files> {
       }
     }
   };
-  await walk(base, ".silvermoon/i");
+  if (id) {
+    const selected = join(base, id);
+    if (!(await absent(selected))) {
+      await regular(selected, true);
+      await walk(selected, `.silvermoon/i/${id}`);
+    }
+  } else await walk(base, ".silvermoon/i");
   return files;
 }
 async function gitSnapshot(
   root: string,
   snapshot: string,
   signal?: AbortSignal,
+  paths: readonly string[] = [".silvermoon/config.yaml", ".silvermoon/i"],
 ): Promise<Files> {
   invariant(
     snapshot === "staged" ||
@@ -185,23 +199,8 @@ async function gitSnapshot(
   );
   const args =
     snapshot === "staged"
-      ? [
-          "ls-files",
-          "--stage",
-          "-z",
-          "--",
-          ".silvermoon/config.yaml",
-          ".silvermoon/i",
-        ]
-      : [
-          "ls-tree",
-          "-r",
-          "-z",
-          snapshot,
-          "--",
-          ".silvermoon/config.yaml",
-          ".silvermoon/i",
-        ];
+      ? ["ls-files", "--stage", "-z", "--", ...paths]
+      : ["ls-tree", "-r", "-z", snapshot, "--", ...paths];
   const entries = (await git(root, args, signal)).split("\0").filter(Boolean);
   invariant(entries.length <= 2048, "capacity", "Snapshot exceeds 2048 files.");
   const files = new Map<string, Uint8Array>();
@@ -234,11 +233,10 @@ async function gitSnapshot(
   }
   return files;
 }
-export async function readProject(
+export async function verifyRepositoryRoot(
   root: string,
-  snapshot: Snapshot = "worktree",
   signal?: AbortSignal,
-): Promise<Project> {
+): Promise<void> {
   invariant(
     isAbsolute(root) && resolve(root) === root,
     "root",
@@ -256,10 +254,30 @@ export async function readProject(
     "root",
     "Select the repository root, not a subdirectory.",
   );
-  const files =
-    snapshot === "worktree"
-      ? await worktree(root, signal)
-      : await gitSnapshot(root, snapshot, signal);
+}
+export async function readRepository(
+  root: string,
+  snapshot: Snapshot = "worktree",
+  signal?: AbortSignal,
+): Promise<Repository> {
+  await verifyRepositoryRoot(root, signal);
+  let source: Uint8Array;
+  if (snapshot === "worktree") {
+    const path = join(root, ".silvermoon", "config.yaml");
+    await protectedPath(root, path);
+    source = await readRegular(path, signal);
+  } else {
+    const files = await gitSnapshot(root, snapshot, signal, [
+      ".silvermoon/config.yaml",
+    ]);
+    return {
+      root,
+      config: projectConfig(requiredText(files, ".silvermoon/config.yaml")),
+    };
+  }
+  return { root, config: projectConfig(text(source)) };
+}
+function projectFiles(root: string, files: Files): Project {
   const config = projectConfig(requiredText(files, ".silvermoon/config.yaml"));
   const grouped = new Map<string, Map<string, Uint8Array>>();
   for (const [path, bytes] of files) {
@@ -291,6 +309,38 @@ export async function readProject(
   );
   return { root, files, config, ideas };
 }
+export async function readProject(
+  root: string,
+  snapshot: Snapshot = "worktree",
+  signal?: AbortSignal,
+): Promise<Project> {
+  await verifyRepositoryRoot(root, signal);
+  const files =
+    snapshot === "worktree"
+      ? await worktree(root, signal)
+      : await gitSnapshot(root, snapshot, signal);
+  return projectFiles(root, files);
+}
+export async function readIdeaProject(
+  root: string,
+  selector: string,
+  snapshot: Snapshot = "worktree",
+  signal?: AbortSignal,
+): Promise<Project> {
+  const id = validIdeaId(selector)
+    ? selector
+    : selectIdea(await readProject(root, snapshot, signal), selector).bootstrap
+        .id;
+  await verifyRepositoryRoot(root, signal);
+  const files =
+    snapshot === "worktree"
+      ? await worktree(root, signal, id)
+      : await gitSnapshot(root, snapshot, signal, [
+          ".silvermoon/config.yaml",
+          `.silvermoon/i/${id}`,
+        ]);
+  return projectFiles(root, files);
+}
 export function selectIdea(project: Project, selector: string): Idea {
   const found =
     project.ideas.get(selector) ??
@@ -320,15 +370,19 @@ export interface Primary {
   readonly project: Project;
   readonly changes: readonly string[];
 }
-export async function primary(
-  project: Project,
-  options: {
-    fetch?: boolean;
-    signal?: AbortSignal;
-    localRemote?: string;
-    checkBranch?: boolean;
-  } = {},
-): Promise<Primary> {
+export interface PrimaryOptions {
+  readonly fetch?: boolean;
+  readonly signal?: AbortSignal;
+  readonly localRemote?: string;
+  readonly checkBranch?: boolean;
+}
+export interface RepositoryObservation extends Omit<Primary, "project"> {
+  readonly repository: Repository;
+}
+export async function observeRepository(
+  project: Repository,
+  options: PrimaryOptions = {},
+): Promise<RepositoryObservation> {
   const { root, config } = project;
   const signal = options.signal;
   const head = await git(root, ["rev-parse", "--verify", "HEAD"], signal);
@@ -403,28 +457,13 @@ export async function primary(
     ],
     signal,
   );
-  await git(root, ["merge-base", "--is-ancestor", tip, head], signal);
-  const committed = await readProject(root, tip, signal);
+  const committed = await readRepository(root, tip, signal);
   invariant(
     project.config.primaryRepository === committed.config.primaryRepository &&
       project.config.primaryBranch === committed.config.primaryBranch,
     "primary",
     "Primary configuration changes require explicit review outside this protocol.",
   );
-  for (const [id, past] of committed.ideas) {
-    const current = project.ideas.get(id);
-    invariant(
-      current &&
-        JSON.stringify(current.bootstrap) === JSON.stringify(past.bootstrap),
-      "identity",
-      "Primary Idea identity/history must be preserved as an exact append-only prefix.",
-    );
-    invariant(
-      current.eventSource.startsWith(past.eventSource),
-      "history",
-      "Primary Idea identity/history must be preserved as an exact append-only prefix.",
-    );
-  }
   const status = await git(
     root,
     ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
@@ -441,7 +480,57 @@ export async function primary(
     "Renames, conflicts or unmerged paths require explicit repair.",
   );
   const changes = records.map((entry) => entry.slice(3).replaceAll("\\", "/"));
-  return { head, tip, remote, project: committed, changes };
+  return { head, tip, remote, repository: committed, changes };
+}
+function eventPrefix(current: Idea, previous: Idea): boolean {
+  const after = current.files.get("events.jsonl")!;
+  const before = previous.files.get("events.jsonl")!;
+  return (
+    after.byteLength >= before.byteLength &&
+    Buffer.from(after.buffer, after.byteOffset, before.byteLength).equals(
+      before,
+    )
+  );
+}
+export function verifyIdeaHistory(
+  current: Idea | undefined,
+  previous: Idea,
+): void {
+  invariant(
+    current && canonical(current.bootstrap) === canonical(previous.bootstrap),
+    "identity",
+    "Primary Idea identity/history must be preserved as an exact append-only prefix.",
+  );
+  invariant(
+    eventPrefix(current, previous),
+    "history",
+    "Primary Idea identity/history must be preserved as an exact append-only prefix.",
+  );
+}
+export async function primary(
+  project: Project,
+  options: PrimaryOptions = {},
+): Promise<Primary> {
+  const observed = await observeRepository(project, options);
+  await git(
+    project.root,
+    ["merge-base", "--is-ancestor", observed.tip, observed.head],
+    options.signal,
+  );
+  const committed = await readProject(
+    project.root,
+    observed.tip,
+    options.signal,
+  );
+  for (const [id, previous] of committed.ideas)
+    verifyIdeaHistory(project.ideas.get(id), previous);
+  return {
+    head: observed.head,
+    tip: observed.tip,
+    remote: observed.remote,
+    changes: observed.changes,
+    project: committed,
+  };
 }
 export async function validSubjects(
   root: string,
@@ -672,10 +761,9 @@ export async function snapshotHistory(
     if (!current && historical) continue;
     invariant(
       current &&
-        JSON.stringify(current.bootstrap) ===
-          JSON.stringify(before.bootstrap) &&
-        (current.eventSource.startsWith(before.eventSource) ||
-          (historical && before.eventSource.startsWith(current.eventSource))),
+        canonical(current.bootstrap) === canonical(before.bootstrap) &&
+        (eventPrefix(current, before) ||
+          (historical && eventPrefix(before, current))),
       "history",
       "Snapshot rewrites primary Idea identity or append-only event history.",
     );

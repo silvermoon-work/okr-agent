@@ -112,7 +112,7 @@ it.each([
     ]);
     if (report.pass) throw new Error("Expected an invalid project.");
     expect(report.problems).toHaveLength(1);
-    expect(report.problems[0].code).toBe("typescript-project-invalid");
+    expect(report.problems[0].code).toBe("typescript-project-valid");
     expect(report.problems[0].brief).toContain(directory);
     expect(report.problems[0].checkpoint).toBe("project");
   },
@@ -138,7 +138,7 @@ it.each(["pnpm", "manifest"] as const)(
     if (report.pass)
       throw new Error("Expected invalid workspace configuration.");
     expect(report.problems.map((problem) => problem.code)).toEqual([
-      "workspace-configuration-invalid",
+      "workspace-configuration-valid",
     ]);
     expect(report.problems[0].checkpoint).toBe("workspace");
   },
@@ -319,7 +319,7 @@ it.each([
       pass: false,
       problems: [
         {
-          code: "workspace-configuration-invalid",
+          code: "workspace-configuration-valid",
         },
       ],
     });
@@ -361,7 +361,7 @@ it("reports a non-file workspace declaration and rejects linked configuration", 
     pass: false,
     problems: [
       {
-        code: "workspace-configuration-invalid",
+        code: "workspace-configuration-valid",
       },
     ],
   });
@@ -464,10 +464,10 @@ it("builds the new production CAR and runs single, mono and invalid projects thr
     for (const field of ["protocol", "nodes", "edges", "root"])
       expect(result).not.toHaveProperty(field);
   expect(value.results[2]?.problems?.map((problem) => problem.code)).toEqual([
-    "typescript-project-invalid",
+    "typescript-project-valid",
   ]);
   expect(value.results[3]?.problems?.map((problem) => problem.code)).toEqual([
-    "workspace-configuration-invalid",
+    "workspace-configuration-valid",
   ]);
   expect(value.reclaimed).toBe(true);
 }, 120_000);

@@ -24,9 +24,9 @@ describe("Spec v1 validation", () => {
       ({ id }) => id === "workspace-scripts",
     )!;
     expect(scripts.rules.map(({ code }) => code)).toEqual([
-      "workspace-script-missing",
-      "workspace-script-unexpected",
-      "workspace-script-command-invalid",
+      "workspace-script-required",
+      "workspace-script-allowed",
+      "workspace-script-command-standard",
     ]);
     expect(
       typescriptProjectDesignSpec.checkpoints.find(
@@ -86,6 +86,42 @@ describe("Spec v1 validation", () => {
         Object.assign(spec.checkpoints[0]!, { parameter: spec.parameter }),
     ],
     [
+      "missing output",
+      (spec: CheckBundleSpec) =>
+        Reflect.deleteProperty(spec.checkpoints[0]!, "output"),
+    ],
+    [
+      "blank output description",
+      (spec: CheckBundleSpec) => {
+        spec.checkpoints[0]!.output.description = " ";
+      },
+    ],
+    [
+      "empty output fields",
+      (spec: CheckBundleSpec) => {
+        spec.checkpoints[0]!.output.fields = [];
+      },
+    ],
+    [
+      "blank output field name",
+      (spec: CheckBundleSpec) => {
+        spec.checkpoints[0]!.output.fields![0]!.name = " ";
+      },
+    ],
+    [
+      "blank output field description",
+      (spec: CheckBundleSpec) => {
+        spec.checkpoints[0]!.output.fields![0]!.description = "";
+      },
+    ],
+    [
+      "output JSON schema",
+      (spec: CheckBundleSpec) =>
+        Object.assign(spec.checkpoints[0]!.output, {
+          schema: { type: "object" },
+        }),
+    ],
+    [
       "empty checkpoints",
       (spec: CheckBundleSpec) => {
         spec.checkpoints = [];
@@ -110,15 +146,35 @@ describe("Spec v1 validation", () => {
       },
     ],
     [
+      "missing instructions",
+      (spec: CheckBundleSpec) =>
+        Reflect.deleteProperty(spec.checkpoints[0]!, "instructions"),
+    ],
+    [
+      "blank instructions",
+      (spec: CheckBundleSpec) => {
+        spec.checkpoints[0]!.instructions = " ";
+      },
+    ],
+    [
+      "non-text instructions",
+      (spec: CheckBundleSpec) =>
+        Object.assign(spec.checkpoints[0]!, { instructions: [] }),
+    ],
+    [
       "empty title",
       (spec: CheckBundleSpec) => {
         spec.checkpoints[0]!.title = "";
       },
     ],
     [
-      "duplicate preconditions",
+      "missing Task description",
+      (spec: CheckBundleSpec) => Reflect.deleteProperty(spec, "description"),
+    ],
+    [
+      "blank Task description",
       (spec: CheckBundleSpec) => {
-        spec.parameter.preconditions = ["same", "same"];
+        spec.description = " ";
       },
     ],
     [
@@ -134,6 +190,32 @@ describe("Spec v1 validation", () => {
     expect(result.valid).toBe(false);
     if (!result.valid) expect(result.issues[0]?.path).toMatch(/^\//);
   });
+
+  it.each(["root", "parameter", "checkpoint"] as const)(
+    "rejects obsolete %s preconditions as unknown rather than interpreting them",
+    (scope) => {
+      const spec = orderedSpec();
+      const target =
+        scope === "root"
+          ? spec
+          : scope === "parameter"
+            ? spec.parameter
+            : spec.checkpoints[0]!;
+      Object.assign(target, { preconditions: ["legacy assumption"] });
+      const result = validateCheckBundleSpec(spec);
+      if (result.valid) throw new Error("expected invalid");
+      expect(result.issues).toContainEqual({
+        path:
+          scope === "root"
+            ? "/"
+            : scope === "parameter"
+              ? "/parameter"
+              : "/checkpoints/0",
+        message:
+          'must NOT have additional properties {"additionalProperty":"preconditions"}',
+      });
+    },
+  );
 
   it.each([
     "",
@@ -189,6 +271,31 @@ describe("Spec v1 validation", () => {
     };
     expect(validateCheckBundleSpec(spec).valid).toBe(false);
   });
+
+  it("reports duplicate output names at their exact scope, allowing the same name in other checkpoints", () => {
+    const spec = orderedSpec();
+    const field = spec.checkpoints[0]!.output.fields![0]!;
+    spec.checkpoints[1]!.output.fields = [{ ...field }];
+    expect(validateCheckBundleSpec(spec).valid).toBe(true);
+    spec.checkpoints[0]!.output.fields!.push({ ...field });
+    const result = validateCheckBundleSpec(spec);
+    if (result.valid) throw new Error("expected invalid");
+    expect(result.issues).toEqual([
+      {
+        path: "/checkpoints/0/output/fields/1/name",
+        message: "本 checkpoint 中重复的输出字段名：directory",
+      },
+    ]);
+  });
+
+  it.each(["`undefined`", "数字或字符串", "`Map`", "函数"])(
+    "accepts description-only success output documentation for %s without runtime serialization",
+    (description) => {
+      const spec = orderedSpec();
+      spec.checkpoints[0]!.output = { description };
+      expect(validateCheckBundleSpec(spec).valid).toBe(true);
+    },
+  );
 
   it.each([
     undefined,

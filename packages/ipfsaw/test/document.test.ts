@@ -2,6 +2,7 @@ import { writeFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { validateCheckBundleSpec } from "@silvermoon-work/check-bundle-viewer";
+import type { CheckBundleSpec } from "@silvermoon-work/check-bundle-viewer";
 import {
   boundedRead,
   DocumentError,
@@ -14,6 +15,34 @@ import {
 import { fixtureDirectory } from "./helpers.js";
 
 const bytes = (value: string) => Buffer.from(value);
+
+function expectOutputDocumentation(spec: CheckBundleSpec) {
+  expect(spec.description.trim().length).toBeGreaterThan(0);
+  expect(spec).not.toHaveProperty("preconditions");
+  expect(Object.keys(spec.parameter)).toEqual(["schema"]);
+  const codes = spec.checkpoints.flatMap(({ id, rules }) =>
+    rules.map(({ code }) => {
+      expect(code.startsWith(`${id}-`)).toBe(true);
+      return code;
+    }),
+  );
+  expect(new Set(codes).size).toBe(codes.length);
+  for (const checkpoint of spec.checkpoints) {
+    expect(checkpoint).not.toHaveProperty("parameter");
+    expect(checkpoint).not.toHaveProperty("preconditions");
+    expect(checkpoint.output.description.trim().length).toBeGreaterThan(0);
+    if (checkpoint.output.fields) {
+      expect(checkpoint.output.fields.length).toBeGreaterThan(0);
+      const names = checkpoint.output.fields.map(({ name, description }) => {
+        expect(name.trim().length).toBeGreaterThan(0);
+        expect(description.trim().length).toBeGreaterThan(0);
+        return name;
+      });
+      expect(new Set(names).size).toBe(names.length);
+    }
+  }
+}
+
 describe("bounded, JSON-compatible document input", () => {
   it("loads the Silvermoon design as ordered v1 while preserving task Target and scoped rule identities", async () => {
     const source = await readFile(
@@ -23,43 +52,88 @@ describe("bounded, JSON-compatible document input", () => {
     expect(document.schema).toBe("urn:ipfsaw:check-bundle:1");
     const result = validateCheckBundleSpec(document.document);
     if (!result.valid) throw new Error(JSON.stringify(result.issues));
+    expectOutputDocumentation(result.spec);
     const { parameter, checkpoints } = result.spec;
     expect(parameter.schema.required).toEqual(["userHome", "repoRoot", "idea"]);
     expect(checkpoints.map(({ id }) => id)).toEqual([
-      "environment",
+      "global",
       "repository",
-      "observation",
+      "branch",
+      "silvermoon-folder",
+      "idea-folder",
       "requirements",
       "research",
       "technical",
-      "cases",
-      "tests",
+      "test-index",
+      "test-cases",
       "implementation",
       "deployment",
-      "completion",
     ]);
     expect(checkpoints[0]!.rules.map(({ code }) => code)).toEqual([
-      "environment-runtime",
-      "environment-skill",
-      "environment-configuration",
+      "global-runtime-ready",
+      "global-skill-linked",
+      "global-configuration-valid",
     ]);
     expect(checkpoints[1]!.rules.map(({ code }) => code)).toEqual([
-      "repository-root-invalid",
-      "project-configuration-invalid",
-      "project-layout-invalid",
-      "primary-branch-missing",
-      "branch-detached",
-      "branch-upstream-mismatch",
-      "primary-sync-required",
-      "worktree-uncommitted",
-      "event-history-rewritten",
-      "idea-identity-modified",
+      "repository-root-valid",
+      "repository-branch-attached",
+      "repository-worktree-clean",
     ]);
-    expect(checkpoints.slice(3, 8).map(({ rules }) => rules[1]!.code)).toEqual(
-      Array.from({ length: 5 }, () => "synchronization"),
+    expect(checkpoints[2]!.rules.map(({ code }) => code)).toEqual([
+      "branch-silvermoon-config-valid",
+      "branch-primary-present",
+      "branch-upstream-aligned",
+      "branch-primary-synchronized",
+    ]);
+    expect(checkpoints[3]!.rules.map(({ code }) => code)).toEqual([
+      "silvermoon-folder-path-valid",
+      "silvermoon-folder-config-file-valid",
+      "silvermoon-folder-ideas-directory-valid",
+    ]);
+    expect(checkpoints[4]!.rules.map(({ code }) => code)).toEqual(
+      expect.arrayContaining([
+        "idea-folder-event-history-append-only",
+        "idea-folder-identity-immutable",
+      ]),
     );
-    expect(checkpoints.at(-1)!.rules).toHaveLength(1);
-    expect(checkpoints.at(-1)!.rules[0]!.description).toContain("执行错误");
+    expect(checkpoints.slice(5, 10).map(({ rules }) => rules[1]!.code)).toEqual(
+      checkpoints.slice(5, 10).map(({ id }) => `${id}-synchronized`),
+    );
+    for (const phase of ["implementation", "deployment"])
+      expect(
+        checkpoints
+          .find(({ id }) => id === phase)!
+          .rules.map(({ code }) => code),
+      ).toEqual([`${phase}-evidence-valid`, `${phase}-synchronized`]);
+    expect(checkpoints.at(-1)!.rules[1]!.description).toContain("执行错误");
+  });
+  it("loads the separate commit Check Task without lifecycle readiness rules", async () => {
+    const source = await readFile(
+      new URL("../../../docs/silvermoon-commit-check.yaml", import.meta.url),
+    );
+    const document = parseDocument(source, ".yaml");
+    const result = validateCheckBundleSpec(document.document);
+    if (!result.valid) throw new Error(JSON.stringify(result.issues));
+    expectOutputDocumentation(result.spec);
+    expect(document.schema).toBe("urn:ipfsaw:check-bundle:1");
+    expect(result.spec.parameter.schema.required).toEqual([
+      "userHome",
+      "repoRoot",
+      "snapshot",
+    ]);
+    expect(result.spec.checkpoints.map(({ id }) => id)).toEqual([
+      "commit-snapshot",
+      "commit-history",
+    ]);
+    expect(
+      result.spec.checkpoints.flatMap(({ rules }) =>
+        rules.map(({ code }) => code),
+      ),
+    ).toEqual([
+      "commit-snapshot-valid",
+      "commit-history-idea-identity-immutable",
+      "commit-history-event-history-append-only",
+    ]);
   });
   it("reads JSON/YAML, exact URI and shared noncyclic aliases", () => {
     expect(

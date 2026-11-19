@@ -14,7 +14,7 @@ afterEach(() => {
   window.history.replaceState(null, "", "/");
 });
 describe("optional routing annotation and browser renderer ABI", () => {
-  it("accepts only the v2 annotation, including unannotated v2, and rejects unknown fields", () => {
+  it("accepts only the v1 annotation, including unannotated v1, and rejects unknown fields", () => {
     expect(validateCheckBundleSpec(typescriptProjectSpec).valid).toBe(true);
     expect(
       validateCheckBundleSpec({

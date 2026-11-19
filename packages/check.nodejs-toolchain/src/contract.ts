@@ -92,18 +92,18 @@ export const Input = Type.Object(
 );
 export type Input = Static<typeof Input>;
 export const RuleCode = Type.Union([
-  Type.Literal("tool-missing"),
-  Type.Literal("tool-unusable"),
-  Type.Literal("version-unparseable"),
-  Type.Literal("version-too-low"),
-  Type.Literal("pairing-mismatch"),
-  Type.Literal("pairing-unconfirmed"),
-  Type.Literal("management-mismatch"),
-  Type.Literal("management-unconfirmed"),
-  Type.Literal("registry-mismatch"),
-  Type.Literal("registry-unusable"),
-  Type.Literal("nrm-registration-missing"),
-  Type.Literal("nrm-registration-mismatch"),
+  Type.Literal("tool-present"),
+  Type.Literal("tool-executable"),
+  Type.Literal("tool-version-readable"),
+  Type.Literal("tool-version-minimum"),
+  Type.Literal("node-npm-paired"),
+  Type.Literal("node-npm-pairing-verifiable"),
+  Type.Literal("tool-managed"),
+  Type.Literal("tool-management-verifiable"),
+  Type.Literal("registry-allowed"),
+  Type.Literal("registry-readable"),
+  Type.Literal("nrm-registration-present"),
+  Type.Literal("nrm-registration-url-matched"),
 ]);
 export type RuleCode = Static<typeof RuleCode>;
 export type Tool = keyof NonNullable<Input["requirements"]["tools"]>;

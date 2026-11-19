@@ -12,14 +12,6 @@ export const Target = Type.Object(
   closed,
 );
 export type Target = Static<typeof Target>;
-export const SnapshotTarget = Type.Object(
-  {
-    ...Target.properties,
-    snapshot: Type.String({ minLength: 1 }),
-  },
-  closed,
-);
-export type SnapshotTarget = Static<typeof SnapshotTarget>;
 export const Operation = Type.Object(
   {
     mode: Type.Union([Type.Literal("lifecycle"), Type.Literal("snapshot")]),
@@ -41,66 +33,72 @@ export type Runtime = Static<typeof Runtime>;
 export const Input = Type.Object(
   {
     target: Target,
-    operation: Operation,
     runtime: Runtime,
+    refresh: Type.Optional(Type.Boolean()),
   },
   closed,
 );
 export type Input = Static<typeof Input>;
+export const consensusCheckpointIds = {
+  requirements: "requirements",
+  research: "research",
+  technical: "technical",
+  cases: "test-index",
+  tests: "test-cases",
+} as const;
+export const consensusRuleCodes = {
+  requirements: "requirements-consensus-confirmed",
+  research: "research-consensus-confirmed",
+  technical: "technical-consensus-confirmed",
+  cases: "test-index-consensus-confirmed",
+  tests: "test-cases-consensus-confirmed",
+} as const;
+export type ConsensusRuleCode =
+  (typeof consensusRuleCodes)[keyof typeof consensusRuleCodes];
+export type ConsensusSynchronizationRuleCode =
+  `${(typeof consensusCheckpointIds)[keyof typeof consensusCheckpointIds]}-synchronized`;
 export const codes = [
-  "environment-runtime",
-  "environment-skill",
-  "environment-configuration",
-  "repository-root-invalid",
-  "project-configuration-invalid",
-  "project-layout-invalid",
-  "primary-branch-missing",
-  "branch-detached",
-  "branch-upstream-mismatch",
-  "primary-sync-required",
-  "worktree-uncommitted",
-  "event-history-rewritten",
-  "idea-identity-modified",
-  "idea-invalid",
-  "completion-unsynchronized",
-  "snapshot",
-  "requirements",
-  "research",
-  "technical",
-  "cases",
-  "tests",
-  "synchronization",
-  "implementation",
-  "deployment",
-  "abandoned",
+  "global-runtime-ready",
+  "global-skill-linked",
+  "global-configuration-valid",
+  "repository-root-valid",
+  "repository-branch-attached",
+  "repository-worktree-clean",
+  "branch-silvermoon-config-valid",
+  "branch-primary-present",
+  "branch-upstream-aligned",
+  "branch-primary-synchronized",
+  "silvermoon-folder-path-valid",
+  "silvermoon-folder-config-file-valid",
+  "silvermoon-folder-ideas-directory-valid",
+  "idea-folder-event-history-append-only",
+  "idea-folder-identity-immutable",
+  "idea-folder-data-valid",
+  "idea-folder-active",
+  ...Object.values(consensusRuleCodes),
+  ...Object.values(consensusCheckpointIds).map(
+    (id) => `${id}-synchronized` as const,
+  ),
+  "implementation-evidence-valid",
+  "implementation-synchronized",
+  "deployment-evidence-valid",
+  "deployment-synchronized",
 ] as const;
-export const ProblemCode = Type.Union(codes.map((code) => Type.Literal(code)));
-export const RuleCode = ProblemCode;
+export const RuleCode = Type.Union(codes.map((code) => Type.Literal(code)));
 export type RuleCode = Static<typeof RuleCode>;
 export const checkpointIds = [
-  "environment",
+  "global",
   "repository",
-  "observation",
-  "requirements",
-  "research",
-  "technical",
-  "cases",
-  "tests",
+  "branch",
+  "silvermoon-folder",
+  "idea-folder",
+  ...Object.values(consensusCheckpointIds),
   "implementation",
   "deployment",
-  "completion",
 ] as const;
 export const lifecycleContract = createCheckContract(
   Target,
   RuleCode,
   checkpointIds,
 );
-export const snapshotContract = createCheckContract(
-  SnapshotTarget,
-  ProblemCode,
-  ["snapshot"],
-);
-export default createCheckContract(Input, RuleCode, [
-  ...checkpointIds,
-  "snapshot",
-]);
+export default createCheckContract(Input, RuleCode, checkpointIds);

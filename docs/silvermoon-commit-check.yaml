@@ -1,0 +1,79 @@
+$schema: urn:ipfsaw:check-bundle:1
+specVersion: "1.0"
+name: Silvermoon · 提交合法性检查
+description:
+  验证候选快照中的 Silvermoon
+  数据结构和相对基线的修改是否合法，供提交前检查使用。staged 读取 Git
+  索引，worktree
+  读取显式工作区候选，已提交快照读取准确提交树；不要求工作区洁净、upstream
+  就绪、分支同步、全局 Silvermoon 配置有效或 Idea 已完成。本任务不
+  fetch，也不自动暂存、提交、推送或清理文件。
+parameter:
+  schema:
+    type: object
+    additionalProperties: false
+    required: [userHome, repoRoot, snapshot]
+    properties:
+      userHome:
+        type: string
+        minLength: 1
+        description: Git 执行环境使用的用户 home，不读取个人 Silvermoon 配置。
+      repoRoot:
+        type: string
+        minLength: 1
+        description: 候选快照所在的 Git 仓库根目录。
+      snapshot:
+        type: string
+        minLength: 1
+        description:
+          暂存区 staged、工作区 worktree、HEAD 或准确提交 ID；commit hook 使用
+          staged。
+checkpoints:
+  - id: commit-snapshot
+    title: 候选快照有效
+    description: 检查指定候选快照中的 Silvermoon 配置、文件和协议结构是否有效。
+    instructions:
+      你需要确认实际候选快照满足下列结构
+      Rules，不把未暂存的工作区内容混入索引。工作区有改动、缺少 upstream 或 Idea
+      未获批准都不是本任务的失败理由；取消和意外 I/O 应按执行错误处理。
+    rules:
+      - code: commit-snapshot-valid
+        description:
+          指定候选快照的 Silvermoon
+          配置、路径、文件、bootstrap、事件和用例索引必须符合支持的协议及安全、容量约束；暂存区检查只读取索引，不混入未暂存或未跟踪的工作区内容。
+    output:
+      description:
+        提供本次已经固定的候选及基线内容，供修改合法性检查复用；文件集合包含 Map
+        和原始字节，只保留在执行内，不自动进入结果、日志或 IPFS。
+      fields:
+        - name: project
+          description:
+            经过结构核验的候选快照，包括配置、Idea 和原始文件集合；staged 仅表示
+            Git 索引内容。
+        - name: previous
+          description:
+            准确基线 Project 或 undefined；staged/worktree 对应
+            HEAD，已提交快照对应第一父提交，初始化且没有既有元数据时缺省。
+  - id: commit-history
+    title: 候选修改符合约束
+    description: 检查候选修改是否保持已有 Idea 身份不变，并只追加已有事件历史。
+    instructions:
+      你需要按下列 Rules 审核候选相对固定基线的修改，不在这里推进 Idea
+      或要求仓库同步。遇到身份或历史改写时保留原始资料并修复候选，不通过删除旧事实获得检查通过。
+    rules:
+      - code: commit-history-idea-identity-immutable
+        description:
+          候选快照必须保留基线中所有已有 Idea 的 version、id、checkCid 和
+          createdAt 字段值，不得删除已有 Idea 或改写其 bootstrap 身份；JSON
+          排版或字段顺序变化不构成身份变化。
+      - code: commit-history-event-history-append-only
+        description:
+          候选 events.jsonl 必须以基线字节为原始 UTF-8
+          字节的准确前缀，只能追加。staged 和 worktree 以 HEAD
+          为基线；已提交快照以其第一个父提交为基线；初始化且无既有 Silvermoon
+          元数据时只核验候选结构。
+    output:
+      description:
+        成功不新增数据，pass output 为
+        undefined；只证明候选修改通过本任务的合法性检查，不表示 Idea
+        完成，也不自动执行 commit。

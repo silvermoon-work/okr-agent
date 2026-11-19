@@ -76,7 +76,7 @@ import { createCheckContract } from "@silvermoon-work/check-task-sdk/contracts";
 
 export const Input = Type.Object({ text: Type.String() }, { additionalProperties: false });
 export type Input = Static<typeof Input>;
-export const RuleCode = Type.Union([Type.Literal("text-mismatch")]);
+export const RuleCode = Type.Union([Type.Literal("text-matches-standard")]);
 export type RuleCode = Static<typeof RuleCode>;
 export default createCheckContract(Input, RuleCode, ["text"]);
 `,
@@ -89,7 +89,8 @@ runCheck(contract, {
       id: "text",
       target: Input,
       description: "Compare supplied text with the bundled standard.",
-      rules: [{ code: "text-mismatch", description: "Text must match the bundled standard." }],
+      rules: [{ code: "text-matches-standard", description: "Text must match the bundled standard." }],
+      output: { description: "Successful comparison returns undefined; it does not add a Context value." },
       check: async (input, { signal }): Promise<CheckpointResult<undefined, RuleCode>> => {
         signal.throwIfAborted();
         const cid = await context.resolveContent(context.bundle, "resources/expected.txt", { signal });
@@ -99,7 +100,7 @@ runCheck(contract, {
         signal.throwIfAborted();
         return input.text === expected.trimEnd()
           ? { pass: true, output: undefined }
-          : { pass: false, problems: [{ code: "text-mismatch", brief: \`Text \${JSON.stringify(input.text)} must equal \${JSON.stringify(expected.trimEnd())}.\` }] };
+          : { pass: false, problems: [{ code: "text-matches-standard", brief: \`Text \${JSON.stringify(input.text)} must equal \${JSON.stringify(expected.trimEnd())}.\` }] };
       },
     }),
   ],
@@ -109,7 +110,7 @@ runCheck(contract, {
     "references/check.md":
       "# Text standard\n\nThe supplied text must equal the bundled expected text (ignoring its final newline).\n",
     "references/checkpoints/text.md":
-      "# Text mismatch\n\nReplace the input text with the exact bundled expected text.\n",
+      "# Text comparison\n\nReplace the input text with the exact bundled expected text.\n\nSuccess returns undefined and exposes no additional Context value.\n",
     "README.md":
       '# Check project\n\nInstall with `pnpm install`, edit `src/contract.ts`, `src/main.ts`, and `references/`, then run `pnpm typecheck` and `pnpm build`.\n\nUse input `{"text":"hello"}` to pass and `{"text":"other"}` for a normal nonpassing result. Missing resources or thrown errors are execution faults, not problems.\n',
   };

@@ -235,7 +235,7 @@ describe("composite requirements", () => {
   it("continues npm management after a missing node and reports split pairing layout without pretending it is bundled", async () => {
     const host = fixture({ missing: ["node"] });
     expect((await check(all, host)).map((problem) => problem.code)).toEqual([
-      "tool-missing",
+      "tool-present",
     ]);
     const split = fixture({ npm: join(cwd, "split", "npm") });
     split.canonical = () =>
@@ -252,7 +252,7 @@ describe("composite requirements", () => {
           split,
         )
       ).map((problem) => problem.code),
-    ).toEqual(["pairing-unconfirmed"]);
+    ).toEqual(["node-npm-pairing-verifiable"]);
   });
   it("reuses a manager installation observation within one Run but never across Runs", async () => {
     const host = fixture();
@@ -289,10 +289,10 @@ describe("composite requirements", () => {
       host,
     );
     expect(problems.map((problem) => problem.code)).toEqual([
-      "tool-missing",
-      "version-too-low",
-      "version-too-low",
-      "tool-missing",
+      "tool-present",
+      "tool-version-minimum",
+      "tool-version-minimum",
+      "tool-present",
     ]);
     expect(locate.mock.calls.map(([name]) => name)).toEqual([
       "node",
@@ -333,7 +333,7 @@ describe("composite requirements", () => {
       host,
     );
     expect(problems.map((problem) => problem.code)).toEqual([
-      "version-too-low",
+      "tool-version-minimum",
     ]);
     expect(provenance).not.toHaveBeenCalled();
     expect(run.mock.calls.every(([, args]) => args[0] === "--version")).toBe(
@@ -366,11 +366,11 @@ describe("composite requirements", () => {
     });
     if (result.pass) throw new Error("Expected configuration failures.");
     expect(result.problems.map(({ code }) => code)).toEqual([
-      "pairing-unconfirmed",
-      "management-unconfirmed",
-      "registry-mismatch",
-      "registry-mismatch",
-      "nrm-registration-mismatch",
+      "node-npm-pairing-verifiable",
+      "tool-management-verifiable",
+      "registry-allowed",
+      "registry-allowed",
+      "nrm-registration-url-matched",
     ]);
     expect(
       result.problems.every(({ checkpoint }) => checkpoint === "configuration"),
@@ -412,7 +412,7 @@ describe("composite requirements", () => {
       await check({ tools: { node: { minimumVersion: "23" } } }),
     ).toMatchObject([
       {
-        code: "version-too-low",
+        code: "tool-version-minimum",
         brief: expect.stringContaining("22.13.0") as string,
       },
     ]);
@@ -428,9 +428,9 @@ describe("composite requirements", () => {
         }),
       ),
     ).toMatchObject([
-      { code: "version-unparseable" },
-      { code: "tool-unusable" },
-      { code: "tool-missing" },
+      { code: "tool-version-readable" },
+      { code: "tool-executable" },
+      { code: "tool-present" },
     ]);
   });
   it("separates pairing, uncertain evidence and per-tool nvm management", async () => {
@@ -444,22 +444,22 @@ describe("composite requirements", () => {
       "npm-cli.js",
     );
     expect(await check(all, fixture({ npm: outside }))).toMatchObject([
-      { code: "pairing-mismatch" },
+      { code: "node-npm-paired" },
       {
-        code: "management-mismatch",
+        code: "tool-managed",
         brief: expect.stringContaining("npm") as string,
       },
     ]);
     expect(await check(all, fixture({ npm: null }))).toMatchObject([
-      { code: "pairing-unconfirmed" },
-      { code: "management-unconfirmed" },
+      { code: "node-npm-pairing-verifiable" },
+      { code: "tool-management-verifiable" },
     ]);
     expect(
       await check(all, fixture({ npmNode: join(cwd, "system", "node.exe") })),
     ).toMatchObject([
-      { code: "pairing-mismatch" },
+      { code: "node-npm-paired" },
       {
-        code: "management-mismatch",
+        code: "tool-managed",
         brief: expect.stringContaining("npm") as string,
       },
     ]);
@@ -471,10 +471,7 @@ describe("composite requirements", () => {
         all,
         fixture({ output: { "nvm:list": "No installations recognized." } }),
       ),
-    ).toMatchObject([
-      { code: "management-mismatch" },
-      { code: "management-mismatch" },
-    ]);
+    ).toMatchObject([{ code: "tool-managed" }, { code: "tool-managed" }]);
     await expect(
       check(
         all,
@@ -513,7 +510,7 @@ describe("composite requirements", () => {
         },
         host,
       ),
-    ).toMatchObject([{ code: "pairing-mismatch" }]);
+    ).toMatchObject([{ code: "node-npm-paired" }]);
   });
   it("checks each effective registry and all exact nrm mappings, allowing extras", async () => {
     expect(
@@ -528,18 +525,18 @@ describe("composite requirements", () => {
         }),
       ),
     ).toMatchObject([
-      { code: "registry-mismatch" },
-      { code: "nrm-registration-mismatch" },
+      { code: "registry-allowed" },
+      { code: "nrm-registration-url-matched" },
     ]);
     expect(
       await check(
         all,
         fixture({ output: { "nrm:ls": "extra ---- https://extra.test/" } }),
       ),
-    ).toMatchObject([{ code: "nrm-registration-missing" }]);
+    ).toMatchObject([{ code: "nrm-registration-present" }]);
     expect(
       await check(all, fixture({ codes: { "pnpm:config get registry": 2 } })),
-    ).toMatchObject([{ code: "registry-unusable" }]);
+    ).toMatchObject([{ code: "registry-readable" }]);
     await expect(
       check(all, fixture({ output: { "nrm:ls": "new output format" } })),
     ).rejects.toThrow("Unknown");
@@ -1096,7 +1093,7 @@ process.stdout.write("11.22.0\\n");`,
           problems.push(code);
         },
       );
-      expect(problems).toEqual(["pairing-mismatch"]);
+      expect(problems).toEqual(["node-npm-paired"]);
     },
     30_000,
   );

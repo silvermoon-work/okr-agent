@@ -14,20 +14,24 @@ import {
 } from "@silvermoon-work/check-task-sdk";
 
 const Input = Type.Object({ text: Type.String() });
-const contract = createCheckContract(Input, Type.Literal("text-mismatch"), [
-  "text",
-]);
+const contract = createCheckContract(
+  Input,
+  Type.Literal("text-matches-standard"),
+  ["text"],
+);
 const text = defineCheckpoint({
   id: "text",
   target: Input,
   description: "检查输入文字。",
-  rules: [{ code: "text-mismatch", description: "文字必须为 hello。" }],
+  instructions: "读取输入，与 hello 比较；不符时说明差异，修正后重新检查。",
+  rules: [{ code: "text-matches-standard", description: "文字必须为 hello。" }],
+  output: { description: "成功时返回 undefined，不新增可供后续步骤读取的值。" },
   check: async (target, context) => {
     context.signal.throwIfAborted();
     return failed(
       target.text === "hello"
         ? []
-        : [{ code: "text-mismatch", brief: "文字必须为 hello。" }],
+        : [{ code: "text-matches-standard", brief: "文字必须为 hello。" }],
     );
   },
 });
@@ -36,8 +40,9 @@ runCheck(contract, { checkpoints: [text] });
 
 ## 执行模型
 
-`defineCheckpoint({id,target,description,rules,check})` 推导 TypeBox TObject
-target 和成功 output，提供 `id/target/description/rules/accepts/invoke`。
+`defineCheckpoint({id,target,description,instructions?,rules,check})`
+推导 TypeBox TObject target 和成功 output，提供
+`id/target/description/instructions?/rules/accepts/invoke`。
 `check(target,context)` 必须返回 Promise：
 
 - `{pass:true,output}`；output 可为 Map、函数、循环对象等执行期值；
@@ -47,6 +52,33 @@ target 和成功 output，提供 `id/target/description/rules/accepts/invoke`。
 规则 code 与 Checkpoint id 是便携小写片段：
 `^[a-z0-9]+(?:[._-][a-z0-9]+)*$`，拒绝 Windows 设备名。
 同一步内规则码唯一，不同步骤可复用；description/brief 必须非空。
+
+规则码命名应表达要满足的条件，例如 `tool-present`、`worktree-clean`、
+`text-matches-standard`，而不是 `tool-missing` 或 `text-mismatch`。
+检查失败时仍返回被违反的规则码；`brief` 描述实际缺失、不匹配等失败事实。
+SDK 只校验标识格式与声明归属，不通过关键词限制业务语义。
+执行错误码、事件类型及历史 legacy 协议不属于这项规则命名约定。
+
+`description` 简短说明本步检查什么、保证什么；可选的非空 `instructions`
+独立描述 Agent 如何准备材料、review、记录事实、修正问题并重新验收，
+支持 Markdown 步骤和 JSON 示例，但不是自动执行的脚本或授权。
+`rules: [{code, description}]`
+是唯一验收条件列表，
+不在其他列表或每条 Rule 下重复维护文档。可选 `output: OutputDocumentation`
+描述整个成功值的用途、边界及后续 Context 用法；仅普通对象输出可选列出
+`fields: [{name, description}]`。undefined、原始值、Map、函数等不列 fields。
+description/name 必须非空；提供 fields 时必须非空且名称唯一。
+SDK 校验、复制并冻结这份文档元数据，不检查输出结构、不序列化或冻结实际成功值。
+`outputOf`
+仍保留类型与对象身份，可传递执行内能力、Map 和循环引用；不会自动记录或发布它们。
+
+根入口导出 `validateOutputDocumentation`、`validateCheckpointRules` 与
+`renderCheckpointDocumentation({id, title?, description, instructions?, rules, output?})`，
+以及 `OutputDocumentation`、`CheckpointDocumentation` 类型。
+渲染器分别生成 Description、可选 Agent instructions、仅一次的带 code
+验收列表和成功 Context 输出说明；摘要、规则与输出说明按惰性文本转义，
+instructions 保留作者提供的 Markdown 与代码块，不执行代码、展开 include
+或访问网络。旧运行期定义可省略 instructions 和 output；Spec 作者入口要求二者齐备。
 
 `executeCheck({checkpoints,target,signal,log?})` 严格按数组顺序 await。
 Checkpoint id 必须唯一；首个业务失败保留本步全部问题（包括重复 code），
@@ -93,7 +125,7 @@ CheckContext 仅提供
     checkpoint: "text",
     documentation: "references/checkpoints/text.md"
   }],
-  problems: [{ checkpoint: "text", code: "text-mismatch", brief: "文字必须为 hello。" }]
+  problems: [{ checkpoint: "text", code: "text-matches-standard", brief: "文字必须为 hello。" }]
 }
 ```
 

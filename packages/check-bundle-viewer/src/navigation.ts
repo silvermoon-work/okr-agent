@@ -7,13 +7,13 @@ export function useCheckpointNavigation(
   spec: CheckBundleSpec,
   enabled: boolean,
 ) {
-  const first = spec.checkpoints[0]!.id;
-  const [selected, setSelected] = useState(first);
+  const [selected, setSelected] = useState<string | null>(null);
   const hash = useRef("");
-  const write = (checkpoint: string, replace: boolean) => {
+  const write = (checkpoint: string | null, replace: boolean) => {
     const parameters = new URLSearchParams(hash.current.slice(1));
-    parameters.set("checkpoint", checkpoint);
-    const next = `#${parameters.toString()}`;
+    if (checkpoint === null) parameters.delete("checkpoint");
+    else parameters.set("checkpoint", checkpoint);
+    const next = parameters.size ? `#${parameters.toString()}` : "";
     if (next.length > 4096) return;
     hash.current = next;
     if (window.parent !== window) {
@@ -22,8 +22,9 @@ export function useCheckpointNavigation(
         window.location.origin,
       );
     } else if (next !== window.location.hash) {
-      if (replace) window.history.replaceState(null, "", next);
-      else window.history.pushState(null, "", next);
+      const url = `${window.location.pathname}${window.location.search}${next}`;
+      if (replace) window.history.replaceState(null, "", url);
+      else window.history.pushState(null, "", url);
     }
   };
   useEffect(() => {
@@ -35,7 +36,7 @@ export function useCheckpointNavigation(
         requested !== null &&
         spec.checkpoints.some(({ id }) => id === requested)
           ? requested
-          : first;
+          : null;
       setSelected(checkpoint);
       if (requested !== checkpoint) write(checkpoint, true);
     };
@@ -70,10 +71,10 @@ export function useCheckpointNavigation(
       window.removeEventListener("hashchange", change);
       window.removeEventListener("popstate", change);
     };
-  }, [spec, enabled, first]);
+  }, [spec, enabled]);
   return {
     selected,
-    select: (checkpoint: string) => {
+    select: (checkpoint: string | null) => {
       setSelected(checkpoint);
       if (enabled) write(checkpoint, false);
     },

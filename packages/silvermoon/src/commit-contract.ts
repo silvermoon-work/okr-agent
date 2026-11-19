@@ -1,0 +1,32 @@
+import { Type, type Static } from "@sinclair/typebox";
+import { createCheckContract } from "@silvermoon-work/check-task-sdk/contracts";
+import { Runtime } from "./contract.js";
+
+const closed = { additionalProperties: false };
+export const CommitTarget = Type.Object(
+  {
+    userHome: Type.String({ minLength: 1 }),
+    repoRoot: Type.String({ minLength: 1 }),
+    snapshot: Type.String({ minLength: 1 }),
+  },
+  closed,
+);
+export type CommitTarget = Static<typeof CommitTarget>;
+export const CommitRuleCode = Type.Union([
+  Type.Literal("commit-snapshot-valid"),
+  Type.Literal("commit-history-idea-identity-immutable"),
+  Type.Literal("commit-history-event-history-append-only"),
+]);
+export type CommitRuleCode = Static<typeof CommitRuleCode>;
+export const checkpointIds = ["commit-snapshot", "commit-history"] as const;
+export const commitContract = createCheckContract(
+  CommitTarget,
+  CommitRuleCode,
+  checkpointIds,
+);
+export const Input = Type.Object(
+  { target: CommitTarget, runtime: Runtime },
+  closed,
+);
+export type Input = Static<typeof Input>;
+export default createCheckContract(Input, CommitRuleCode, checkpointIds);

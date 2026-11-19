@@ -15,10 +15,10 @@ single repo 在 workspace 检查点不要求 workspace 声明。
 - 根 `package.json` 必须是可解析的 JSON 对象。
 - TypeScript 依赖、tsconfig 或 TS 源码中的任一明确依据即可识别技术栈。
 - 有 workspace 声明就是 monorepo，否则就是 single repo。
-- 身份不成立报告 `typescript-project-invalid`，不进入后续检查点。
+- 身份不成立报告 `typescript-project-valid`，不进入后续检查点。
 - monorepo 必须提供合法的 `pnpm-workspace.yaml` 对象，显式包含非空
   `packages` 字符串数组，每项不得为空白；否则报告
-  `workspace-configuration-invalid`。
+  `workspace-configuration-valid`。
 - 成员范围不强制 `apps/`、`packages/` 布局；本轮只验证声明结构，
   尚不展开成员模式或检查匹配结果、成员 manifest 和名称冲突。
 

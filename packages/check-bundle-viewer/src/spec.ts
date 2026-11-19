@@ -5,6 +5,11 @@ export interface CheckpointDefinition {
   id: string;
   title: string;
   description: string;
+  instructions: string;
+  output: {
+    description: string;
+    fields?: { name: string; description: string }[];
+  };
   rules: { code: string; description: string }[];
 }
 
@@ -12,9 +17,9 @@ export interface CheckBundleSpec {
   $schema?: "urn:ipfsaw:check-bundle:1";
   specVersion: "1.0";
   name: string;
+  description: string;
   parameter: {
     schema: Record<string, unknown>;
-    preconditions: string[];
   };
   checkpoints: CheckpointDefinition[];
 }
@@ -33,13 +38,13 @@ export const checkBundleSpecSchema = {
       $schema: { const: "urn:ipfsaw:check-bundle:1" },
       specVersion: { const: "1.0" },
       name: text,
+      description: text,
       parameter: object({
         schema: {
           type: "object",
           required: ["type"],
           properties: { type: { const: "object" } },
         },
-        preconditions: { type: "array", items: text, uniqueItems: true },
       }),
       checkpoints: {
         type: "array",
@@ -52,6 +57,18 @@ export const checkBundleSpecSchema = {
           },
           title: text,
           description: text,
+          instructions: text,
+          output: object(
+            {
+              description: text,
+              fields: {
+                type: "array",
+                minItems: 1,
+                items: object({ name: text, description: text }),
+              },
+            },
+            ["description"],
+          ),
           rules: {
             type: "array",
             minItems: 1,
@@ -60,7 +77,7 @@ export const checkBundleSpecSchema = {
         }),
       },
     },
-    ["specVersion", "name", "parameter", "checkpoints"],
+    ["specVersion", "name", "description", "parameter", "checkpoints"],
   ),
 } as const;
 
@@ -132,6 +149,15 @@ export function validateCheckBundleSpec(value: unknown): SpecValidation {
           message: `重复的 checkpoint ID：${checkpoint.id}`,
         });
       ids.add(checkpoint.id);
+      const names = new Set<string>();
+      checkpoint.output.fields?.forEach((field, fieldIndex) => {
+        if (names.has(field.name))
+          issues.push({
+            path: `${base}/output/fields/${String(fieldIndex)}/name`,
+            message: `本 checkpoint 中重复的输出字段名：${field.name}`,
+          });
+        names.add(field.name);
+      });
       const codes = new Set<string>();
       checkpoint.rules.forEach((rule, ruleIndex) => {
         if (codes.has(rule.code))
