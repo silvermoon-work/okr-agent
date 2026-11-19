@@ -119,12 +119,18 @@
 - Use the device-level Silvermoon CLI and personal skill registration, not a
   project dependency or repository-local Silvermoon skill.
 - Project content defaults to Simplified Chinese (`zh-CN`).
-- Start with `silvermoon whats-next --audience agent --language zh-CN` and
-  follow its reported next action.
-- Validate metadata with
-  `silvermoon check --worktree --audience agent --language zh-CN` before staging
-  and `silvermoon check --staged --audience agent --language zh-CN` before
+- Discover Ideas with `silvermoon list-ideas --json`, then use
+  `silvermoon check-idea <idea> --audience agent` and follow its next action.
+  The Idea selector is required. Creation runs its own prerequisite Task,
+  sharing the first four checkpoints with the Idea Task; each has its own strict
+  contract and CAR. Creation still locks and revalidates before writing.
+- Validate metadata with `silvermoon check-changes --worktree --audience agent`
+  before staging and `silvermoon check-changes --staged --audience agent` before
   committing.
+- Append events by editing the JSONL file without changing existing bytes. Read
+  Check Bundle documentation with `silvermoon get-reference <cid>`. Whole
+  deletion requires authorization and `check-changes --allow-delete <idea-id>`;
+  the exception does not permit partial deletion or rewriting history.
 
 ## Publishing
 

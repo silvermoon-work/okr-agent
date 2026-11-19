@@ -13,18 +13,23 @@ import {
 } from "@silvermoon-work/task-engine";
 import {
   Operation,
+  Target,
   type Input,
   type Runtime,
-  type Target,
+  type RepositoryTarget,
 } from "./contract.js";
 import type { CommitTarget, Input as CommitInput } from "./commit-contract.js";
+import {
+  CreationTarget,
+  type Input as CreationInput,
+} from "./create-contract.js";
 import { currentDevice } from "./device.js";
 import { invariant, text, SilvermoonError } from "./domain.js";
 
 export interface Artifact {
   readonly cid: string;
   readonly path: string;
-  readonly kind?: "idea" | "commit";
+  readonly kind?: "idea" | "commit" | "create";
 }
 export interface Result {
   readonly pass: boolean;
@@ -42,7 +47,7 @@ export interface Result {
 export interface Report {
   readonly schema: "silvermoon/v2";
   readonly checkCid: string;
-  readonly target: Target | CommitTarget;
+  readonly target: Target | CommitTarget | CreationTarget;
   readonly result: Result;
   readonly documents: readonly {
     readonly cid: string;
@@ -70,9 +75,9 @@ const resultSchema = Type.Object({
   ),
 });
 export async function bundledArtifact(
-  kind: "idea" | "commit" = "idea",
+  kind: "idea" | "commit" | "create" = "idea",
 ): Promise<Artifact> {
-  const name = kind === "commit" ? "commit-check" : "check";
+  const name = kind === "idea" ? "check" : `${kind}-check`;
   const binding: unknown = JSON.parse(
     await readFile(new URL(`../dist/${name}.json`, import.meta.url), "utf8"),
   );
@@ -131,8 +136,65 @@ export async function readDocument(
   }
   return text(Buffer.concat(chunks));
 }
+export async function getReference(
+  cid: string,
+  options: {
+    readonly artifacts?: readonly Artifact[];
+    readonly signal?: AbortSignal;
+  } = {},
+): Promise<string> {
+  const selected = CID.parse(cid);
+  const artifacts =
+    options.artifacts ??
+    (await Promise.all([
+      bundledArtifact("idea"),
+      bundledArtifact("commit"),
+      bundledArtifact("create"),
+    ]));
+  for (const artifact of artifacts) {
+    options.signal?.throwIfAborted();
+    const car = await readTaskBundleCar(
+      new Blob([Uint8Array.from(await readFile(artifact.path))]).stream(),
+    );
+    try {
+      invariant(
+        car.cid === artifact.cid,
+        "artifact",
+        "CAR root differs from its fixed Check CID.",
+      );
+      const store = IpfsStore.fromClient({ block: car.block });
+      try {
+        const find = async (path: string): Promise<boolean> => {
+          for (const entry of await car.tree.list(path, options)) {
+            options.signal?.throwIfAborted();
+            const child = `${path}/${entry.name}`;
+            if (entry.kind === "directory") {
+              if (await find(child)) return true;
+            } else if (
+              selected.equals(
+                await store.resolveContent(CID.parse(car.cid), child, options),
+              )
+            )
+              return true;
+          }
+          return false;
+        };
+        if (await find("resources/references"))
+          return await readDocument(store, cid, 65_536, options.signal);
+      } finally {
+        await store.close();
+      }
+    } finally {
+      await car.close();
+    }
+  }
+  throw new SilvermoonError(
+    "reference-unavailable",
+    "Reference CID is unavailable in the trusted Check Bundles.",
+  );
+}
 export async function observe(
-  target: Target,
+  target: Target | RepositoryTarget,
   options: {
     readonly cid?: string;
     readonly artifacts?: readonly Artifact[];
@@ -148,13 +210,19 @@ export async function observe(
     "input",
     "Unsupported Check operation.",
   );
-  const kind = operation.mode === "snapshot" ? "commit" : "idea";
-  if (kind === "commit")
-    invariant(
-      target.repoRoot,
-      "input",
-      "Commit validation requires an explicit Git repository root.",
-    );
+  const kind =
+    operation.mode === "snapshot"
+      ? "commit"
+      : operation.mode === "creation"
+        ? "create"
+        : "idea";
+  invariant(
+    Value.Check(kind === "idea" ? Target : CreationTarget, target),
+    "input",
+    kind === "idea"
+      ? "Idea validation requires userHome, repoRoot and idea."
+      : "Creation and change validation require userHome and repoRoot only.",
+  );
   const device = currentDevice();
   const runtime = options.runtime ?? {
     entry: device.entry,
@@ -163,23 +231,34 @@ export async function observe(
       ? { sshAuthSock: process.env.SSH_AUTH_SOCK }
       : {}),
   };
-  const input: Input | CommitInput =
+  const input: Input | CommitInput | CreationInput =
     kind === "commit"
       ? {
           target: {
             userHome: target.userHome,
-            repoRoot: target.repoRoot!,
+            repoRoot: target.repoRoot,
             snapshot: operation.snapshot ?? "HEAD",
+            ...(operation.allowDelete
+              ? { allowDelete: operation.allowDelete }
+              : {}),
           },
           runtime,
         }
-      : {
-          target,
-          runtime,
-          ...(operation.refresh === undefined
-            ? {}
-            : { refresh: operation.refresh }),
-        };
+      : kind === "create"
+        ? {
+            target,
+            runtime,
+            ...(operation.refresh === undefined
+              ? {}
+              : { refresh: operation.refresh }),
+          }
+        : {
+            target: Value.Decode(Target, target),
+            runtime,
+            ...(operation.refresh === undefined
+              ? {}
+              : { refresh: operation.refresh }),
+          };
   const artifacts = options.artifacts ?? [await bundledArtifact(kind)];
   const selectedCid = options.cid ?? artifacts[0]?.cid;
   const artifact = artifacts.find((item) => item.cid === selectedCid);

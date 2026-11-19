@@ -5,13 +5,9 @@ import { silvermoonCheckpoints } from "./check.js";
 
 runTask(async (request: Input, context) => {
   return createCheckCallback(lifecycleContract, {
-    checkpoints: silvermoonCheckpoints(
-      context.bundle,
-      {
-        runtime: request.runtime,
-        ...(request.refresh === undefined ? {} : { refresh: request.refresh }),
-      },
-      request.target,
-    ),
+    checkpoints: silvermoonCheckpoints(context.bundle, {
+      runtime: request.runtime,
+      ...(request.refresh === undefined ? {} : { refresh: request.refresh }),
+    }),
   })(request.target, context);
 });

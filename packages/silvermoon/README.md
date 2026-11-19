@@ -21,10 +21,11 @@ Check Bundle Spec v1.0 for ipfsaw preview. The built-in Check executes the same
 “需求／调研／技术／用例索引／测试共识已确认并同步”, followed by
 “实现验收已通过并同步” and “部署验收已通过并同步”. Each checkpoint owns coded
 rules and one complete document. The first failing checkpoint stops execution;
-no tree, child expansion or separate lifecycle level is returned. Successful
-outputs are shared only within the current execution through `outputOf`.
-Repository advancement requires every change committed and HEAD synchronized
-with primary; Idea draft/event exceptions are no longer accepted.
+no tree or child expansion is returned. Lifecycle Problem briefs include the
+reduced current `level` and optional `next` together with revision facts.
+Successful outputs are shared only within the current execution through
+`outputOf`. Repository advancement requires every change committed and HEAD
+synchronized with primary; Idea draft/event exceptions are no longer accepted.
 
 Checkpoint IDs name their subject, while titles name the attained state. Every
 Rule ID begins with its owning checkpoint ID and is unique within its Task.
@@ -46,11 +47,16 @@ The [commit Check Task](../../docs/silvermoon-commit-check.yaml) independently
 attains “候选快照有效” then “候选修改符合约束”, validating the candidate and its
 changes relative to HEAD (for staged or worktree candidates), or its first
 parent (for committed snapshots). It does not reuse the Idea readiness pipeline.
-For a commit hook, run `silvermoon check --staged --audience agent`; no hook is
-installed automatically. Valid unapproved Ideas, dirty worktrees, detached HEAD
-and absent upstream tracking do not by themselves invalidate a candidate.
+Only changed Ideas are selected, with their full candidate and baseline data
+validated; unchanged Idea contents are not parsed. New Ideas must satisfy the
+protocol. Existing identities are immutable and existing event bytes must remain
+an exact prefix. Whole deletion requires repeatable `--allow-delete <idea-id>`;
+partial deletion or an exception naming a retained/unknown Idea fails. For a
+commit hook, run `silvermoon check-changes --staged --audience agent`; no hook
+is installed automatically. Valid unapproved Ideas, dirty worktrees, detached
+HEAD and absent upstream tracking do not by themselves invalidate a candidate.
 
-Both Specs declare the Task's scope in its root `description` and checked
+All three Specs declare the Task's scope in its root `description` and checked
 parameters once in `parameter.schema`, without `preconditions`. Each
 checkpoint's `description` briefly states what is checked and guaranteed; its
 separate `instructions` tell the Agent how to read replay-derived facts, prepare
@@ -58,8 +64,9 @@ materials, request review, record explicit events and iterate when not approved.
 Its Rules define the exact acceptance criteria. Its `output` documents facts
 available to later checkpoints in this execution, not a JSON output constraint.
 The Builder generates Task and checkpoint documents from these Specs in the CAR;
-the authored Task documents under `references/idea` and `references/commit`
-remain supplementary guidance rather than duplicate checkpoint definitions.
+the authored Task documents under `references/idea` and `references/commit` and
+`references/create` remain supplementary guidance rather than duplicate
+checkpoint definitions.
 
 The delivered Idea CAR is exercised in a real Task Engine through all five
 consensus gates, implementation verification and deployment verification. Each
@@ -70,18 +77,17 @@ worktree changes remain present. Invalid Idea data is a Rule violation, whereas
 Git-context, concurrent-edit and internal observation faults remain execution
 errors rather than invalid-data reports.
 
-`silvermoon event replay <idea> --json` returns `state` from the same reducer as
-the Check, combining full valid event history with current revisions, evidence,
-tested subjects and locally tracked primary facts. `state.level` is the first
-unmet domain phase, not a phase already passed; `signed` holds matching signoff
-event IDs, while `implementation` and `deployment` are accepted batch collection
-digests. A cursor only limits the returned events suffix, not state reduction.
-Replay remains local and nonfresh; unavailable primary yields unknown, and even
-a completed replay level cannot replace the Check's actual synchronization
-Rules. Each consensus instruction contains its actual signOff JSON shape and
-exact upstream vector; verification instructions contain phase-specific verify
-templates. Placeholders must be replaced with current observed facts, and a
-human confirmation flag never substitutes for the user's real approval.
+`silvermoon check-idea <idea> --json` uses the shared reducer, combining full
+valid event history with current revisions, evidence, tested subjects and
+observed primary facts. `level` in a lifecycle Problem brief is the first unmet
+domain phase, not a phase already passed; `signed` holds matching signoff event
+IDs, while `implementation` and `deployment` are accepted batch collection
+digests. Earlier readiness failures return their own diagnostics rather than
+fabricating a reduced state. A passing Idea Check establishes completion. Each
+consensus instruction contains its actual signOff JSON shape and exact upstream
+vector; verification instructions contain phase-specific verify templates.
+Placeholders must be replaced with current observed facts, and a event never
+substitutes for the user's real approval.
 
 Repository acceptance covers the Git root, attached branch and clean worktree;
 branch acceptance covers project configuration, primary existence, upstream and
@@ -96,13 +102,31 @@ prerequisites.
 ## Commands
 
 ```text
-silvermoon whats-next [idea] --audience agent
 silvermoon create-idea --language zh-CN --json
+silvermoon check-idea <idea> --audience agent
+silvermoon check-changes [--worktree | --staged | --commit <full-sha>] [--allow-delete <idea-id>] --audience agent
+silvermoon get-reference <cid>
 silvermoon list-ideas --all --state requirements --query literal --sort oldest --limit 10 --json
-silvermoon check [--worktree | --staged | --commit <full-sha> | --remote] --audience agent
-silvermoon event replay <idea> [--cursor <cursor>] --json
-silvermoon event append <idea> --input event.json --expected-digest sha256:… --expected-primary <full-sha> [--confirm-human-decision] --json
 ```
+
+These are the only five command entries. `check-idea` requires an Idea ID or
+alias; there is no bare device/project navigation. `create-idea` executes the
+independent creation prerequisite Task before writing; its four shared
+checkpoints check global/repository/branch/layout readiness. Failures return the
+Check report with exit 1 and no scaffold. No command appends events: edit
+`events.jsonl` directly, preserving its exact prefix and canonical JSONL, then
+run `check-changes` before staging/committing. Creation still writes the initial
+`created` event. Library writer/replay helpers remain available.
+
+`check-changes` defaults to the worktree against HEAD. `--staged` checks only
+the index against HEAD; an exact `--commit` checks against its first parent.
+Unborn/adoption snapshots validate newly introduced metadata without an old
+Silvermoon baseline. No check installs a hook or performs a Git write.
+`get-reference` reads only reference files from the three trusted bundled CARs
+through the Engine's IPFS store adapter, without executing a Check or fetching.
+Unavailable CIDs fail explicitly. Text output is the original UTF-8 content;
+`--json` returns `{cid,content}`. Upgrading cannot silently substitute a
+different document for an unavailable historical CID.
 
 `--root <directory>` selects a Git root; audience is `human|agent`. JSON and
 audience are exclusive. Both readable audiences render the same report; there is
@@ -117,26 +141,23 @@ gaps), `1` invalid snapshot or execution/data/concurrency/cancellation fault,
 `2` invalid command/options. JSON navigation/snapshot output is
 `{schema:"silvermoon/v2",checkCid,target,result,documents}`. The result is the
 unmodified Check result; documents are bounded offline UTF-8 reads of its direct
-ContentRefs. Creation, inventory and event commands return domain objects.
-Errors go to stderr as `{error:{code,message}}`; no command reports partial
-success after a content/Engine fault. JSON v2 uses checkpoint-scoped references,
-not the old per-problem document/source envelope. Older CARs remain immutable;
-an unsupported historical report fails explicitly rather than being
-reinterpreted.
+ContentRefs. Creation and inventory return domain objects. Errors go to stderr
+as `{error:{code,message}}`; no command reports partial success after a
+content/Engine fault. JSON v2 uses checkpoint-scoped references, not the old
+per-problem document/source envelope. Older CARs remain immutable; an
+unsupported historical report fails explicitly rather than being reinterpreted.
 
-Inventory and replay resolve the actual configured local remote-tracking primary
-snapshot without fetching or requiring a clean worktree, upstream branch or
-primary ancestry. Both use the same validated tested-subject context as the
-Check, so committed evidence remains applicable when only this Idea's files
-changed afterward. Their `observation` is explicitly
-`{scope:"local",fresh:false,...}`: it records HEAD and the tracked primary
-tip/ref/remote. Missing, invalid or disagreeing tracking context produces
-`state.level:"unknown"` and
+Inventory resolves the actual configured local remote-tracking primary snapshot
+without fetching or requiring a clean worktree, upstream branch or primary
+ancestry. Both use the same validated tested-subject context as the Check, so
+committed evidence remains applicable when only this Idea's files changed
+afterward. Their `observation` is explicitly `{scope:"local",fresh:false,...}`:
+it records HEAD and the tracked primary tip/ref/remote. Missing, invalid or
+disagreeing tracking context produces `state.level:"unknown"` and
 `observation.primary:{status:"unavailable",diagnostic}`, never a fabricated
 synchronization or completion. `--state unknown` can select these entries. They
-do not certify network freshness or repository hygiene; only `whats-next`
-authorizes advancement. `check --remote` inspects the fetched primary snapshot
-even when local HEAD is behind or dirty.
+do not certify network freshness or repository hygiene; use `check-idea` for
+advancement.
 
 ## Configuration and installation boundary
 
@@ -168,22 +189,23 @@ project dependency, optional project-skill scan or prompt execution is involved.
 Install/link only with separate authorization; never switch the legacy tool as a
 side effect of building this source.
 
-The business `Target` is `{userHome, repoRoot?, idea?}`. `userHome` is the
-user's home, not the Silvermoon config directory; project/device navigation may
-omit Idea/repository identity. Config, primary, language and Idea facts are read
-from these roots, never supplied as asserted readiness. An Idea requires a
-repository.
+The Idea `Target` is `{userHome, repoRoot, idea}`, with all fields required.
+Creation has its own strict `{userHome, repoRoot}` Target and rejects an Idea
+selector. `userHome` is the user's home, not the Silvermoon config directory.
+Config, primary, language and Idea facts are read from these roots, never
+supplied as asserted readiness. Omitting an Idea no longer selects a shorter
+lifecycle pipeline.
 
 Each checkpoint accepts its Target and execution-local checkpoint context.
-Lifecycle targets contain `userHome`, optional `repoRoot` and optional `idea`;
-commit targets contain only `userHome`, required `repoRoot` and `snapshot`
-(`HEAD`, `staged`, `worktree` or an exact commit SHA). Neither schema accepts an
-operation, runtime, stage, approval flag or caller-asserted readiness. The
-shared reducer derives the current gate, exact signoffs and rollbacks from
-events and current content. No checkpoint records progress merely because it was
-invoked.
+Lifecycle targets require `userHome`, `repoRoot` and `idea`; creation targets
+require only `userHome` and `repoRoot`; commit targets contain `userHome`,
+required `repoRoot`, optional `allowDelete` and `snapshot` (`HEAD`, `staged`,
+`worktree` or an exact commit SHA). Neither schema accepts an operation,
+runtime, stage, approval flag or caller-asserted readiness. The shared reducer
+derives the current gate, exact signoffs and rollbacks from events and current
+content. No checkpoint records progress merely because it was invoked.
 
-The Host selects two independent Task CARs before execution. Idea navigation
+The Host selects three independent Task CARs before execution. Idea navigation
 uses `dist/check.car` / `check.json`, built from `check.build.yaml` and
 `references/idea`; new Ideas continue pinning this CAR. Commit validation uses
 `dist/commit-check.car` / `commit-check.json`, built from
@@ -191,10 +213,21 @@ uses `dist/check.car` / `check.json`, built from `check.build.yaml` and
 `commit-snapshot` and `commit-history` checkpoints never require device
 readiness, a clean worktree, upstream synchronization or lifecycle completion.
 
+Creation prerequisites use `dist/create-check.car` / `create-check.json`, built
+from `create-check.build.yaml`, the
+[creation Spec](../../docs/silvermoon-create-idea-check.yaml) and
+`references/create`. The creation Task and Idea Task use the same
+`prerequisiteCheckpoints` factory for global, repository, branch and layout
+rules, with each Task's own strict Target schema. Creation always stops after
+these four checkpoints; the Idea Task always continues with its required Idea.
+Successful preflight does not create files or authorize later writes: the writer
+still locks, refreshes primary and revalidates the candidate before creating the
+scaffold. New Ideas pin the Idea CAR, never the creation CAR.
+
 Library consumers import lifecycle checkpoints from
 `@silvermoon-work/silvermoon/check` and commit checkpoints from the separate
-`@silvermoon-work/silvermoon/commit-check` export. The lifecycle module does not
-re-export the commit pipeline.
+`@silvermoon-work/silvermoon/commit-check` export. Creation checkpoints are
+available from `@silvermoon-work/silvermoon/create-check`.
 
 `operation.refresh` is the existing API name for the fetch policy: when enabled,
 the branch checkpoint checks the remote branch with `ls-remote`, fetches the
@@ -209,19 +242,23 @@ Checkpoint IDs and event/reducer phase values remain separate: the
 `requirements` phase is checked by the `requirements-consensus-confirmed` rule.
 Low-level execution error codes are not Rule IDs.
 
-The Idea Task transport is `{target, runtime, refresh?}`; the commit Task
-transport is `{target, runtime}`. Neither Task accepts an operation selector.
-These envelopes are host/Worker boundaries, not checkpoint Targets. Runtime
-identifies the actual CLI entry, host executable search path and optional SSH
-agent socket, which cannot be inferred from a home directory. The Task Engine's
-isolated Worker does not inherit these host facts; this change does not invent
-an out-of-band environment capability or silently fall back to ambient state.
-`Report.target` remains the business Target; commit reports include the selected
-snapshot and required repository root. `observe(target, {operation, runtime})`
-and existing CLI snapshot options are preserved as Host dispatch options. The
-Host maps `operation.refresh` to the Idea transport's optional top-level
-`refresh`, never to either business Target or the commit transport. Missing
-commit repository identity is an explicit input error; unavailable pinned
+The Idea and creation Task transports are `{target, runtime, refresh?}`; the
+commit Task transport is `{target, runtime}`. No Task accepts an operation
+selector. These envelopes are host/Worker boundaries, not checkpoint Targets.
+Runtime identifies the actual CLI entry, host executable search path and
+optional SSH agent socket, which cannot be inferred from a home directory. The
+Task Engine's isolated Worker does not inherit these host facts; this change
+does not invent an out-of-band environment capability or silently fall back to
+ambient state. `Report.target` remains the business Target; commit reports
+include the selected snapshot and required repository root.
+`observe(target, {operation, runtime})` and existing CLI snapshot options are
+preserved as Host dispatch options. The Host selects the creation CAR only for
+explicit `operation.mode="creation"`, never from a missing Idea selector. It
+maps `operation.refresh` to the Idea or creation transport's optional top-level
+`refresh`, never to a business Target or the commit transport. The CLI creation
+check always uses the default fresh observation; explicit library
+`refresh:false` observes tracked primary only and never falls back from a failed
+fetch. Missing required identity is an explicit input error; unavailable pinned
 artifacts never fall back to another CAR. There is no arbitrary environment map
 or repository allowlist.
 
@@ -313,9 +350,8 @@ types:
   bytes; other decision values remain invalid. New writes with that legacy field
   fail explicitly rather than silently normalizing the input. The upstream map
   contains **exactly all preceding gate revisions** in that order. Recorded
-  upstream decisions must already exist. The writer also requires the exact
-  current gate and `--confirm-human-decision`. This flag is recorder
-  attestation, not authentication or a substitute for an actual decision.
+  upstream decisions must already exist. Record only the exact current gate
+  after a real explicit human decision; an event is not authentication.
 - `verify`: a unique `batch` described below; Agent verification is not another
   human signoff.
 
@@ -350,15 +386,15 @@ still requires committing and synchronizing them. No command stages, commits,
 pushes, cleans or rewrites history; fetch is the only navigation Git side
 effect.
 
-Append requires exact `expected-digest` of raw existing JSONL plus freshly
-observed `expected-primary`. A single exclusive `.silvermoon/.new.lock`
-serializes new writers. The writer validates the whole candidate, fsyncs a
-same-filesystem replacement, rereads project bytes/HEAD, then atomically
-renames. The lock is removed only if still operation-owned. A
-conflict/cancellation is explicit; nothing silently overwrites another decision.
-Identical retries are idempotent only for the same final event on the exact
-supplied prior prefix. Replay cursors bind an exact event-count/digest prefix,
-never approval.
+The retained library append helper requires exact `expected-digest` of raw
+existing JSONL plus freshly observed `expected-primary`; these are not CLI
+options. A single exclusive `.silvermoon/.new.lock` serializes new writers. The
+writer validates the whole candidate, fsyncs a same-filesystem replacement,
+rereads project bytes/HEAD, then atomically renames. The lock is removed only if
+still operation-owned. A conflict/cancellation is explicit; nothing silently
+overwrites another decision. Identical retries are idempotent only for the same
+final event on the exact supplied prior prefix. Replay cursors bind an exact
+event-count/digest prefix, never approval.
 
 Locks contain PID/token. After a crash, inspect whether the owning process is
 still running and preserve any `.event-*` replacement before explicit manual
@@ -413,10 +449,11 @@ normalization is tested separately without Git or network. Independent CLI and
 real Engine/CAR tests retain their own execution and document-binding coverage.
 
 CLI build compiles ESM/declarations/maps, then uses the existing Check Builder
-and upstream Task Builder to produce `dist/check.car` and `dist/check.json`.
-Private author depends on CLI and invokes that same build helper; CLI never
-depends on author. The Check bundles the shared domain implementation, not a
-legacy Guide or global JavaScript module. Neither build publishes or uploads.
-`prepublishOnly` is exactly `publish-gate check`; `deliverable.yaml` opts into
-npm. Exact version/SHA authorization, successful main-push CI and Trusted
-Publisher readiness are separate release prerequisites.
+and upstream Task Builder to produce all three CAR/binding pairs: `check`,
+`create-check` and `commit-check`. Private author depends on CLI and invokes
+that same build helper; CLI never depends on author. The Check bundles the
+shared domain implementation, not a legacy Guide or global JavaScript module.
+Neither build publishes or uploads. `prepublishOnly` is exactly
+`publish-gate check`; `deliverable.yaml` opts into npm. Exact version/SHA
+authorization, successful main-push CI and Trusted Publisher readiness are
+separate release prerequisites.

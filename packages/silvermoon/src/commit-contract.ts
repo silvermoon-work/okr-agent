@@ -8,6 +8,11 @@ export const CommitTarget = Type.Object(
     userHome: Type.String({ minLength: 1 }),
     repoRoot: Type.String({ minLength: 1 }),
     snapshot: Type.String({ minLength: 1 }),
+    allowDelete: Type.Optional(
+      Type.Array(Type.String({ pattern: "^[0-9]{12}[a-f0-9]{4}$" }), {
+        uniqueItems: true,
+      }),
+    ),
   },
   closed,
 );

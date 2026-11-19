@@ -23,6 +23,10 @@
       "types": "./dist/commit-check.d.ts",
       "import": "./dist/commit-check.js"
     },
+    "./create-check": {
+      "types": "./dist/create-check.d.ts",
+      "import": "./dist/create-check.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
@@ -35,6 +39,7 @@
     "references",
     "check.build.yaml",
     "commit-check.build.yaml",
+    "create-check.build.yaml",
     "README.md",
     "LICENSE"
   ],

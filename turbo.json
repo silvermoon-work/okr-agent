@@ -6,7 +6,8 @@
     "vitest.config.ts",
     "scripts/lib/tools.mjs",
     "docs/silvermoon-single-checker.yaml",
-    "docs/silvermoon-commit-check.yaml"
+    "docs/silvermoon-commit-check.yaml",
+    "docs/silvermoon-create-idea-check.yaml"
   ],
   "tasks": {
     "build": {

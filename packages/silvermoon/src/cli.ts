@@ -9,21 +9,19 @@ import {
   validIdeaId,
   parseBootstrap,
 } from "./domain.js";
-import { bundledArtifact, observe, type Report } from "./host.js";
+import { bundledArtifact, getReference, observe, type Report } from "./host.js";
 import {
   discoverRoot,
   git,
   readProject,
   readRegular,
   protectedPath,
-  remoteTip,
   localContext,
   localIdeaState,
   selectIdea,
   type Snapshot,
 } from "./repository.js";
-import { appendEvent, createIdea, replay } from "./write.js";
-import type { Event } from "./domain.js";
+import { createIdea } from "./write.js";
 
 export interface CliIo {
   readonly cwd: string;
@@ -128,17 +126,17 @@ export async function runCli(
     );
   };
   program
-    .command("whats-next [idea]")
+    .command("check-idea <idea>")
     .description(
       "Execute the exact pinned Check; gaps are normal observations.",
     )
-    .action(async (selector?: string) => {
+    .action(async (selector: string) => {
       const options = program.opts<Options>();
       const directory = options.root
         ? resolve(io.cwd, options.root)
         : await discoverRoot(io.cwd);
       invariant(
-        !selector || directory,
+        directory,
         "target-context",
         "Idea selectors require a project.",
       );
@@ -169,8 +167,8 @@ export async function runCli(
       const report = await observe(
         {
           userHome: currentDevice().home,
-          ...(directory ? { repoRoot: directory } : {}),
-          ...(id ? { idea: id } : {}),
+          repoRoot: directory,
+          idea: id!,
         },
         {
           ...(cid ? { cid } : {}),
@@ -180,43 +178,57 @@ export async function runCli(
       emit(report);
     });
   program
-    .command("check")
-    .description("Validate a snapshot, not lifecycle completion.")
+    .command("check-changes")
+    .description(
+      "Validate changed Ideas against HEAD or a commit's first parent.",
+    )
     .option("--worktree", "Validate working files")
     .option("--staged", "Validate index")
     .option("--commit <sha>", "Validate exact commit")
-    .option("--remote", "Fetch and validate configured primary")
+    .option(
+      "--allow-delete <idea>",
+      "Allow whole deletion of this Idea ID (repeatable)",
+      (id: string, previous: string[]) => [...previous, id],
+      [],
+    )
     .action(
       async (options: {
         worktree?: boolean;
         staged?: boolean;
         commit?: string;
-        remote?: boolean;
+        allowDelete: string[];
       }) => {
         invariant(
-          [
-            options.worktree,
-            options.staged,
-            options.commit,
-            options.remote,
-          ].filter(Boolean).length <= 1,
+          [options.worktree, options.staged, options.commit].filter(Boolean)
+            .length <= 1,
           "usage",
           "Choose at most one snapshot selector.",
         );
         const directory = await root();
-        let snapshot: Snapshot = options.worktree
+        invariant(
+          options.allowDelete.every(validIdeaId) &&
+            new Set(options.allowDelete).size === options.allowDelete.length,
+          "usage",
+          "--allow-delete requires unique complete Idea IDs.",
+        );
+        const snapshot: Snapshot = options.worktree
           ? "worktree"
           : options.staged
             ? "staged"
-            : (options.commit ?? "HEAD");
-        if (options.remote) snapshot = await remoteTip(directory, io.signal);
+            : (options.commit ?? "worktree");
         const report = await observe(
           {
             userHome: currentDevice().home,
             repoRoot: directory,
           },
           {
-            operation: { mode: "snapshot", snapshot },
+            operation: {
+              mode: "snapshot",
+              snapshot,
+              ...(options.allowDelete.length
+                ? { allowDelete: options.allowDelete }
+                : {}),
+            },
             ...(io.signal ? { signal: io.signal } : {}),
           },
         );
@@ -234,7 +246,18 @@ export async function runCli(
     .action(async (options: { language?: string }) => {
       const directory = await root();
       const artifact = await bundledArtifact();
-      await deviceLanguage(currentDevice());
+      const readiness = await observe(
+        { userHome: currentDevice().home, repoRoot: directory },
+        {
+          operation: { mode: "creation" },
+          ...(io.signal ? { signal: io.signal } : {}),
+        },
+      );
+      if (!readiness.result.pass) {
+        emit(readiness);
+        exit = 1;
+        return;
+      }
       const created = await createIdea(directory, artifact.cid, {
         ...(options.language ? { language: options.language } : {}),
         ...(io.signal ? { signal: io.signal } : {}),
@@ -385,64 +408,18 @@ export async function runCli(
         });
       },
     );
-  const events = program
-    .command("event")
+  program
+    .command("get-reference <cid>")
     .description(
-      "Read or append explicit facts; confirmation flags do not authenticate humans.",
-    );
-  events
-    .command("replay <idea>")
-    .option("--cursor <cursor>", "Exact observed-prefix cursor")
-    .action(async (selector: string, options: { cursor?: string }) => {
-      emit(
-        await replay(
-          await root(),
-          selector,
-          options.cursor,
-          await deviceLanguage(currentDevice()),
-        ),
-      );
+      "Read a UTF-8 reference from the bundled Checks without executing a Task.",
+    )
+    .action(async (cid: string) => {
+      const content = await getReference(cid, {
+        ...(io.signal ? { signal: io.signal } : {}),
+      });
+      if (program.opts<Options>().json) emit({ cid, content });
+      else io.stdout.write(content);
     });
-  events
-    .command("append <idea>")
-    .requiredOption("--input <file>", "Canonical event object JSON file")
-    .requiredOption(
-      "--expected-digest <digest>",
-      "Exact raw events.jsonl SHA256 digest",
-    )
-    .requiredOption(
-      "--expected-primary <sha>",
-      "Last observed exact primary commit",
-    )
-    .option(
-      "--confirm-human-decision",
-      "Attest an actual explicit human signoff; not authentication",
-    )
-    .action(
-      async (
-        selector: string,
-        options: {
-          input: string;
-          expectedDigest: string;
-          expectedPrimary: string;
-          confirmHumanDecision?: boolean;
-        },
-      ) => {
-        const directory = await root();
-        const raw: unknown = JSON.parse(
-          text(await readRegular(resolve(io.cwd, options.input), io.signal)),
-        );
-        // appendEvent validates the complete candidate schema before any replacement.
-        emit(
-          await appendEvent(directory, selector, raw as Event, {
-            expectedDigest: options.expectedDigest,
-            expectedPrimary: options.expectedPrimary,
-            confirmed: options.confirmHumanDecision ?? false,
-            ...(io.signal ? { signal: io.signal } : {}),
-          }),
-        );
-      },
-    );
   try {
     invariant(
       argv.length > 0,

@@ -12,7 +12,9 @@ import {
   type ConsensusSynchronizationRuleCode,
   type Runtime,
   type RuleCode,
+  type RepositoryTarget,
 } from "./contract.js";
+import type { CreationTarget } from "./create-contract.js";
 import {
   inspectInstallation,
   inspectPersonalSkill,
@@ -62,40 +64,21 @@ function failure<const Code extends RuleCode>(
 function nativeCode(error: unknown): unknown {
   return error instanceof Error && "code" in error ? error.code : undefined;
 }
-export function silvermoonCheckpoints(
-  bundleCid: string,
-  execution: {
-    readonly runtime: Runtime;
-    readonly refresh?: boolean;
-    readonly localRemote?: string;
-  },
-  target: Target,
+export interface CheckExecution {
+  readonly runtime: Runtime;
+  readonly refresh?: boolean;
+  readonly localRemote?: string;
+}
+export function prerequisiteCheckpoints(
+  execution: CheckExecution,
+  targetSchema: typeof Target | typeof CreationTarget,
 ) {
   const runtime = execution.runtime;
-  const inGit = <T>(target: Target, action: () => Promise<T>) =>
+  const inGit = <T>(target: RepositoryTarget, action: () => Promise<T>) =>
     withGitContext({ userHome: target.userHome, ...runtime }, action);
-  const synchronized = (target: Target, tip: string, signal: AbortSignal) =>
-    inGit(target, async () => {
-      invariant(
-        target.repoRoot,
-        "internal",
-        "Synchronization requires a repository.",
-      );
-      const changes = await git(
-        target.repoRoot,
-        ["status", "--porcelain=v1", "--untracked-files=all"],
-        signal,
-      );
-      const head = await git(
-        target.repoRoot,
-        ["rev-parse", "--verify", "HEAD"],
-        signal,
-      );
-      return !changes && head === tip;
-    });
   const environment = defineCheckpoint({
     id: "global",
-    target: Target,
+    target: targetSchema,
     description: "全局 Silvermoon 安装、个人 skill 与配置均有效。",
     output: {
       description:
@@ -177,7 +160,7 @@ export function silvermoonCheckpoints(
   });
   const repository = defineCheckpoint({
     id: "repository",
-    target: Target,
+    target: targetSchema,
     description: "仓库根目录有效，HEAD 关联分支，所有内容已提交。",
     output: {
       description: "已验证的仓库定位及本次观察的起始提交。",
@@ -258,7 +241,7 @@ export function silvermoonCheckpoints(
   });
   const branch = defineCheckpoint({
     id: "branch",
-    target: Target,
+    target: targetSchema,
     description: "仓库配置有效，当前分支正确跟踪并已同步至 primary。",
     output: {
       description:
@@ -371,7 +354,7 @@ export function silvermoonCheckpoints(
   });
   const silvermoonLayout = defineCheckpoint({
     id: "silvermoon-folder",
-    target: Target,
+    target: targetSchema,
     description: "Silvermoon 数据目录与配置文件均为安全的常规路径。",
     output: noExtraOutput,
     rules: [
@@ -441,6 +424,31 @@ export function silvermoonCheckpoints(
       return { pass: true, output: undefined };
     },
   });
+  return [environment, repository, branch, silvermoonLayout] as const;
+}
+
+export function silvermoonCheckpoints(
+  bundleCid: string,
+  execution: CheckExecution,
+) {
+  const [environment, repository, branch, silvermoonLayout] =
+    prerequisiteCheckpoints(execution, Target);
+  const inGit = <T>(target: Target, action: () => Promise<T>) =>
+    withGitContext({ userHome: target.userHome, ...execution.runtime }, action);
+  const synchronized = (target: Target, tip: string, signal: AbortSignal) =>
+    inGit(target, async () => {
+      const changes = await git(
+        target.repoRoot,
+        ["status", "--porcelain=v1", "--untracked-files=all"],
+        signal,
+      );
+      const head = await git(
+        target.repoRoot,
+        ["rev-parse", "--verify", "HEAD"],
+        signal,
+      );
+      return !changes && head === tip;
+    });
   const observation = defineCheckpoint({
     id: "idea-folder",
     target: Target,
@@ -500,7 +508,7 @@ export function silvermoonCheckpoints(
       let previous;
       try {
         project = await inGit(target, () =>
-          readIdeaProject(root, target.idea!, observed.head, context.signal),
+          readIdeaProject(root, target.idea, observed.head, context.signal),
         );
         current = selectIdea(project, target.idea);
         previous = await inGit(target, () =>
@@ -554,14 +562,9 @@ export function silvermoonCheckpoints(
           "idea-folder-active",
           "Idea is explicitly abandoned; only an authorized resume event can restore it.",
         );
-      const facts = Object.fromEntries(
-        Object.entries(state).filter(
-          ([key]) => key !== "level" && key !== "next",
-        ),
-      );
       const brief = canonical({
         idea: current.bootstrap.id,
-        ...facts,
+        ...state,
         eventDigest: digest(current.eventSource),
         primary: observed.tip,
         subject: observed.head,
@@ -685,9 +688,6 @@ export function silvermoonCheckpoints(
         : failure("deployment-synchronized", brief);
     },
   });
-  if (!target.repoRoot && !target.idea) return [environment] as const;
-  if (!target.idea)
-    return [environment, repository, branch, silvermoonLayout] as const;
   return [
     environment,
     repository,

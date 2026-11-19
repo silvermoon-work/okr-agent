@@ -5,7 +5,7 @@ import {
 } from "@silvermoon-work/check-task-sdk";
 import { CommitTarget, type CommitRuleCode } from "./commit-contract.js";
 import type { Runtime } from "./contract.js";
-import { invariant, SilvermoonError } from "./domain.js";
+import { invariant, SilvermoonError, validIdeaId } from "./domain.js";
 import { withGitContext } from "./git-context.js";
 import {
   git,
@@ -55,7 +55,74 @@ async function baseline(root: string, snapshot: string, signal: AbortSignal) {
     ["ls-tree", "--name-only", revision, "--", ".silvermoon/config.yaml"],
     signal,
   );
-  return config ? readProject(root, revision, signal) : undefined;
+  return config ? revision : undefined;
+}
+
+async function changedIdeas(
+  root: string,
+  snapshot: string,
+  previous: string | undefined,
+  signal: AbortSignal,
+): Promise<ReadonlySet<string>> {
+  const paths = previous
+    ? await git(
+        root,
+        [
+          "diff",
+          "--name-only",
+          "--no-renames",
+          "-z",
+          ...(snapshot === "staged" ? ["--cached"] : []),
+          previous,
+          ...(snapshot === "staged" || snapshot === "worktree"
+            ? []
+            : [snapshot]),
+          "--",
+          ".silvermoon/i",
+        ],
+        signal,
+      )
+    : snapshot === "worktree" || snapshot === "staged"
+      ? await git(root, ["ls-files", "-z", "--", ".silvermoon/i"], signal)
+      : await git(
+          root,
+          [
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "-z",
+            snapshot,
+            "--",
+            ".silvermoon/i",
+          ],
+          signal,
+        );
+  const untracked =
+    snapshot === "worktree"
+      ? await git(
+          root,
+          [
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            ".silvermoon/i",
+          ],
+          signal,
+        )
+      : "";
+  const ids = new Set<string>();
+  for (const path of (paths + "\0" + untracked).split("\0").filter(Boolean)) {
+    const id = path.split("/")[2];
+    invariant(
+      id && validIdeaId(id),
+      "layout",
+      `Invalid new Idea path: ${path}`,
+    );
+    ids.add(id);
+  }
+  return ids;
 }
 
 export function commitCheckpoints(runtime: Runtime) {
@@ -64,14 +131,16 @@ export function commitCheckpoints(runtime: Runtime) {
   const structure = defineCheckpoint({
     id: "commit-snapshot",
     target: CommitTarget,
-    description: "候选快照内的 Silvermoon 配置、文件与协议结构有效。",
+    description:
+      "候选快照中有变更的 Ideas 的完整内容与 Silvermoon 配置、协议结构有效。",
     output: {
       description:
         "本次已经固定的候选及基线内容，包含 Map 和原始字节；只在执行内共享。",
       fields: [
         {
           name: "project",
-          description: "经结构核验的候选快照；staged 仅包含 Git 索引内容。",
+          description:
+            "经结构核验的变更 Ideas 的完整候选；staged 仅包含 Git 索引内容。",
         },
         {
           name: "previous",
@@ -84,7 +153,7 @@ export function commitCheckpoints(runtime: Runtime) {
       {
         code: "commit-snapshot-valid",
         description:
-          "候选快照必须具备合法的 Silvermoon 配置、路径、文件及 Idea 协议内容。",
+          "候选快照必须具备合法的 Silvermoon 配置，以及有变更 Ideas 的完整路径、文件和协议内容。",
       },
     ],
     check: async (target, context) => {
@@ -105,16 +174,32 @@ export function commitCheckpoints(runtime: Runtime) {
                   context.signal,
                 )
               : target.snapshot;
-          const previous = await baseline(
+          const revision = await baseline(
             target.repoRoot,
             snapshot,
             context.signal,
           );
+          const ids = await changedIdeas(
+            target.repoRoot,
+            snapshot,
+            revision,
+            context.signal,
+          );
+          const previous = revision
+            ? await readProject(target.repoRoot, revision, context.signal, ids)
+            : undefined;
           const project = await readProject(
             target.repoRoot,
             snapshot,
             context.signal,
+            ids,
           );
+          for (const id of target.allowDelete ?? [])
+            invariant(
+              previous?.ideas.has(id) && !project.ideas.has(id),
+              "deletion",
+              `Deletion exception requires a whole existing Idea to be removed: ${id}`,
+            );
           return { project, previous };
         });
         return { pass: true as const, output: observation };
@@ -151,7 +236,8 @@ export function commitCheckpoints(runtime: Runtime) {
     rules: [
       {
         code: "commit-history-idea-identity-immutable",
-        description: "候选快照必须保留基线中已有 Idea 的 bootstrap 身份。",
+        description:
+          "候选快照必须保留基线中已有 Idea 的 bootstrap 身份；仅允许显式声明的整体删除。",
       },
       {
         code: "commit-history-event-history-append-only",
@@ -159,7 +245,7 @@ export function commitCheckpoints(runtime: Runtime) {
       },
     ],
     check: async (
-      _target,
+      target,
       context,
     ): Promise<
       CheckpointResult<
@@ -175,6 +261,8 @@ export function commitCheckpoints(runtime: Runtime) {
         | "commit-history-event-history-append-only"
       >[] = [];
       for (const [id, before] of previous?.ideas ?? []) {
+        if (!current.ideas.has(id) && target.allowDelete?.includes(id))
+          continue;
         try {
           verifyIdeaHistory(current.ideas.get(id), before);
         } catch (error) {

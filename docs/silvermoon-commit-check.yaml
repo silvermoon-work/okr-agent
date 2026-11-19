@@ -2,9 +2,9 @@ $schema: urn:ipfsaw:check-bundle:1
 specVersion: "1.0"
 name: Silvermoon · 提交合法性检查
 description:
-  验证候选快照中的 Silvermoon
-  数据结构和相对基线的修改是否合法，供提交前检查使用。staged 读取 Git
-  索引，worktree
+  对应 silvermoon check-changes，只选择候选快照中有变更的 Ideas，完整验证这些
+  Ideas 的 Silvermoon 数据结构和相对基线的修改是否合法，供提交前检查使用。staged
+  读取 Git 索引，worktree
   读取显式工作区候选，已提交快照读取准确提交树；不要求工作区洁净、upstream
   就绪、分支同步、全局 Silvermoon 配置有效或 Idea 已完成。本任务不
   fetch，也不自动暂存、提交、推送或清理文件。
@@ -28,10 +28,20 @@ parameter:
         description:
           暂存区 staged、工作区 worktree、HEAD 或准确提交 ID；commit hook 使用
           staged。
+      allowDelete:
+        type: array
+        uniqueItems: true
+        description:
+          已明确授权整体删除的 Idea ID；只允许基线存在、候选整体消失的 Idea。
+        items:
+          type: string
+          pattern: "^[0-9]{12}[a-f0-9]{4}$"
 checkpoints:
   - id: commit-snapshot
     title: 候选快照有效
-    description: 检查指定候选快照中的 Silvermoon 配置、文件和协议结构是否有效。
+    description:
+      检查指定候选快照中发生变更的 Ideas
+      的完整内容，以及配置、文件和协议结构是否有效。
     instructions:
       你需要确认实际候选快照满足下列结构
       Rules，不把未暂存的工作区内容混入索引。工作区有改动、缺少 upstream 或 Idea
@@ -39,7 +49,7 @@ checkpoints:
     rules:
       - code: commit-snapshot-valid
         description:
-          指定候选快照的 Silvermoon
+          指定候选快照中发生变更的 Ideas 的 Silvermoon
           配置、路径、文件、bootstrap、事件和用例索引必须符合支持的协议及安全、容量约束；暂存区检查只读取索引，不混入未暂存或未跟踪的工作区内容。
     output:
       description:
@@ -64,7 +74,8 @@ checkpoints:
       - code: commit-history-idea-identity-immutable
         description:
           候选快照必须保留基线中所有已有 Idea 的 version、id、checkCid 和
-          createdAt 字段值，不得删除已有 Idea 或改写其 bootstrap 身份；JSON
+          createdAt 字段值，不得改写其 bootstrap 身份；只有 allowDelete
+          中显式声明的既有 Idea 可以整体删除，部分删除不适用；JSON
           排版或字段顺序变化不构成身份变化。
       - code: commit-history-event-history-append-only
         description:

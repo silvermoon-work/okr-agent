@@ -177,10 +177,11 @@ checkpoints:
       description:
         提供从当前内容、有效 events 和准确 primary 快照推导的 Idea
         事实，供后续阶段读取同一次 reduce
-        的结果，不再各自解释事件或维护另一套状态。 CLI 的 `silvermoon event
-        replay <idea> --json` 使用同一 reducer，可用于诊断，但其
-        observation.fresh=false，只反映本地跟踪快照，不能替代本 Check
-        的同步验收；state.level=unknown 或 primary 不可用时不能判定通过。
+        的结果，不再各自解释事件或维护另一套状态。 CLI 使用 `silvermoon
+        check-idea <idea> --json` 观察； 生命周期 Problem 的 brief 包含
+        level、可选 next、revisions、 eventDigest、primary 和
+        subject。前置检查失败时只返回前置问题， 不伪造领域状态；本 Task
+        全部通过才表示完成。
       fields:
         - name: state
           description:
@@ -195,7 +196,7 @@ checkpoints:
         - name: brief
           description:
             受控的事实摘要字符串，供失败规则的 brief
-            使用；不包含原始全文，不代表自动发布整个 state 或 Context。
+            使用；包含归约状态与版本事实，不包含原始文档全文或整个 Context。
   - id: requirements
     title: 需求共识已确认并同步
     description: 检查当前需求版本已获用户明确确认，且内容和确认事件已同步。
@@ -213,7 +214,7 @@ checkpoints:
 
       1. 编写 `requirements/Spec.md`，用 Markdown 说明问题、目标、范围与非目标、场景和验收标准；全部 `requirements/` 附件也属于签署范围。目录提纲用于帮助 review，不是新增机器可验证的正文模板。
       2. 向用户展示当前完整材料及变更，明确请求对这个准确版本的确认。用户未同意时继续迭代文档和 review，不记录 `signOff`，也不删除已有事件。
-      3. 用户明确同意后，用 `silvermoon event replay <idea> --json` 读取当前 `state.revisions`、`digest` 和 `observation.primary.tip`。如果材料与用户刚确认的版本不同，重新 review；primary 不可用时先恢复观察能力。
+      3. 用户明确同意后，用 `silvermoon check-idea <idea> --json` 读取生命周期 Problem brief 中的 `revisions`、`eventDigest` 和 `primary`。如果材料与用户刚确认的版本不同，重新 review；primary 不可用时先恢复观察能力。
       4. 准备下面的 JSON。`type=signOff` 本身表示真实确认，新事件不再写 `decision`；历史事件中的 `decision=confirmed` 只按兼容协议读取，不能为简化格式改写旧事件。所有 `<...>` 都必须替换为真实值：`id` 是全新 32 位小写十六进制，`at` 是当前规范 UTC ISO 时间，revision 来自当前回放，不能猜测哈希。
 
       ```json
@@ -228,8 +229,8 @@ checkpoints:
       }
       ```
 
-      5. 使用 `silvermoon event append <idea> --input <event.json> --expected-digest <digest> --expected-primary <observation.primary.tip> --confirm-human-decision` 追加事件。确认参数只是对已有真实人类决定的记录声明，不是用户授权或身份认证。
-      6. 遇到版本、digest 或 primary 冲突时重新观察并核对用户决定，不盲目重试。按已有授权提交并同步内容和事件，再运行 `silvermoon whats-next <idea> --audience agent`，以对应 Rules 通过为准；本地 replay 不证明网络新鲜度。
+      5. 直接编辑该 Idea 的 `events.jsonl` 追加事实，保留原始字节前缀；每条新事件递归按 ASCII 键序序列化为单行 JSON，使用 UTF-8、LF 和最终换行，再运行 `silvermoon check-changes --worktree --audience agent` 检查。事件只能记录已有真实人类决定，不是用户授权或身份认证。
+      6. 遇到版本、digest 或 primary 冲突时重新观察并核对用户决定，不盲目重试。按已有授权提交并同步内容和事件，再运行 `silvermoon check-idea <idea> --audience agent`，以对应 Rules 通过为准；本地库存状态不证明网络新鲜度。
     rules:
       - code: requirements-consensus-confirmed
         description:
@@ -264,7 +265,7 @@ checkpoints:
 
       1. 编写 `technical/research.md`，以 Markdown 问题索引列出需要调研的问题、用户关注点、待查证事实及其影响的技术决策；这里确认的是调研范围，不用未完成的调研结论冒充答案。
       2. 向用户展示问题索引及其绑定的当前需求版本。用户未明确同意时继续迭代索引，不写 `signOff`；需求改变后也要重新确认。
-      3. 明确同意后，运行 `silvermoon event replay <idea> --json` 核对当前版本、digest 和可用的 primary tip。准备下列事件，替换全部占位符；id 必须为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间。
+      3. 明确同意后，运行 `silvermoon check-idea <idea> --json` 核对当前版本、digest 和可用的 primary tip。准备下列事件，替换全部占位符；id 必须为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间。
 
       ```json
       {
@@ -278,8 +279,8 @@ checkpoints:
       }
       ```
 
-      4. 使用 `silvermoon event append <idea> --input <event.json> --expected-digest <digest> --expected-primary <observation.primary.tip> --confirm-human-decision` 记录真实决定。冲突或版本改变时重新观察、核对 review，不伪造确认。
-      5. 按已有授权提交并同步索引和事件，再运行 `silvermoon whats-next <idea> --audience agent` 验收；replay 的本地跟踪快照本身不是同步证明。
+      4. 直接编辑该 Idea 的 `events.jsonl` 追加事实，保留原始字节前缀；每条新事件递归按 ASCII 键序序列化为单行 JSON，使用 UTF-8、LF 和最终换行，再运行 `silvermoon check-changes --worktree --audience agent` 检查。冲突或版本改变时重新观察、核对 review，不伪造确认。
+      5. 按已有授权提交并同步索引和事件，再运行 `silvermoon check-idea <idea> --audience agent` 验收；本地跟踪快照本身不是同步证明。
     rules:
       - code: research-consensus-confirmed
         description:
@@ -312,7 +313,7 @@ checkpoints:
 
       1. 完成已确认问题范围内的调研，将结论和依据写入 `technical/Spec.md` 及附件，说明方案选择、取舍、接口与数据流、错误处理、实施计划和验证方法；单独签署的 `technical/research.md` 不属于本阶段正文版本。
       2. 向用户 review 整个当前技术材料及其前序版本。未获明确同意就继续迭代，不写 `signOff`；正文、计划或附件变化均需重新核对确认。
-      3. 明确同意后，通过 `silvermoon event replay <idea> --json` 取得当前 revisions、digest 和可用 primary tip。替换下列全部占位符；id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间，upstream 必须准确且无额外阶段。
+      3. 明确同意后，通过 `silvermoon check-idea <idea> --json` 取得当前 revisions、digest 和可用 primary tip。替换下列全部占位符；id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间，upstream 必须准确且无额外阶段。
 
       ```json
       {
@@ -329,8 +330,8 @@ checkpoints:
       }
       ```
 
-      4. 使用 `silvermoon event append <idea> --input <event.json> --expected-digest <digest> --expected-primary <observation.primary.tip> --confirm-human-decision` 追加真实确认。版本或并发冲突时重新观察并核对决定。
-      5. 按已有授权提交并同步内容和事件，再运行 `silvermoon whats-next <idea> --audience agent`；本地回放到后续阶段不能代替同步 Rule。
+      4. 直接编辑该 Idea 的 `events.jsonl` 追加事实，保留原始字节前缀；每条新事件递归按 ASCII 键序序列化为单行 JSON，使用 UTF-8、LF 和最终换行，再运行 `silvermoon check-changes --worktree --audience agent` 检查。版本或并发冲突时重新观察并核对决定。
+      5. 按已有授权提交并同步内容和事件，再运行 `silvermoon check-idea <idea> --audience agent`；本地回放到后续阶段不能代替同步 Rule。
     rules:
       - code: technical-consensus-confirmed
         description:
@@ -376,7 +377,7 @@ checkpoints:
       ```
 
       2. 与用户 review 用例范围、phase、environment、subject 及绑定的前序版本。未明确同意就迭代索引，不写 `signOff`。详细操作正文留到 test-cases，但不能遗漏索引应声明的用例。
-      3. 明确同意后，用 `silvermoon event replay <idea> --json` 核对当前 revisions、digest 和可用 primary tip。替换下列全部占位符，id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间。
+      3. 明确同意后，用 `silvermoon check-idea <idea> --json` 核对当前 revisions、digest 和可用 primary tip。替换下列全部占位符，id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间。
 
       ```json
       {
@@ -394,8 +395,8 @@ checkpoints:
       }
       ```
 
-      4. 使用 `silvermoon event append <idea> --input <event.json> --expected-digest <digest> --expected-primary <observation.primary.tip> --confirm-human-decision` 记录真实确认，冲突时重新观察和核对 review。
-      5. 按已有授权提交并同步索引与事件，再运行 `silvermoon whats-next <idea> --audience agent` 确认对应 Rules 已通过。
+      4. 直接编辑该 Idea 的 `events.jsonl` 追加事实，保留原始字节前缀；每条新事件递归按 ASCII 键序序列化为单行 JSON，使用 UTF-8、LF 和最终换行，再运行 `silvermoon check-changes --worktree --audience agent` 检查。冲突时重新观察和核对 review。
+      5. 按已有授权提交并同步索引与事件，再运行 `silvermoon check-idea <idea> --audience agent` 确认对应 Rules 已通过。
     rules:
       - code: test-index-consensus-confirmed
         description:
@@ -430,7 +431,7 @@ checkpoints:
 
       1. 在 `tests/Spec.md` 及附件中按已确认 case id 编写详细用例：环境与受测对象、前置准备、输入、操作步骤、预期结果，以及应保存的证据和采集方式。`tests/` 中除独立索引 `cases.json` 外的全部材料共同参与本阶段签署。
       2. 与用户 review 所有实现和部署用例及其前序版本。未明确同意就继续迭代正文，不写 `signOff`；若需要新增或改变索引，回到 test-index 重新确认受影响的版本。
-      3. 明确同意后，用 `silvermoon event replay <idea> --json` 核对 revisions、digest 和可用 primary tip。替换下列全部占位符，id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间。
+      3. 明确同意后，用 `silvermoon check-idea <idea> --json` 核对 revisions、digest 和可用 primary tip。替换下列全部占位符，id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间。
 
       ```json
       {
@@ -449,8 +450,8 @@ checkpoints:
       }
       ```
 
-      4. 使用 `silvermoon event append <idea> --input <event.json> --expected-digest <digest> --expected-primary <observation.primary.tip> --confirm-human-decision` 记录真实确认；冲突或内容变化时重新观察并核对用户决定。
-      5. 按已有授权提交并同步测试材料和事件，再运行 `silvermoon whats-next <idea> --audience agent`。通过前不要把测试计划当成已经执行的验证证据。
+      4. 直接编辑该 Idea 的 `events.jsonl` 追加事实，保留原始字节前缀；每条新事件递归按 ASCII 键序序列化为单行 JSON，使用 UTF-8、LF 和最终换行，再运行 `silvermoon check-changes --worktree --audience agent` 检查。冲突或内容变化时重新观察并核对用户决定。
+      5. 按已有授权提交并同步测试材料和事件，再运行 `silvermoon check-idea <idea> --audience agent`。通过前不要把测试计划当成已经执行的验证证据。
     rules:
       - code: test-cases-consensus-confirmed
         description:
@@ -487,7 +488,7 @@ checkpoints:
 
       1. 按已确认需求和技术方案完成实现，针对准确的受测提交，在索引要求的每个实现环境执行该环境全部实现用例。依照测试说明把真实、非空证据保存到当前 Idea 的 `evidence/implementation/`。
       2. 验证结果由 Agent 如实记录，不增加人类结果 sign off。失败或错误也保留真实记录，修复后重新验证；不能将失败写成 pass，或跳过新失败而选旧成功。
-      3. 用 `silvermoon event replay <idea> --json` 核对当前 revisions、digest 和可用 primary tip。每个实现环境准备一个独立 verify 批次，覆盖该环境的全部 case；下例仅展示一个结果项，实际必须展开完整集合。
+      3. 用 `silvermoon check-idea <idea> --json` 核对当前 revisions、digest 和可用 primary tip。每个实现环境准备一个独立 verify 批次，覆盖该环境的全部 case；下例仅展示一个结果项，实际必须展开完整集合。
 
       ```json
       {
@@ -517,8 +518,8 @@ checkpoints:
       ```
 
       4. 替换所有占位符：事件 id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间，batch id 使用唯一的字母数字开头标识（允许点、下划线、连字符，最长 64 字符）。证据 digest 为原始文件字节的 `sha256:<64位小写十六进制>`。subject 必须是真正受测的提交，不拿追加事件后的 HEAD 冒充；失败时 result 如实为 fail 或 error。
-      5. 使用 `silvermoon event append <idea> --input <event.json> --expected-digest <digest> --expected-primary <observation.primary.tip>` 追加；verify 不需要 `--confirm-human-decision`。每次追加后重新回放取得下一个准确 digest，冲突时重新观察，不盲目复用旧输入。
-      6. 按已有授权将实现、证据及 events 提交并同步至配置的 primary，再运行 `silvermoon whats-next <idea> --audience agent`。只有 evidence-valid 和 synchronized 两条 Rules 都通过，才能推进部署；`state.implementation` 存在不等于已同步。
+      5. 直接编辑该 Idea 的 `events.jsonl` 追加事实，保留原始字节前缀；每条新事件递归按 ASCII 键序序列化为单行 JSON，使用 UTF-8、LF 和最终换行，再运行 `silvermoon check-changes --worktree --audience agent` 检查。每次写入前核对最新文件字节与版本，冲突时重新观察，不盲目复用旧输入。
+      6. 按已有授权将实现、证据及 events 提交并同步至配置的 primary，再运行 `silvermoon check-idea <idea> --audience agent`。只有 evidence-valid 和 synchronized 两条 Rules 都通过，才能推进部署；`state.implementation` 存在不等于已同步。
     rules:
       - code: implementation-evidence-valid
         description:
@@ -562,7 +563,7 @@ checkpoints:
       ### 验证、记录和同步
 
       1. 仅在实现 checkpoint 已通过后，按已有部署授权部署该已验收并同步的实现。在索引要求的每个部署环境执行全部部署用例，按测试说明将真实、非空证据保存到 `evidence/deployment/`。
-      2. 用 `silvermoon event replay <idea> --json` 核对当前 revisions、digest、可用 primary tip 和 `state.implementation`。该实现摘要必须仍与受部署的验收结果一致；实现发生变化就先回到实现验收，不复用旧部署证据。
+      2. 用 `silvermoon check-idea <idea> --json` 核对当前 revisions、digest、可用 primary tip 和 `state.implementation`。该实现摘要必须仍与受部署的验收结果一致；实现发生变化就先回到实现验收，不复用旧部署证据。
       3. 每个部署环境准备一个覆盖其全部 case 的 verify 批次，绑定准确受测提交和当前实现批次集合摘要。下例仅展示一个结果项，实际必须覆盖完整集合，不以部署命令退出成功代替验收。
 
       ```json
@@ -594,8 +595,8 @@ checkpoints:
       ```
 
       4. 替换全部占位符，事件 id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间；batch id 是唯一的字母数字开头标识（允许点、下划线、连字符，最长 64 字符）。证据 digest 为原始字节的 `sha256:<64位小写十六进制>`。implementation 是整个有效实现批次集合的摘要，不是单条 event 或 batch 的 id；失败结果如实为 fail 或 error。
-      5. 使用 `silvermoon event append <idea> --input <event.json> --expected-digest <digest> --expected-primary <observation.primary.tip>` 追加真实结果，不新增人类结果确认。每次追加后重新回放取得下一个准确 digest；冲突时重新观察。
-      6. 按已有授权提交并同步部署证据和 events，最后运行 `silvermoon whats-next <idea> --audience agent`。只有全部 Rules 通过，才可宣称 Idea 完成；即使本地 replay 已返回 `state.level=completed`，也不能省略最终同步检查。
+      5. 直接编辑该 Idea 的 `events.jsonl` 追加事实，保留原始字节前缀；每条新事件递归按 ASCII 键序序列化为单行 JSON，使用 UTF-8、LF 和最终换行，再运行 `silvermoon check-changes --worktree --audience agent` 检查。不新增人类结果确认。每次写入前核对最新文件字节与版本；冲突时重新观察。
+      6. 按已有授权提交并同步部署证据和 events，最后运行 `silvermoon check-idea <idea> --audience agent`。只有全部 Rules 通过，才可宣称 Idea 完成；即使本地归约已得到 completed，也不能省略最终同步检查。
     rules:
       - code: deployment-evidence-valid
         description:
