@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCli } from "../src/cli.js";
@@ -46,11 +46,21 @@ async function cli(args: string[], cwd: string, signal?: AbortSignal) {
   });
   return { exit, stdout, stderr, json: (): unknown => JSON.parse(stdout) };
 }
+async function legacyPath(home: string): Promise<string> {
+  const bin = join(home, "bin");
+  await mkdir(bin);
+  await writeFile(
+    join(bin, process.platform === "win32" ? "silvermoon.cmd" : "silvermoon"),
+    "#!/usr/bin/env node\n",
+    { mode: 0o755 },
+  );
+  return bin + delimiter + (process.env.PATH ?? "");
+}
 async function controlledHome() {
   const home = await scratch();
   vi.spyOn(device, "currentDevice").mockReturnValue({
     home,
-    path: process.env.PATH ?? "",
+    path: await legacyPath(home),
     entry: resolve("dist", "bin.js"),
   });
   return home;
@@ -238,7 +248,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     const root = await scratch();
     expect(await cli(["--version"], root)).toMatchObject({
       exit: 0,
-      stdout: "0.1.0-rc.1\n",
+      stdout: "0.1.0-rc.2\n",
     });
     expect((await cli(["--help"], root)).stdout).toContain("check-idea");
     for (const argv of [
@@ -618,12 +628,17 @@ describe("CLI retained commands, presentation and explicit errors", () => {
       "origin",
       "https://github.com/example/project.git",
     ]);
-    const env = { ...process.env, HOME: home, USERPROFILE: home };
+    const env = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      PATH: await legacyPath(home),
+    };
     const bin = resolve("dist", "bin.js");
     expect(
       (await execute(process.execPath, [bin, "--version"], { cwd: root, env }))
         .stdout,
-    ).toBe("0.1.0-rc.1\n");
+    ).toBe("0.1.0-rc.2\n");
     expect(
       (await execute(process.execPath, [bin, "--help"], { cwd: root, env }))
         .stdout,

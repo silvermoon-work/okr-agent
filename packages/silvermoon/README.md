@@ -1,5 +1,12 @@
 # @silvermoon-work/silvermoon
 
+`0.1.0-rc.2` adds explicit device and project onboarding through `check-setup`
+and `check-project`, sharing readiness checks with Idea navigation and creation.
+Global runtime and personal skill replacement still require separate
+authorization; building or publishing does not switch an existing device. CLI
+readiness tests use a controlled legacy PATH command so a linked development
+installation does not change their expected prerequisites.
+
 `0.1.0-rc.1` repairs the published `0.1.0-rc.0` candidate's legacy primary URL
 compatibility and missing Git execution context in the Check Worker. The new
 version is not published merely by building/testing, and does not replace a
