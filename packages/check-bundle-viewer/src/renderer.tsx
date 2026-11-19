@@ -8,11 +8,19 @@ let root: Root | undefined;
 export default {
   mount(container: HTMLElement, document: unknown) {
     root = createRoot(container);
-    root.render(<CheckBundleViewer spec={document} />);
+    root.render(
+      <div className="cbv-fill">
+        <CheckBundleViewer spec={document} />
+      </div>,
+    );
   },
   update(document: unknown) {
     if (!root) throw new Error("Check renderer is not mounted.");
-    root.render(<CheckBundleViewer spec={document} />);
+    root.render(
+      <div className="cbv-fill">
+        <CheckBundleViewer spec={document} />
+      </div>,
+    );
   },
   dispose() {
     root?.unmount();

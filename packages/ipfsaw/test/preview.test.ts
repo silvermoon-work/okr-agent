@@ -11,7 +11,7 @@ async function events(url: string) {
   const parsed = new URL(url);
   const abort = new AbortController();
   const response = await fetch(new URL("/events", parsed), {
-    headers: { Authorization: `Bearer ${parsed.hash.slice(1)}` },
+    headers: { "X-IPFSAW-Client": "browser" },
     signal: abort.signal,
   });
   const reader = response
@@ -50,8 +50,74 @@ async function events(url: string) {
   };
 }
 
-describe("loopback preview, authorization, watching and owned lifetime", () => {
-  it("serves only approved assets and authorized revisions with strict HTTP boundaries", async () => {
+describe("loopback preview, first-party access, watching and owned lifetime", () => {
+  it("waits for the final page to disconnect, allows reloads and cancels pending idle shutdown on close", async () => {
+    const directory = await fixtureDirectory();
+    const renderer = await rendererFixture();
+    const path = join(directory.directory, "doc.json");
+    await writeFile(path, '{"$schema":"urn:fixture:1"}');
+    const abort = new AbortController();
+    const onNoClients = vi.fn();
+    const preview = await startPreview({
+      path,
+      store: renderer.store,
+      configuration: {
+        version: 1,
+        renderers: { "urn:fixture:1": renderer.cid },
+      },
+      signal: abort.signal,
+      diagnostic: () => {},
+      onNoClients,
+    });
+    const streams: Awaited<ReturnType<typeof events>>[] = [];
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await vi.advanceTimersByTimeAsync(3001);
+      expect(onNoClients).not.toHaveBeenCalled();
+      const first = await events(preview.url);
+      const second = await events(preview.url);
+      streams.push(first, second);
+      await first.next();
+      await second.next();
+      first.close();
+      await delay(20);
+      await vi.advanceTimersByTimeAsync(3001);
+      expect(onNoClients).not.toHaveBeenCalled();
+      second.close();
+      await delay(20);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(onNoClients).not.toHaveBeenCalled();
+      const reloaded = await events(preview.url);
+      streams.push(reloaded);
+      await reloaded.next();
+      await vi.advanceTimersByTimeAsync(3001);
+      expect(onNoClients).not.toHaveBeenCalled();
+      reloaded.close();
+      await delay(20);
+      await vi.advanceTimersByTimeAsync(2999);
+      expect(onNoClients).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(onNoClients).toHaveBeenCalledOnce();
+      const final = await events(preview.url);
+      streams.push(final);
+      await final.next();
+      final.close();
+      await delay(20);
+      abort.abort();
+      await preview.close();
+      await vi.advanceTimersByTimeAsync(3001);
+      expect(onNoClients).toHaveBeenCalledOnce();
+    } finally {
+      for (const stream of streams) stream.close();
+      abort.abort();
+      await preview.close();
+      vi.useRealTimers();
+      await renderer.store.close();
+      await directory.cleanup();
+    }
+  });
+
+  it("opens a bare URL without credentials while keeping strict HTTP and asset boundaries", async () => {
     const directory = await fixtureDirectory();
     const renderer = await rendererFixture(
       undefined,
@@ -74,6 +140,7 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
     const origin = new URL(preview.url).origin;
     const stream = await events(preview.url);
     try {
+      expect(preview.url).toBe(origin + "/");
       expect((await stream.next()).type).toBe("document");
       const home = await fetch(origin);
       expect(home.status).toBe(200);
@@ -93,7 +160,7 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
       expect(
         (
           await fetch(origin + "/events", {
-            headers: { Authorization: "Bearer wrong" },
+            headers: { "X-IPFSAW-Client": "wrong" },
           })
         ).status,
       ).toBe(403);
@@ -103,12 +170,22 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
             await fetch(origin + "/events", {
               headers: {
                 Origin: originHeader,
-                Authorization: `Bearer ${new URL(preview.url).hash.slice(1)}`,
+                "X-IPFSAW-Client": "browser",
               },
             })
           ).status,
         ).toBe(403);
       }
+      const preflight = await fetch(origin + "/events", {
+        method: "OPTIONS",
+        headers: {
+          Origin: "https://evil.test",
+          "Access-Control-Request-Method": "GET",
+          "Access-Control-Request-Headers": "X-IPFSAW-Client",
+        },
+      });
+      expect(preflight.status).toBe(403);
+      expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
       expect(
         (await fetch(origin, { headers: { Origin: "null" } })).status,
       ).toBe(403);
@@ -278,7 +355,7 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
       await directory.cleanup();
     }
   });
-  it("bounds authorized SSE connections and supports a near-limit document update without disconnecting", async () => {
+  it("bounds first-party SSE connections and supports a near-limit document update without disconnecting", async () => {
     const directory = await fixtureDirectory();
     const renderer = await rendererFixture();
     const path = join(directory.directory, "doc.json");
@@ -305,7 +382,7 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
       expect(
         (
           await fetch(new URL("/events", parsed), {
-            headers: { Authorization: `Bearer ${parsed.hash.slice(1)}` },
+            headers: { "X-IPFSAW-Client": "browser" },
           })
         ).status,
       ).toBe(429);

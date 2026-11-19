@@ -1,23 +1,6 @@
 /** First-party session owner. Serialized into the host page, never the app realm. */
 export function taskHostClient(): void {
   const protocol = "ipfsaw-task/v1";
-  const saved = history.state as {
-    protocol?: unknown;
-    origin?: unknown;
-    capability?: unknown;
-  } | null;
-  const token =
-    location.hash.slice(1) ||
-    (saved?.protocol === protocol &&
-    saved.origin === location.origin &&
-    typeof saved.capability === "string"
-      ? saved.capability
-      : "");
-  history.replaceState(
-    { protocol, origin: location.origin, capability: token },
-    "",
-    "/",
-  );
   const session = crypto.randomUUID();
   const status = document.querySelector<HTMLElement>("#status")!;
   const panel = document.querySelector<HTMLElement>("#renderer")!;
@@ -36,10 +19,11 @@ export function taskHostClient(): void {
     const response = await fetch("/call", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
+        "X-IPFSAW-Client": "browser",
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ ...operation, session, revision }),
+      mode: "same-origin",
       cache: "no-store",
     });
     const result = (await response.json()) as {
@@ -65,6 +49,7 @@ export function taskHostClient(): void {
   const fail = (message: string) => {
     reset();
     panel.hidden = true;
+    status.hidden = false;
     status.textContent = message;
     status.setAttribute("role", "alert");
   };
@@ -80,6 +65,7 @@ export function taskHostClient(): void {
       reset();
       panel.hidden = true;
     }
+    status.hidden = false;
     status.textContent = message;
     status.setAttribute("role", "alert");
   };
@@ -168,6 +154,7 @@ export function taskHostClient(): void {
         clearTimeout(timer);
         status.textContent = `Started revision ${String(revision)}`;
         status.setAttribute("role", "status");
+        status.hidden = true;
       } else if (message.type === "error") {
         failWithCleanup(
           started
@@ -199,6 +186,7 @@ export function taskHostClient(): void {
     latest = next.revision as number;
     reset();
     panel.hidden = true;
+    status.hidden = false;
     status.setAttribute("role", "status");
     if (next.type === "error") {
       fail(
@@ -245,53 +233,15 @@ export function taskHostClient(): void {
         });
     }, 15000);
   };
-  document.querySelector("#cancel")!.addEventListener("click", () => {
-    const revision = latest;
-    const current = generation;
-    void request({ operation: "cancel" }, revision)
-      .then((cancelled) => {
-        if (cancelled && latest === revision && generation === current) {
-          port?.postMessage({ protocol, type: "cancel" });
-          fail("Startup cancelled.");
-        }
-      })
-      .catch(() => {
-        controlFailure(
-          "Startup cancellation could not be confirmed. Check the host connection; the app may still be running.",
-          revision,
-          current,
-        );
-      });
-  });
-  document.querySelector("#close")!.addEventListener("click", () => {
-    const revision = latest;
-    reset();
-    const current = generation;
-    panel.hidden = true;
-    status.textContent = "App removed locally. Confirming host close…";
-    status.setAttribute("role", "status");
-    void request({ operation: "close" }, revision)
-      .then(() => {
-        if (revision === latest && generation === current)
-          status.textContent =
-            "App closed. Change and save the document to launch again.";
-      })
-      .catch(() => {
-        controlFailure(
-          "App removed locally, but host close could not be confirmed. Check the host connection.",
-          revision,
-          current,
-        );
-      });
-  });
   window.addEventListener("pagehide", reset, { once: true });
   void (async () => {
     try {
       const response = await fetch("/events", {
         headers: {
-          Authorization: `Bearer ${token}`,
+          "X-IPFSAW-Client": "browser",
           "X-IPFSAW-Session": session,
         },
+        mode: "same-origin",
         cache: "no-store",
       });
       if (!response.ok || !response.body) throw new Error();

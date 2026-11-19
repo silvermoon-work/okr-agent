@@ -112,14 +112,20 @@
   margin: 0;
 }
 .cbv-outline ul ul {
-  margin-left: 15px;
-  padding-left: 11px;
+  margin-left: 4px;
+  padding-left: 3px;
   border-left: 1px solid var(--cbv-line);
+}
+/* Cap visual indentation, not the nested hierarchy or its collapse controls. */
+.cbv-outline ul ul ul ul ul ul ul ul ul {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: 0;
 }
 .cbv-row {
   display: flex;
   align-items: center;
-  height: 32px;
+  min-height: 32px;
   border-radius: 4px;
   padding-right: 7px;
 }
@@ -154,18 +160,27 @@
   padding: 4px 0;
   flex: 1;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 13px !important;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 12px !important;
+}
+.cbv-depth {
+  flex-shrink: 0;
+  min-width: 22px;
+  margin-right: 4px;
+  color: var(--cbv-muted);
+  font-size: 10px;
+  text-align: center;
 }
 .cbv-tag {
+  flex-shrink: 0;
   margin-left: 6px;
   font-size: 11px;
   color: var(--cbv-muted);
   white-space: nowrap;
 }
 .cbv-reference {
+  flex-shrink: 0;
   border: 0;
   background: transparent;
   color: var(--cbv-accent) !important;
@@ -475,8 +490,12 @@ html:has(.cbv-navigation[open]) {
   .cbv-identity h3 {
     font-size: 21px;
   }
+  .cbv-outline ul ul {
+    margin-left: 3px;
+    padding-left: 2px;
+  }
   .cbv-row {
-    height: 44px;
+    min-height: 44px;
   }
   .cbv-toggle,
   .cbv-reference {
@@ -490,4 +509,22 @@ html:has(.cbv-navigation[open]) {
   .cbv-navigation-toggle {
     min-height: 40px;
   }
+}
+.cbv-fill {
+  height: 100%;
+  min-height: 0;
+}
+.cbv-fill > .cbv {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.cbv-fill .cbv-header {
+  flex-shrink: 0;
+}
+.cbv-fill .cbv-layout {
+  flex: 1;
+  height: auto;
+  min-height: 0;
 }

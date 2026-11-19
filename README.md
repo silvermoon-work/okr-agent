@@ -100,7 +100,7 @@ Engine snapshot 现在直接暴露 `result` payload，不再套 `output.result`�
 [`@silvermoon-work/check-bundle-viewer`](packages/check-bundle-viewer/README.md)
 提供版本化声明式 Spec 校验与可嵌入 React 的折叠脉络 / 契约详情。
 私有宿主含当前 TypeScript Check 的真实身份分流子图，以及更丰富的项目定义 mock。
-桌面为紧凑单行脉络树与独立滚动详情；移动端使用模态导航侧栏。
+桌面为限制视觉缩进、长标题完整换行的紧凑脉络树与独立滚动详情；移动端使用模态导航侧栏。
 说明支持安全 Markdown，Parameters 从 Schema 的直接字段生成列表，
 Problems 使用表格，Parents 从 children 逐边反向推导。
 定义图采用 DAG：允许共享引用，禁止循环。
@@ -130,6 +130,10 @@ listening 不表示 Task 已启动。浏览器调用显式 ESM 默认导出，�
 保存内容会替换页面、重置应用/router 状态。原根位置参数、registry 和旧 renderer
 ABI 保留独立，
 已发布 `0.1.0-rc.0` / `0.1.0-rc.1` 不会因此获得新 `run` 命令。
+本地预览 URL 不含访问凭据，可复制到本机其他浏览器直接打开；
+仍限制 loopback Host/Origin、同源文档/RPC 与隔离 iframe。
+正常显示时没有常驻宿主栏，Check viewer 填满窗口。
+关闭最后一个预览页面后，CLI 在 3 秒重连窗口结束时回收服务并退出；刷新和多标签不会立即误退出。
 
 [`@silvermoon-work/ipfsaw`](packages/ipfsaw/README.md) 提供通用 YAML/JSON
 文件入口、Schema→不可变 renderer CID registry、共享 Task IPFS Store 与隔离

@@ -382,7 +382,7 @@ describe("real standard browser Task", () => {
       await shared.close();
     }
   });
-  it("serves authenticated Task startup and updates separately from HTTP listening, cancellation and app close", async () => {
+  it("serves credential-free first-party Task startup separately from HTTP listening, cancellation and app close", async () => {
     const fixture = await taskFixture();
     const directory = await fixtureDirectory();
     const path = join(directory.directory, "raw.yaml");
@@ -408,11 +408,10 @@ describe("real standard browser Task", () => {
       pollMs: 10,
     });
     const url = new URL(preview.url);
-    const token = url.hash.slice(1);
     const session = randomUUID();
     const response = await fetch(new URL("/events", url), {
       headers: {
-        Authorization: `Bearer ${token}`,
+        "X-IPFSAW-Client": "browser",
         "X-IPFSAW-Session": session,
       },
     });
@@ -443,7 +442,7 @@ describe("real standard browser Task", () => {
       const result = await fetch(new URL("/call", url), {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
+          "X-IPFSAW-Client": "browser",
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ operation, session, revision, ...extra }),
@@ -456,6 +455,7 @@ describe("real standard browser Task", () => {
     };
     try {
       expect(preview.bundleCid).toBe(fixture.cid);
+      expect(preview.url).toBe(url.origin + "/");
       expect(logs.join(" ")).not.toContain("startup completed");
       expect(
         (await fetch(new URL("/call", url), { method: "POST" })).status,
@@ -463,18 +463,40 @@ describe("real standard browser Task", () => {
       expect(
         (
           await fetch(new URL("/events", url), {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { "X-IPFSAW-Client": "browser" },
           })
         ).status,
       ).toBe(403);
-      expect(
-        (
-          await fetch(new URL("/call", url), {
-            method: "POST",
-            headers: { Origin: "null", Authorization: `Bearer ${token}` },
-          })
-        ).status,
-      ).toBe(403);
+      for (const origin of ["null", "https://evil.test"]) {
+        const headers = {
+          Origin: origin,
+          "X-IPFSAW-Client": "browser",
+          "Content-Type": "application/json",
+        };
+        expect(
+          (
+            await fetch(new URL("/call", url), {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                operation: "start",
+                session,
+                revision: 1,
+              }),
+            })
+          ).status,
+        ).toBe(403);
+        const preflight = await fetch(new URL("/call", url), {
+          method: "OPTIONS",
+          headers: {
+            Origin: origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "X-IPFSAW-Client, Content-Type",
+          },
+        });
+        expect(preflight.status).toBe(403);
+        expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+      }
       expect((await fetch(new URL("/task-runtime.js", url))).status).toBe(200);
       expect(
         (
@@ -485,8 +507,9 @@ describe("real standard browser Task", () => {
       ).toBe(200);
       const page = await (await fetch(url.origin)).text();
       expect(page).not.toContain("first");
-      expect(page).not.toContain(token);
-      expect(page).toContain("Cancel startup");
+      expect(page).not.toContain('id="cancel"');
+      expect(page).not.toContain('id="close"');
+      expect(page).not.toContain("<header");
       const frame = await fetch(new URL("/frame", url));
       expect(frame.headers.get("content-security-policy")).toContain(
         "style-src 'nonce-",

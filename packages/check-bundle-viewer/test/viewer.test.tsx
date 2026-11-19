@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CheckBundleViewer } from "../src/viewer.js";
 import { typescriptProjectSpec } from "../src/typescript-project.js";
 import type { CheckBundleSpec } from "../src/spec.js";
-import { graphSpec } from "./fixtures.js";
+import { deepSpec, graphSpec } from "./fixtures.js";
 import { browser } from "./browser.js";
 
 let host: HTMLDivElement;
@@ -59,6 +59,65 @@ function headings() {
 }
 
 describe("compact definition navigation", () => {
+  it("labels deep levels without flattening the chain or shortening node names", () => {
+    const spec = deepSpec();
+    render(spec);
+    const nav = host.querySelector("nav")!;
+    let list = nav.querySelector("ul")!;
+    for (let depth = 1; depth <= 12; depth++) {
+      expect(list.children).toHaveLength(1);
+      const item = list.children[0]!;
+      const row = item.querySelector(".cbv-row")!;
+      const title = spec.checkers[`level-${String(depth)}`]!.title;
+      const select = button(title, row);
+      expect(select.textContent).toBe(title);
+      expect(select.title).toBe(title);
+      const label = row.querySelector(".cbv-depth");
+      if (depth >= 8)
+        expect(label?.getAttribute("aria-label")).toBe(
+          `第 ${String(depth)} 层`,
+        );
+      else expect(label).toBeNull();
+      if (depth < 12) list = item.querySelector(":scope > ul")!;
+    }
+    const leaf = spec.checkers["level-12"]!.title;
+    click(leaf, nav);
+    expect(heading().textContent).toBe(leaf);
+    expect(document.activeElement).toBe(heading());
+    click(`折叠 ${spec.checkers["level-10"]!.title}`, nav);
+    expect(list.closest("[hidden]")).not.toBeNull();
+    click(`展开 ${spec.checkers["level-10"]!.title}`, nav);
+    expect(list.closest("[hidden]")).toBeNull();
+  });
+
+  it("reveals a deep shared target with its full name, depth and keyboard focus", () => {
+    const spec = deepSpec();
+    const leaf = spec.checkers["level-12"]!;
+    spec.checkers.shortcut = {
+      ...leaf,
+      title: "未引用的共享入口",
+      children: [
+        { checker: "level-12", when: "引用叶节点。", parameter: "沿用参数。" },
+      ],
+    };
+    render(spec);
+    const nav = host.querySelector("nav")!;
+    click(`折叠 ${spec.checkers["level-5"]!.title}`, nav);
+    click(`跳转到 ${leaf.title} 定义`, nav);
+    const target = button(leaf.title, nav);
+    expect(target.closest("[hidden]")).toBeNull();
+    expect(target.getAttribute("aria-current")).toBe("true");
+    expect(document.activeElement).toBe(target);
+    expect(target.parentElement?.querySelector(".cbv-depth")?.textContent).toBe(
+      "12",
+    );
+    expect(
+      button("未引用的共享入口", nav).parentElement?.querySelector(
+        ".cbv-depth",
+      ),
+    ).toBeNull();
+  });
+
   it("uses a compact title-only hierarchy and reveals hidden shared definitions", () => {
     render();
     const nav = host.querySelector("nav")!;

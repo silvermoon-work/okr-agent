@@ -106,7 +106,7 @@ function Definition({ spec }: { spec: CheckBundleSpec }) {
       if (detailsPane.current) detailsPane.current.scrollTop = 0;
     });
   };
-  const renderNode = (node: OutlineNode) => {
+  const renderNode = (node: OutlineNode, depth: number) => {
     const definition = spec.checkers[node.checker]!;
     const closed = collapsed.has(node.id);
     return (
@@ -135,6 +135,15 @@ function Definition({ spec }: { spec: CheckBundleSpec }) {
             </button>
           ) : (
             <span className="cbv-spacer" />
+          )}
+          {depth >= 7 && (
+            <span
+              className="cbv-depth"
+              title={`第 ${String(depth + 1)} 层`}
+              aria-label={`第 ${String(depth + 1)} 层`}
+            >
+              {depth + 1}
+            </span>
           )}
           <button
             type="button"
@@ -175,7 +184,7 @@ function Definition({ spec }: { spec: CheckBundleSpec }) {
         </div>
         {node.children.length > 0 && (
           <ul id={`${prefix}-${node.id}-children`} hidden={closed}>
-            {node.children.map(renderNode)}
+            {node.children.map((child) => renderNode(child, depth + 1))}
           </ul>
         )}
       </li>
@@ -206,7 +215,7 @@ function Definition({ spec }: { spec: CheckBundleSpec }) {
         )}
       </div>
       <nav className="cbv-outline" aria-label="Checker 定义脉络">
-        <ul>{outline.map(renderNode)}</ul>
+        <ul>{outline.map((node) => renderNode(node, 0))}</ul>
       </nav>
       <div className="cbv-tree-legend">
         <span>× N 按对象展开</span>

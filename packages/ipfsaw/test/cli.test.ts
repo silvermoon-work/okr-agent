@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { main, openBrowser } from "../src/cli.js";
 import { fixtureDirectory, rendererFixture } from "./helpers.js";
 import { configPath, readConfiguration } from "../src/configuration.js";
+import type { PreviewOptions } from "../src/preview.js";
 
 const mocks = vi.hoisted(() => ({
   content: vi.fn(),
@@ -52,6 +53,68 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("public main(argv) interface", () => {
+  it.each(["legacy", "task"] as const)(
+    "exits %s preview successfully after the last page leaves and awaits owned cleanup",
+    async (kind) => {
+      const fixture = await fixtureDirectory();
+      const renderer = await rendererFixture();
+      const order: string[] = [];
+      let disconnect!: () => void;
+      let finish!: () => void;
+      const cleanup = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      mocks.content.mockResolvedValue({
+        close: () => {
+          order.push("store");
+          return Promise.resolve();
+        },
+      });
+      mocks.preview.mockImplementation((options: PreviewOptions) => {
+        disconnect = options.onNoClients!;
+        return Promise.resolve({
+          url: "http://127.0.0.1:1234/",
+          close: async () => {
+            await cleanup;
+            order.push("preview");
+          },
+        });
+      });
+      const output = streams();
+      let running: Promise<number> | undefined;
+      try {
+        let completed = false;
+        running = main([
+          ...(kind === "task"
+            ? ["run", "--cid", renderer.cid, "--document", "doc.json"]
+            : ["doc.json"]),
+          "--data-dir",
+          fixture.directory,
+          "--no-open",
+        ]).then((code) => {
+          completed = true;
+          return code;
+        });
+        await vi.waitFor(() => {
+          expect(output.result().data?.state).toBe("listening");
+        });
+        disconnect();
+        await Promise.resolve();
+        expect(completed).toBe(false);
+        finish();
+        expect(await running).toBe(0);
+        expect(order).toEqual(["preview", "store"]);
+        expect(output.err).toContain("All preview pages disconnected");
+        expect(output.out.trim().split("\n")).toHaveLength(1);
+      } finally {
+        finish();
+        await running;
+        await renderer.store.close();
+        await fixture.cleanup();
+      }
+    },
+  );
+
   it("has no import side effects and prints help/version to stdout with no network", async () => {
     for (const args of [
       [],
@@ -150,7 +213,7 @@ describe("public main(argv) interface", () => {
       const storeClose = vi.fn().mockResolvedValue(undefined);
       mocks.content.mockResolvedValue({ close: storeClose });
       mocks.preview.mockResolvedValue({
-        url: "http://127.0.0.1:1234/#PRIVATE",
+        url: "http://127.0.0.1:1234/",
         bundleCid: renderer.cid,
         close,
       });
@@ -177,7 +240,7 @@ describe("public main(argv) interface", () => {
         });
         expect(output.result().data).toEqual({
           state: "listening",
-          url: "http://127.0.0.1:1234/#PRIVATE",
+          url: "http://127.0.0.1:1234/",
           bundleCid: renderer.cid,
           runtime: "browser",
         });
@@ -227,7 +290,7 @@ describe("public main(argv) interface", () => {
         mocks.preview.mockRejectedValue(new Error("secret source"));
       else
         mocks.preview.mockResolvedValue({
-          url: "http://127.0.0.1:1234/#SECRET",
+          url: "http://127.0.0.1:1234/",
           bundleCid: renderer.cid,
           close,
         });
@@ -401,7 +464,7 @@ describe("public main(argv) interface", () => {
       });
       mocks.content.mockResolvedValue({ close: closeStore });
       mocks.preview.mockResolvedValue({
-        url: "http://127.0.0.1:1234/#SECRET",
+        url: "http://127.0.0.1:1234/",
         schema: "urn:fixture:1",
         rendererCid: "fixture-cid",
         close: closePreview,
@@ -427,7 +490,7 @@ describe("public main(argv) interface", () => {
         });
         expect(output.result().data).toEqual({
           state: "listening",
-          url: "http://127.0.0.1:1234/#SECRET",
+          url: "http://127.0.0.1:1234/",
           schema: "urn:fixture:1",
           rendererCid: "fixture-cid",
         });
@@ -489,7 +552,7 @@ describe("public main(argv) interface", () => {
     const fixture = await fixtureDirectory();
     mocks.content.mockResolvedValue({ close: () => Promise.resolve() });
     mocks.preview.mockResolvedValue({
-      url: "http://127.0.0.1:1234/#SECRET",
+      url: "http://127.0.0.1:1234/",
       close: () => Promise.resolve(),
     });
     mocks.spawn.mockImplementation(() => {
@@ -672,7 +735,7 @@ describe("public main(argv) interface", () => {
     const fixture = await fixtureDirectory();
     mocks.content.mockResolvedValue({ close: () => Promise.resolve() });
     mocks.preview.mockResolvedValue({
-      url: "http://127.0.0.1:1234/#SECRET",
+      url: "http://127.0.0.1:1234/",
       close: () => Promise.reject(new Error("SECRET cleanup")),
     });
     const output = streams();

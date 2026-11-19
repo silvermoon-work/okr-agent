@@ -41,6 +41,7 @@ export interface PreviewOptions {
   diagnostic(message: string): void;
   pollMs?: number;
   task?: TaskSource;
+  onNoClients?: () => void;
 }
 
 export async function startPreview(options: PreviewOptions): Promise<{
@@ -53,9 +54,9 @@ export async function startPreview(options: PreviewOptions): Promise<{
   const lifetime = new AbortController();
   const signal = AbortSignal.any([options.signal, lifetime.signal]);
   const cancelled = () => signal.aborted;
-  const token = randomBytes(32).toString("base64url");
   const nonce = randomBytes(24).toString("base64url");
   const clients = new Set<ServerResponse>();
+  let disconnectTimer: ReturnType<typeof setTimeout> | undefined;
   const sessions = new Map<
     string,
     { call?: TaskInvocation; blocked?: boolean }
@@ -241,14 +242,16 @@ export async function startPreview(options: PreviewOptions): Promise<{
       refuse(403);
       return;
     }
+    // This non-secret header forces foreign browser callers through rejected CORS preflight.
+    if (
+      (request.url === "/events" || (task && request.url === "/call")) &&
+      (request.headers.origin === "null" ||
+        request.headers["x-ipfsaw-client"] !== "browser")
+    ) {
+      refuse(403);
+      return;
+    }
     if (task && request.method === "POST" && request.url === "/call") {
-      if (
-        request.headers.origin === "null" ||
-        request.headers.authorization !== `Bearer ${token}`
-      ) {
-        refuse(403);
-        return;
-      }
       void (async () => {
         let length = 0;
         const chunks: Buffer[] = [];
@@ -362,13 +365,6 @@ export async function startPreview(options: PreviewOptions): Promise<{
     }
     const path = request.url;
     if (path === "/events") {
-      if (
-        request.headers.origin === "null" ||
-        request.headers.authorization !== `Bearer ${token}`
-      ) {
-        refuse(403);
-        return;
-      }
       if (clients.size >= 8) {
         refuse(429);
         return;
@@ -384,6 +380,7 @@ export async function startPreview(options: PreviewOptions): Promise<{
         return;
       }
       if (typeof sessionId === "string") sessions.set(sessionId, {});
+      clearTimeout(disconnectTimer);
       response.writeHead(200, { "Content-Type": "text/event-stream" });
       response.write(`data: ${JSON.stringify(state)}\n\n`);
       clients.add(response);
@@ -392,6 +389,13 @@ export async function startPreview(options: PreviewOptions): Promise<{
         if (typeof sessionId === "string") {
           retire(sessions.get(sessionId)?.call);
           sessions.delete(sessionId);
+        }
+        if (clients.size === 0 && !signal.aborted && options.onNoClients) {
+          clearTimeout(disconnectTimer);
+          // A reload briefly disconnects the final page before its replacement connects.
+          disconnectTimer = setTimeout(() => {
+            if (clients.size === 0 && !signal.aborted) options.onNoClients?.();
+          }, 3000);
         }
       });
       return;
@@ -460,7 +464,7 @@ export async function startPreview(options: PreviewOptions): Promise<{
       );
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       response.end(
-        `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ipfsaw preview</title><style nonce="${nonce}">html,body{height:100%;margin:0;color:#203047;background:#fff;font:14px "Segoe UI",sans-serif}body{display:flex;flex-direction:column}header{padding:10px 18px;border-bottom:1px solid #c6d3e2;background:#eef4fa;display:flex;gap:24px;align-items:center}h1{font-size:16px;margin:0}#status{margin:0;overflow-wrap:anywhere}#renderer{flex:1;min-height:0}iframe{height:100%;width:100%;border:0}[hidden]{display:none!important}</style><header><h1>ipfsaw</h1><p id="status" role="status">Connecting…</p>${task ? '<button id="cancel" type="button">Cancel startup</button><button id="close" type="button">Close app</button>' : ""}</header><main id="renderer" hidden></main><script nonce="${nonce}">(${(task ? taskHostClient : hostClient).toString()})()</script></html>`,
+        `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ipfsaw preview</title><style nonce="${nonce}">html,body{height:100%;margin:0;color:#203047;background:#fff;font:14px "Segoe UI",sans-serif}body{display:flex;flex-direction:column}#status{margin:0;padding:10px 18px;border-bottom:1px solid #c6d3e2;background:#eef4fa;overflow-wrap:anywhere;flex-shrink:0}#renderer{flex:1;min-height:0}iframe{display:block;height:100%;width:100%;border:0}[hidden]{display:none!important}</style><p id="status" role="status">Connecting…</p><main id="renderer" hidden></main><script nonce="${nonce}">(${(task ? taskHostClient : hostClient).toString()})()</script></html>`,
       );
       return;
     }
@@ -468,13 +472,13 @@ export async function startPreview(options: PreviewOptions): Promise<{
       // Check's existing AJV compiler uses Function. This permission never reaches the host realm.
       response.setHeader(
         "Content-Security-Policy",
-        `default-src 'none'; script-src 'nonce-${nonce}' 'unsafe-eval' ${origin}/assets/ ${task ? `${origin}/task-runtime.js` : ""}; style-src ${task ? `'nonce-${nonce}' ` : ""}${origin}/assets/; img-src ${origin}/assets/ data:; font-src ${origin}/assets/; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'`,
+        `default-src 'none'; script-src 'nonce-${nonce}' 'unsafe-eval' ${origin}/assets/ ${task ? `${origin}/task-runtime.js` : ""}; style-src 'nonce-${nonce}' ${origin}/assets/; img-src ${origin}/assets/ data:; font-src ${origin}/assets/; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'`,
       );
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       response.end(
         task
           ? `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Browser app</title><style nonce="${nonce}">html,body{height:100%;margin:0}</style><script type="module" nonce="${nonce}">import {taskFrameClient} from '/task-runtime.js';taskFrameClient(${JSON.stringify(origin)});</script></html>`
-          : `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Renderer</title><div id="app"></div><script nonce="${nonce}">(${frameClient.toString()})(${JSON.stringify(origin)})</script></html>`,
+          : `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Renderer</title><style nonce="${nonce}">html,body,#app{height:100%;margin:0}</style><div id="app"></div><script nonce="${nonce}">(${frameClient.toString()})(${JSON.stringify(origin)})</script></html>`,
       );
       return;
     }
@@ -483,6 +487,7 @@ export async function startPreview(options: PreviewOptions): Promise<{
   const close = (): Promise<void> =>
     (closing ??= (async () => {
       lifetime.abort();
+      clearTimeout(disconnectTimer);
       const failures: unknown[] = cleanupFailures;
       try {
         await polling;
@@ -548,5 +553,5 @@ export async function startPreview(options: PreviewOptions): Promise<{
       }
     }
   })();
-  return { url: `${origin}/#${token}`, ...metadata, close };
+  return { url: `${origin}/`, ...metadata, close };
 }

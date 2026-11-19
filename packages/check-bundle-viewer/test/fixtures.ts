@@ -91,3 +91,36 @@ export function graphSpec(): CheckBundleSpec {
     },
   };
 }
+
+export function deepSpec(): CheckBundleSpec {
+  const count = 12;
+  return {
+    specVersion: "1.0",
+    name: "深层定义布局回归",
+    root: "level-1",
+    checkers: Object.fromEntries(
+      Array.from({ length: count }, (_, index) => {
+        const depth = index + 1;
+        return [
+          `level-${String(depth)}`,
+          {
+            title: `第 ${String(depth)} 层：需要完整阅读并区分的长标题 / ${"LongUnbrokenCheckerName".repeat(3)}`,
+            description: "合成的深层单链，不映射业务检查。",
+            parameter: { schema: { type: "object" }, preconditions: [] },
+            rules: [],
+            children:
+              depth < count
+                ? [
+                    {
+                      checker: `level-${String(depth + 1)}`,
+                      when: "父节点通过。",
+                      parameter: "沿用参数。",
+                    },
+                  ]
+                : [],
+          },
+        ];
+      }),
+    ),
+  };
+}

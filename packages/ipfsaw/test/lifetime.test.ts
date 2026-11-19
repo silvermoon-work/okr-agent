@@ -74,7 +74,8 @@ describe("real CLI with controlled local content/configuration", () => {
       expect(result.ok).toBe(true);
       expect(result.data.rendererCid).toBe(renderer.cid);
       expect((await fetch(new URL("/", result.data.url))).status).toBe(200);
-      expect(stderr).not.toContain(new URL(result.data.url).hash.slice(1));
+      expect(result.data.url).toBe(new URL(result.data.url).origin + "/");
+      expect(stderr).not.toContain("controlled");
       process.emit("SIGTERM");
       expect(await running).toBe(143);
       expect(stdout.trim().split("\n")).toHaveLength(1);

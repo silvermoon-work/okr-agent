@@ -115,6 +115,10 @@ export async function main(
   const diagnostic = (message: string) => {
     process.stderr.write(`${message}\n`);
   };
+  const onNoClients = () => {
+    diagnostic("All preview pages disconnected. Closing the local host.");
+    lifetime.abort();
+  };
   const command = new Command()
     .name("ipfsaw")
     .description(
@@ -175,6 +179,7 @@ export async function main(
           store,
           signal: lifetime.signal,
           diagnostic,
+          onNoClients,
         });
         success({
           state: "listening",
@@ -288,6 +293,7 @@ export async function main(
           task: source,
           signal: lifetime.signal,
           diagnostic,
+          onNoClients,
         });
         success({
           state: "listening",

@@ -51,10 +51,12 @@ describe("optional routing annotation and browser renderer ABI", () => {
       });
     });
     expect(container.textContent).toContain(typescriptProjectSpec.name);
+    expect(container.querySelector(".cbv-fill > .cbv")).not.toBeNull();
     act(() => {
       renderer.update({ ...typescriptProjectSpec, name: "Updated document" });
     });
     expect(container.textContent).toContain("Updated document");
+    expect(container.querySelector(".cbv-fill > .cbv")).not.toBeNull();
     act(() => {
       renderer.dispose();
     });

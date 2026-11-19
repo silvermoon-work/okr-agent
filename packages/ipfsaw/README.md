@@ -105,6 +105,16 @@ backend 和 gateway 策略。`--ipfs-gateway` 映射既有 `gateway` override，
 SIGTERM 为 143。已输出就绪结果后发生清理失败只写 stderr 并非零退出，
 不会再输出第二个 envelope。浏览器自动打开是尽力操作，失败明确警告，
 保留 `data.url`；`--no-open` 优先于 `openBrowser`。不需要交互提示。
+`data.url` 是不带访问凭据的 `http://127.0.0.1:<port>/`：
+服务运行期间，可在本机不同浏览器、新标签页或无痕窗口中直接打开、复制和刷新，
+不依赖 URL fragment、history、cookie 或浏览器存储。
+正常预览没有常驻宿主标题栏；加载时显示状态，成功后让应用占满窗口，
+错误或断连时重新显示提示。Check viewer 的标题下方，树与详情填满剩余高度。
+最后一个预览页面的 SSE 连接断开后，CLI 等待 3 秒重连窗口，再关闭 HTTP、
+自己持有的 Store/会话/opener 并正常退出（0）；清理失败仍为非零。
+刷新期间重连会取消退出，仍有其他标签页/浏览器连接时不退出。
+首次页面连接前持续等待，因此 `--no-open` 或自动打开失败不会让服务提前退出。
+离开检测依据连接，不是浏览器进程；断网或浏览器丢弃后台页面也可能触发退出。
 
 ## Renderer ABI / 信任边界
 
@@ -146,9 +156,14 @@ Store reader 各 16 MiB、文件数 2048；更严格的 Store 限制继续生效
 加载期间再次核对当前内容，错误状态隐藏旧视图并可纠错恢复。
 
 HTTP 只绑定 `127.0.0.1` 随机端口，校验 Host / Origin；文档 SSE
-要求每次运行能力的 Authorization，opaque iframe 无权读取此接口。
+与 Task RPC 使用同源 fetch 和非保密的 `X-IPFSAW-Client: browser` 请求标记，
+不使用 Authorization 或链接 token。自定义请求头使其他来源的浏览器脚本必须先预检；
+宿主拒绝外源及 opaque Origin 的文档/RPC 请求和 CORS 预检，
+只为批准的不可变 assets / Task runtime 保留 opaque iframe 所需的 CORS。
+这是信任本机用户和进程的预览服务，不提供用户身份认证或同机进程隔离；
+持有本地地址的同机进程可以读取预览。不要向不信任的本机用户开放敏感文档。
 只提供当前批准 bundle 的精确 assets，无任意 CID/file proxy、目录列表。
-最多 8 个授权 SSE 连接，慢客户端的有界输出队列超限会断开。
+最多 8 个 SSE 连接，慢客户端的有界输出队列超限会断开。
 Renderer 在 `sandbox="allow-scripts"` 且无 same-origin 的 iframe 中运行，
 经来源校验与私有 MessagePort 收到数据；Node 从不 import renderer JS。
 ESM/CSS/fonts 的 CORS 仅开放不可变 assets，不开放文档 API。
@@ -283,14 +298,15 @@ Schema
 
 启动完成后调用能力方法拒绝
 `run_finished`，reader 被释放；应用 DOM/副作用继续存在。
-内容在私有 MessagePort→宿主认证 RPC 中传递，不给 opaque iframe 宿主能力 token。
+内容在私有 MessagePort→宿主同源 RPC 中传递；opaque
+iframe 不直接访问宿主文档/RPC。
 这里只做有界、完整读取再交给浏览器流，不承诺跨 RPC 的逐块零拷贝。
 
 Bundle 逻辑总量/单文件各 **64 MiB**、256 文件、512 路径、CAR **72 MiB**，
 均来自官方 `taskBundleLimits`，再受更严格的调用方 Store 限制约束。
 Store 自身块数/块大小/深度/读取预算继续生效；不把旧 renderer 的 16
 MiB 冒充 Task 协议。
-每个启动最多 8 个并发内容请求，最多 8 个授权页面；控制取消有界处理。
+每个启动最多 8 个并发内容请求，最多 8 个独立页面会话；控制取消有界处理。
 文档仍限制源与展开 JSON 各 1 MiB；结果遵守上游默认 payload 预算。
 
 保留 loopback Host/Origin、sandbox、最小 CSP、精确批准 assets 和有界重读；
@@ -298,18 +314,18 @@ runtime 模块与不可变 assets 可供 opaque
 iframe 以 CORS 加载，文档/RPC 不开放跨源权限。
 只有 Check 现有 AJV 动态 schema 编译需要的 iframe `unsafe-eval`
 被保留，宿主页面不开放 eval。
-除现有私有宿主 URL
-fragment 会话能力外，不把文档、参数、秘密或能力写进 URL/日志；
-能力保存在同源 history entry，不能公开分享 URL。
+不把文档、参数、秘密或能力写进 URL/日志；
+本机 URL 不带访问凭据，可在本机其他浏览器中直接打开。
 
-### 就绪、保存、取消和关闭
+### 就绪、保存和关闭
 
 CLI 只输出一次
 `{ok:true,data:{state:"listening",url,bundleCid,runtime:"browser"}}`，
 仅说明 HTTP 可连接，**不说明浏览器已执行 Task**。页面先显示 launching，默认导出完成且
-结果通过宿主验证后才显示 started；后续故障走页面与 stderr，不再追加 stdout 结果。
+结果通过宿主验证后隐藏加载提示、只显示应用；后续故障走页面与 stderr，不再追加 stdout 结果。
 失败退出 1，SIGINT/SIGTERM 为 130/143；帮助/版本仍为文本。
-`--no-open` 保留前台 HTTP，等待用户打开 URL。
+`--no-open` 保留前台 HTTP，等待用户首次打开 URL；
+最后一个页面离开并超过重连窗口后同样自动退出。
 
 真实内容变化后立刻隐藏旧页面，在新 iframe 进行一次新的启动；普通保存、原子替换、
 暂时缺失、非法文件及纠错恢复由有界重读处理。只提交最新 revision，不让旧成功/错误覆盖新内容，
@@ -317,10 +333,8 @@ CLI 只输出一次
 **首版会重置应用和 router 状态**；不是永久更新协议，legacy
 renderer 仍走自己的 update。
 
-宿主按钮 **Cancel startup**
-只取消未完成的加载/启动；完成后的旧 cancel 无效，不关闭 app。
-**Close app**
-独立销毁页面会话，重复关闭幂等；改变并保存文档或重新打开宿主页可再次启动。
+不提供容易误解为停止服务的 **Cancel startup / Close app** 宿主按钮。
+关闭最后一个页面后由 CLI 回收整个预览；未完成的启动仍受超时及取消信号控制。
 启动返回不销毁 app、不返回可序列化函数 handle、不保持 Task 永久 running。
 CLI
 Ctrl+C 关闭自己持有的 HTTP/Store/会话/opener 并等待资源回收，是关闭宿主/apps，
