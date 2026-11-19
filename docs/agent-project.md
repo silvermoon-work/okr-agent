@@ -110,8 +110,9 @@
 - Project content defaults to Simplified Chinese (`zh-CN`).
 - Discover Ideas with `silvermoon list-ideas --json`, then use
   `silvermoon check-idea <idea> --audience agent` and follow its next action.
-  The Idea selector is required. Creation checks device/repository
-  prerequisites.
+  The Idea selector is required. Creation runs its own prerequisite Task,
+  sharing the first four checkpoints with the Idea Task; each has its own strict
+  contract and CAR. Creation still locks and revalidates before writing.
 - Validate metadata with `silvermoon check-changes --worktree --audience agent`
   before staging and `silvermoon check-changes --staged --audience agent` before
   committing.

@@ -3,18 +3,29 @@ import { createCheckContract } from "@silvermoon-work/check-task-sdk/contracts";
 
 const closed = { additionalProperties: false };
 const path = Type.String({ maxLength: 65_536, pattern: "^[^\\u0000\\r\\n]*$" });
-export const Target = Type.Object(
+export const RepositoryTarget = Type.Object(
   {
     userHome: Type.String({ minLength: 1 }),
-    repoRoot: Type.Optional(Type.String({ minLength: 1 })),
-    idea: Type.Optional(Type.String({ minLength: 1 })),
+    repoRoot: Type.String({ minLength: 1 }),
+  },
+  closed,
+);
+export type RepositoryTarget = Static<typeof RepositoryTarget>;
+export const Target = Type.Object(
+  {
+    ...RepositoryTarget.properties,
+    idea: Type.String({ minLength: 1 }),
   },
   closed,
 );
 export type Target = Static<typeof Target>;
 export const Operation = Type.Object(
   {
-    mode: Type.Union([Type.Literal("lifecycle"), Type.Literal("snapshot")]),
+    mode: Type.Union([
+      Type.Literal("lifecycle"),
+      Type.Literal("snapshot"),
+      Type.Literal("creation"),
+    ]),
     snapshot: Type.Optional(Type.String({ minLength: 1 })),
     refresh: Type.Optional(Type.Boolean()),
     allowDelete: Type.Optional(
@@ -62,7 +73,7 @@ export type ConsensusRuleCode =
   (typeof consensusRuleCodes)[keyof typeof consensusRuleCodes];
 export type ConsensusSynchronizationRuleCode =
   `${(typeof consensusCheckpointIds)[keyof typeof consensusCheckpointIds]}-synchronized`;
-export const codes = [
+export const prerequisiteCodes = [
   "global-runtime-ready",
   "global-skill-linked",
   "global-configuration-valid",
@@ -76,6 +87,9 @@ export const codes = [
   "silvermoon-folder-path-valid",
   "silvermoon-folder-config-file-valid",
   "silvermoon-folder-ideas-directory-valid",
+] as const;
+export const codes = [
+  ...prerequisiteCodes,
   "idea-folder-event-history-append-only",
   "idea-folder-identity-immutable",
   "idea-folder-data-valid",
@@ -91,11 +105,14 @@ export const codes = [
 ] as const;
 export const RuleCode = Type.Union(codes.map((code) => Type.Literal(code)));
 export type RuleCode = Static<typeof RuleCode>;
-export const checkpointIds = [
+export const prerequisiteCheckpointIds = [
   "global",
   "repository",
   "branch",
   "silvermoon-folder",
+] as const;
+export const checkpointIds = [
+  ...prerequisiteCheckpointIds,
   "idea-folder",
   ...Object.values(consensusCheckpointIds),
   "implementation",

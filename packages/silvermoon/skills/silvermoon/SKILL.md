@@ -57,8 +57,11 @@ never silently repurposed as a content override.
 Creation makes a scaffold, not accepted requirements. Replace all prompts in the
 effective content language. No ledger, project guidance loader or project skill
 executor exists. Project-specific skills remain the Agent host's concern.
-`create-idea` checks global, repository, branch and layout prerequisites before
-writing. Repair reported gaps and retry the original creation intent.
+`create-idea` runs its independent creation prerequisite Task before writing,
+sharing global, repository, branch and layout rules with the Idea Task. It
+accepts no Idea selector; a successful prerequisite Check is not creation
+success. Repair reported gaps and retry the original creation intent. The CLI
+writer still locks and revalidates before writing; new Ideas pin the Idea CAR.
 
 ## Five decisions
 

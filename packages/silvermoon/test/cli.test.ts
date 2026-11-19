@@ -431,7 +431,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     );
     const prerequisite = vi.spyOn(host, "observe").mockResolvedValue({
       schema: "silvermoon/v2",
-      checkCid: (await bundledArtifact()).cid,
+      checkCid: (await bundledArtifact("create")).cid,
       target: { userHome: device.currentDevice().home, repoRoot: root },
       result: { pass: true, documentation: "", references: [] },
       documents: [],
@@ -443,7 +443,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     expect(created.exit).toBe(0);
     expect(prerequisite).toHaveBeenCalledWith(
       { userHome: device.currentDevice().home, repoRoot: root },
-      {},
+      { operation: { mode: "creation" } },
     );
     prerequisite.mockRestore();
     const result = created.json() as {
@@ -490,19 +490,25 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     const result = await cli(["create-idea", "--json"], root);
     expect(result.exit).toBe(1);
     expect(result.json()).toMatchObject({
+      checkCid: (await bundledArtifact("create")).cid,
       result: { pass: false, problems: [{ code: "global-runtime-ready" }] },
     });
     expect((await repositoryModule.readProject(root)).ideas.size).toBe(0);
   });
-  it("reads exact reference content from either Check Bundle without executing a Check", async () => {
+  it("reads exact reference content from all three Check Bundles without executing a Check", async () => {
     const home = await controlledHome();
     const { root } = await repository();
     for (const operation of [
       { mode: "lifecycle" as const },
+      { mode: "creation" as const },
       { mode: "snapshot" as const, snapshot: "worktree" },
     ]) {
       const report = await host.observe(
-        { userHome: home, repoRoot: root },
+        {
+          userHome: home,
+          repoRoot: root,
+          ...(operation.mode === "lifecycle" ? { idea: id } : {}),
+        },
         { operation },
       );
       for (const document of report.documents) {

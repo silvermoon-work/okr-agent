@@ -136,7 +136,7 @@ export async function runCli(
         ? resolve(io.cwd, options.root)
         : await discoverRoot(io.cwd);
       invariant(
-        !selector || directory,
+        directory,
         "target-context",
         "Idea selectors require a project.",
       );
@@ -167,8 +167,8 @@ export async function runCli(
       const report = await observe(
         {
           userHome: currentDevice().home,
-          ...(directory ? { repoRoot: directory } : {}),
-          ...(id ? { idea: id } : {}),
+          repoRoot: directory,
+          idea: id!,
         },
         {
           ...(cid ? { cid } : {}),
@@ -248,7 +248,10 @@ export async function runCli(
       const artifact = await bundledArtifact();
       const readiness = await observe(
         { userHome: currentDevice().home, repoRoot: directory },
-        { ...(io.signal ? { signal: io.signal } : {}) },
+        {
+          operation: { mode: "creation" },
+          ...(io.signal ? { signal: io.signal } : {}),
+        },
       );
       if (!readiness.result.pass) {
         emit(readiness);
