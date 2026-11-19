@@ -10,8 +10,8 @@ catalogs:
       specifier: ^10.0.1
       version: 10.0.1
     '@ipld/car':
-      specifier: 5.4.6
-      version: 5.4.6
+      specifier: 5.4.7
+      version: 5.4.7
     '@silvermoon-work/ipfs-payload':
       specifier: 0.1.0
       version: 0.1.0
@@ -391,7 +391,7 @@ importers:
     dependencies:
       '@ipld/car':
         specifier: 'catalog:'
-        version: 5.4.6
+        version: 5.4.7
       '@silvermoon-work/ipfs-payload':
         specifier: 'catalog:'
         version: 0.1.0
@@ -796,6 +796,10 @@ packages:
 
   '@ipld/car@5.4.6':
     resolution: {integrity: sha512-f1Iyb9ci8B/TGCyjAuSQ6BOLiy2u8en7rB+SumbyweqXDu3gxYJwYbGzoposKjOzc4CeGlkEbwEw8REoekYAKQ==}
+    engines: {node: '>=16.0.0', npm: '>=7.0.0'}
+
+  '@ipld/car@5.4.7':
+    resolution: {integrity: sha512-fohzeOYlm0vM1kGn48zcyDunamXSJaeM5xt0Fmkp5YJkZzgZyjLbb0DcDK6TDgZWo54btkXNACaXUw2H86Elag==}
     engines: {node: '>=16.0.0', npm: '>=7.0.0'}
 
   '@ipld/dag-cbor@10.0.2':
@@ -2712,6 +2716,7 @@ packages:
   whatwg-encoding@3.1.1:
     resolution: {integrity: sha512-6qN4hJdMwfYBtE3YBTTHhoeuUrDBPZmbQaxWAqSALV/MeEnR5z1xd8UKud2RAkFoPkmB+hli1TZSnyi84xz1vQ==}
     engines: {node: '>=18'}
+    deprecated: Use @exodus/bytes instead for a more spec-conformant and faster implementation
 
   whatwg-mimetype@4.0.0:
     resolution: {integrity: sha512-QaKxh0eNIi2mE9p2vEdzfagOKHCcj1pJ56EEHGQOVxp8r9/iszLUUV7v89x9O1p/T+NlTM5W7jW6+cz4Fq1YVg==}
@@ -3144,6 +3149,13 @@ snapshots:
     dependencies:
       '@ipld/dag-cbor': 10.0.2
       cborg: 5.1.11
+      multiformats: 14.0.5
+      varint: 6.0.0
+
+  '@ipld/car@5.4.7':
+    dependencies:
+      '@ipld/dag-cbor': 10.0.2
+      cborg: 6.2.1
       multiformats: 14.0.5
       varint: 6.0.0
 
