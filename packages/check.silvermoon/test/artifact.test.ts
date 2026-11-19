@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { verifyArtifact } from "../src/index.js";
 
 describe("private author CAR", () => {
-  it.each(["check", "commit-check", "create-check"])(
+  it.each(["check", "commit-check", "project-check", "setup-check"])(
     "validates the full offline %s CAR, its fixed binding and equality with the CLI artifact",
     async (name) => {
       const binding = JSON.parse(

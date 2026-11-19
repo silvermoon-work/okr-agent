@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCli } from "../src/cli.js";
@@ -46,11 +46,21 @@ async function cli(args: string[], cwd: string, signal?: AbortSignal) {
   });
   return { exit, stdout, stderr, json: (): unknown => JSON.parse(stdout) };
 }
+async function legacyPath(home: string): Promise<string> {
+  const bin = join(home, "bin");
+  await mkdir(bin);
+  await writeFile(
+    join(bin, process.platform === "win32" ? "silvermoon.cmd" : "silvermoon"),
+    "#!/usr/bin/env node\n",
+    { mode: 0o755 },
+  );
+  return bin + delimiter + (process.env.PATH ?? "");
+}
 async function controlledHome() {
   const home = await scratch();
   vi.spyOn(device, "currentDevice").mockReturnValue({
     home,
-    path: process.env.PATH ?? "",
+    path: await legacyPath(home),
     entry: resolve("dist", "bin.js"),
   });
   return home;
@@ -238,7 +248,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     const root = await scratch();
     expect(await cli(["--version"], root)).toMatchObject({
       exit: 0,
-      stdout: "0.1.0-rc.1\n",
+      stdout: "0.1.0-rc.3\n",
     });
     expect((await cli(["--help"], root)).stdout).toContain("check-idea");
     for (const argv of [
@@ -248,6 +258,8 @@ describe("CLI retained commands, presentation and explicit errors", () => {
       ["whats-next", id],
       ["check"],
       ["check-idea"],
+      ["check-setup", "--root", root],
+      ["check-project", id],
       ["check-changes", "--remote"],
       ["event", "replay", id],
       ["event", "append", id],
@@ -431,7 +443,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     );
     const prerequisite = vi.spyOn(host, "observe").mockResolvedValue({
       schema: "silvermoon/v2",
-      checkCid: (await bundledArtifact("create")).cid,
+      checkCid: (await bundledArtifact("project")).cid,
       target: { userHome: device.currentDevice().home, repoRoot: root },
       result: { pass: true, documentation: "", references: [] },
       documents: [],
@@ -443,7 +455,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     expect(created.exit).toBe(0);
     expect(prerequisite).toHaveBeenCalledWith(
       { userHome: device.currentDevice().home, repoRoot: root },
-      { operation: { mode: "creation" } },
+      { operation: { mode: "project" } },
     );
     prerequisite.mockRestore();
     const result = created.json() as {
@@ -490,23 +502,74 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     const result = await cli(["create-idea", "--json"], root);
     expect(result.exit).toBe(1);
     expect(result.json()).toMatchObject({
-      checkCid: (await bundledArtifact("create")).cid,
+      checkCid: (await bundledArtifact("project")).cid,
       result: { pass: false, problems: [{ code: "global-runtime-ready" }] },
     });
     expect((await repositoryModule.readProject(root)).ideas.size).toBe(0);
   });
-  it("reads exact reference content from all three Check Bundles without executing a Check", async () => {
+
+  it("dispatches standalone project checks without creating an Idea and fails readiness gaps", async () => {
+    const home = await controlledHome();
+    const outside = await scratch();
+    vi.spyOn(repositoryModule, "discoverRoot").mockResolvedValueOnce(undefined);
+    expect((await cli(["check-project", "--json"], outside)).exit).toBe(1);
+    const { root } = await repository({ idea: false });
+    const artifact = await bundledArtifact("project");
+    const report: host.Report = {
+      schema: "silvermoon/v2",
+      checkCid: artifact.cid,
+      target: { userHome: home, repoRoot: root },
+      result: { pass: true, documentation: "", references: [] },
+      documents: [],
+    };
+    const observe = vi
+      .spyOn(host, "observe")
+      .mockResolvedValueOnce(report)
+      .mockResolvedValueOnce({
+        ...report,
+        result: {
+          pass: false,
+          documentation: "",
+          references: [],
+          problems: [
+            {
+              checkpoint: "branch",
+              code: "branch-silvermoon-config-valid",
+              brief: "Configure primary.",
+            },
+          ],
+        },
+      });
+    const success = await cli(
+      ["check-project", "--root", root, "--json"],
+      outside,
+    );
+    expect(success.exit).toBe(0);
+    expect(success.json()).toMatchObject({
+      checkCid: artifact.cid,
+      result: { pass: true },
+    });
+    expect(observe).toHaveBeenNthCalledWith(
+      1,
+      { userHome: home, repoRoot: root },
+      { operation: { mode: "project" } },
+    );
+    expect((await cli(["check-project", "--json"], root)).exit).toBe(1);
+    expect((await repositoryModule.readProject(root)).ideas.size).toBe(0);
+  });
+  it("reads exact reference content from all four Check Bundles without executing a Check", async () => {
     const home = await controlledHome();
     const { root } = await repository();
     for (const operation of [
       { mode: "lifecycle" as const },
-      { mode: "creation" as const },
+      { mode: "setup" as const },
+      { mode: "project" as const },
       { mode: "snapshot" as const, snapshot: "worktree" },
     ]) {
       const report = await host.observe(
         {
           userHome: home,
-          repoRoot: root,
+          ...(operation.mode !== "setup" ? { repoRoot: root } : {}),
           ...(operation.mode === "lifecycle" ? { idea: id } : {}),
         },
         { operation },
@@ -565,12 +628,17 @@ describe("CLI retained commands, presentation and explicit errors", () => {
       "origin",
       "https://github.com/example/project.git",
     ]);
-    const env = { ...process.env, HOME: home, USERPROFILE: home };
+    const env = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      PATH: await legacyPath(home),
+    };
     const bin = resolve("dist", "bin.js");
     expect(
       (await execute(process.execPath, [bin, "--version"], { cwd: root, env }))
         .stdout,
-    ).toBe("0.1.0-rc.1\n");
+    ).toBe("0.1.0-rc.3\n");
     expect(
       (await execute(process.execPath, [bin, "--help"], { cwd: root, env }))
         .stdout,

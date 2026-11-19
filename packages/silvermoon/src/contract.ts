@@ -1,5 +1,11 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { createCheckContract } from "@silvermoon-work/check-task-sdk/contracts";
+import {
+  ideaDocumentation,
+  prerequisiteDocumentation,
+  setupDocumentation,
+  consensusDocumentation,
+} from "./checkpoints/catalog.js";
 
 const closed = { additionalProperties: false };
 const path = Type.String({ maxLength: 65_536, pattern: "^[^\\u0000\\r\\n]*$" });
@@ -24,7 +30,8 @@ export const Operation = Type.Object(
     mode: Type.Union([
       Type.Literal("lifecycle"),
       Type.Literal("snapshot"),
-      Type.Literal("creation"),
+      Type.Literal("project"),
+      Type.Literal("setup"),
     ]),
     snapshot: Type.Optional(Type.String({ minLength: 1 })),
     refresh: Type.Optional(Type.Boolean()),
@@ -56,68 +63,40 @@ export const Input = Type.Object(
 );
 export type Input = Static<typeof Input>;
 export const consensusCheckpointIds = {
-  requirements: "requirements",
-  research: "research",
-  technical: "technical",
-  cases: "test-index",
-  tests: "test-cases",
+  requirements: consensusDocumentation.requirements.id,
+  research: consensusDocumentation.research.id,
+  technical: consensusDocumentation.technical.id,
+  cases: consensusDocumentation.cases.id,
+  tests: consensusDocumentation.tests.id,
 } as const;
 export const consensusRuleCodes = {
-  requirements: "requirements-consensus-confirmed",
-  research: "research-consensus-confirmed",
-  technical: "technical-consensus-confirmed",
-  cases: "test-index-consensus-confirmed",
-  tests: "test-cases-consensus-confirmed",
+  requirements: consensusDocumentation.requirements.rules[0].code,
+  research: consensusDocumentation.research.rules[0].code,
+  technical: consensusDocumentation.technical.rules[0].code,
+  cases: consensusDocumentation.cases.rules[0].code,
+  tests: consensusDocumentation.tests.rules[0].code,
 } as const;
 export type ConsensusRuleCode =
   (typeof consensusRuleCodes)[keyof typeof consensusRuleCodes];
 export type ConsensusSynchronizationRuleCode =
   `${(typeof consensusCheckpointIds)[keyof typeof consensusCheckpointIds]}-synchronized`;
-export const prerequisiteCodes = [
-  "global-runtime-ready",
-  "global-skill-linked",
-  "global-configuration-valid",
-  "repository-root-valid",
-  "repository-branch-attached",
-  "repository-worktree-clean",
-  "branch-silvermoon-config-valid",
-  "branch-primary-present",
-  "branch-upstream-aligned",
-  "branch-primary-synchronized",
-  "silvermoon-folder-path-valid",
-  "silvermoon-folder-config-file-valid",
-  "silvermoon-folder-ideas-directory-valid",
-] as const;
-export const codes = [
-  ...prerequisiteCodes,
-  "idea-folder-event-history-append-only",
-  "idea-folder-identity-immutable",
-  "idea-folder-data-valid",
-  "idea-folder-active",
-  ...Object.values(consensusRuleCodes),
-  ...Object.values(consensusCheckpointIds).map(
-    (id) => `${id}-synchronized` as const,
-  ),
-  "implementation-evidence-valid",
-  "implementation-synchronized",
-  "deployment-evidence-valid",
-  "deployment-synchronized",
-] as const;
+export const setupCodes = setupDocumentation.flatMap((checkpoint) =>
+  checkpoint.rules.map((rule) => rule.code),
+);
+export const prerequisiteCodes = prerequisiteDocumentation.flatMap(
+  (checkpoint) => checkpoint.rules.map((rule) => rule.code),
+);
+export const codes = ideaDocumentation.flatMap((checkpoint) =>
+  checkpoint.rules.map((rule) => rule.code),
+);
 export const RuleCode = Type.Union(codes.map((code) => Type.Literal(code)));
 export type RuleCode = Static<typeof RuleCode>;
-export const prerequisiteCheckpointIds = [
-  "global",
-  "repository",
-  "branch",
-  "silvermoon-folder",
-] as const;
-export const checkpointIds = [
-  ...prerequisiteCheckpointIds,
-  "idea-folder",
-  ...Object.values(consensusCheckpointIds),
-  "implementation",
-  "deployment",
-] as const;
+export const prerequisiteCheckpointIds = prerequisiteDocumentation.map(
+  (checkpoint) => checkpoint.id,
+);
+export const checkpointIds = ideaDocumentation.map(
+  (checkpoint) => checkpoint.id,
+);
 export const lifecycleContract = createCheckContract(
   Target,
   RuleCode,

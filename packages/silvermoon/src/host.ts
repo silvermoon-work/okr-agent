@@ -11,25 +11,20 @@ import {
   MemoryStore,
   newId,
 } from "@silvermoon-work/task-engine";
-import {
-  Operation,
-  Target,
-  type Input,
-  type Runtime,
-  type RepositoryTarget,
-} from "./contract.js";
+import { Operation, Target, type Input, type Runtime } from "./contract.js";
 import type { CommitTarget, Input as CommitInput } from "./commit-contract.js";
 import {
-  CreationTarget,
-  type Input as CreationInput,
-} from "./create-contract.js";
+  ProjectTarget,
+  type Input as ProjectInput,
+} from "./project-contract.js";
+import { SetupTarget, type Input as SetupInput } from "./setup-contract.js";
 import { currentDevice } from "./device.js";
 import { invariant, text, SilvermoonError } from "./domain.js";
 
 export interface Artifact {
   readonly cid: string;
   readonly path: string;
-  readonly kind?: "idea" | "commit" | "create";
+  readonly kind?: "idea" | "commit" | "project" | "setup";
 }
 export interface Result {
   readonly pass: boolean;
@@ -47,7 +42,7 @@ export interface Result {
 export interface Report {
   readonly schema: "silvermoon/v2";
   readonly checkCid: string;
-  readonly target: Target | CommitTarget | CreationTarget;
+  readonly target: Target | CommitTarget | ProjectTarget | SetupTarget;
   readonly result: Result;
   readonly documents: readonly {
     readonly cid: string;
@@ -75,7 +70,7 @@ const resultSchema = Type.Object({
   ),
 });
 export async function bundledArtifact(
-  kind: "idea" | "commit" | "create" = "idea",
+  kind: "idea" | "commit" | "project" | "setup" = "idea",
 ): Promise<Artifact> {
   const name = kind === "idea" ? "check" : `${kind}-check`;
   const binding: unknown = JSON.parse(
@@ -149,7 +144,8 @@ export async function getReference(
     (await Promise.all([
       bundledArtifact("idea"),
       bundledArtifact("commit"),
-      bundledArtifact("create"),
+      bundledArtifact("project"),
+      bundledArtifact("setup"),
     ]));
   for (const artifact of artifacts) {
     options.signal?.throwIfAborted();
@@ -194,7 +190,7 @@ export async function getReference(
   );
 }
 export async function observe(
-  target: Target | RepositoryTarget,
+  target: Target | ProjectTarget | SetupTarget,
   options: {
     readonly cid?: string;
     readonly artifacts?: readonly Artifact[];
@@ -211,17 +207,22 @@ export async function observe(
     "Unsupported Check operation.",
   );
   const kind =
-    operation.mode === "snapshot"
-      ? "commit"
-      : operation.mode === "creation"
-        ? "create"
-        : "idea";
+    operation.mode === "lifecycle"
+      ? "idea"
+      : operation.mode === "snapshot"
+        ? "commit"
+        : operation.mode;
   invariant(
-    Value.Check(kind === "idea" ? Target : CreationTarget, target),
+    Value.Check(
+      kind === "idea" ? Target : kind === "setup" ? SetupTarget : ProjectTarget,
+      target,
+    ),
     "input",
     kind === "idea"
       ? "Idea validation requires userHome, repoRoot and idea."
-      : "Creation and change validation require userHome and repoRoot only.",
+      : kind === "setup"
+        ? "Setup validation requires userHome only."
+        : "Project and change validation require userHome and repoRoot only.",
   );
   const device = currentDevice();
   const runtime = options.runtime ?? {
@@ -231,12 +232,12 @@ export async function observe(
       ? { sshAuthSock: process.env.SSH_AUTH_SOCK }
       : {}),
   };
-  const input: Input | CommitInput | CreationInput =
+  const input: Input | CommitInput | ProjectInput | SetupInput =
     kind === "commit"
       ? {
           target: {
             userHome: target.userHome,
-            repoRoot: target.repoRoot,
+            repoRoot: Value.Decode(ProjectTarget, target).repoRoot,
             snapshot: operation.snapshot ?? "HEAD",
             ...(operation.allowDelete
               ? { allowDelete: operation.allowDelete }
@@ -244,16 +245,16 @@ export async function observe(
           },
           runtime,
         }
-      : kind === "create"
+      : kind === "setup"
         ? {
-            target,
+            target: Value.Decode(SetupTarget, target),
             runtime,
-            ...(operation.refresh === undefined
-              ? {}
-              : { refresh: operation.refresh }),
           }
         : {
-            target: Value.Decode(Target, target),
+            target:
+              kind === "idea"
+                ? Value.Decode(Target, target)
+                : Value.Decode(ProjectTarget, target),
             runtime,
             ...(operation.refresh === undefined
               ? {}

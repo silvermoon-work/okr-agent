@@ -4,14 +4,38 @@ import { fileURLToPath } from "node:url";
 import { buildCheckBundle } from "@silvermoon-work/check-task-builder";
 import { directoryTree } from "@silvermoon-work/task-builder-cli/node";
 import { encodeTaskBundleCar } from "@silvermoon-work/task-builder/car";
+import { memoryFile } from "@silvermoon-work/task-builder/tree";
+import { stringify } from "yaml";
+import {
+  specifications,
+  specificationFiles,
+} from "../../dist/specifications.js";
 
 export async function buildCar(output, kind = "idea") {
-  if (kind !== "idea" && kind !== "commit" && kind !== "create")
+  if (!["idea", "commit", "project", "setup"].includes(kind))
     throw new Error("Unknown Silvermoon Check kind.");
   const name = kind === "idea" ? "check" : `${kind}-check`;
   const root = fileURLToPath(new URL("../..", import.meta.url));
+  const tree = await directoryTree(resolve(root, "../.."));
+  const specPath = `docs/${specificationFiles[kind]}`;
   const bundle = await buildCheckBundle(
-    await directoryTree(resolve(root, "../..")),
+    {
+      list: (path, options) => tree.list(path, options),
+      read: (path, options) =>
+        path === specPath
+          ? Promise.resolve(
+              memoryFile(
+                Buffer.from(
+                  stringify(specifications[kind], {
+                    blockQuote: "literal",
+                    lineWidth: 0,
+                  }),
+                ),
+                options,
+              ),
+            )
+          : tree.read(path, options),
+    },
     `packages/silvermoon/${name}.build.yaml`,
   );
   const car = await encodeTaskBundleCar(bundle);

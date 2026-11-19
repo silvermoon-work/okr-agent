@@ -1,0 +1,9 @@
+name: Silvermoon Setup
+spec: ../../docs/silvermoon-setup-check.yaml
+runtime:
+  minVersion: 22.15.0
+source:
+  entry: src/setup-main.ts
+  contract: src/setup-contract.ts
+references: references/setup
+outDirectory: dist/setup-check

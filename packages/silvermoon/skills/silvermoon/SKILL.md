@@ -16,6 +16,17 @@ copy.
 
 - Pass `--audience agent` for readable reports. Use `--json` only for machine
   consumers; never combine it with `--audience`.
+- Use `check-setup` for device onboarding without a Git repository; it checks
+  installation, personal skill and user config only and rejects `--root`.
+- Use `check-project` for project onboarding without an Idea; it checks the
+  shared first four checkpoints plus a pre-commit hook checkpoint, including
+  clean worktree, upstream and primary synchronization. The hook must run
+  `silvermoon check-changes --staged --audience agent` with fail-closed behavior
+  using the documented shell prefix. Respect effective `core.hooksPath`,
+  preserve existing logic and obtain authorization before installing or changing
+  hooks. Missing configuration is reported with repair guidance, never
+  automatically initialized. Both readiness commands exit 1 for gaps and never
+  install software, link skills or create an Idea.
 - Use `check-idea <idea>` for the Idea Check Task: global → repository → branch
   → silvermoon-folder → idea-folder → requirements → research → technical →
   test-index → test-cases → implementation → deployment. The selector is
@@ -57,11 +68,12 @@ never silently repurposed as a content override.
 Creation makes a scaffold, not accepted requirements. Replace all prompts in the
 effective content language. No ledger, project guidance loader or project skill
 executor exists. Project-specific skills remain the Agent host's concern.
-`create-idea` runs its independent creation prerequisite Task before writing,
-sharing global, repository, branch and layout rules with the Idea Task. It
-accepts no Idea selector; a successful prerequisite Check is not creation
-success. Repair reported gaps and retry the original creation intent. The CLI
-writer still locks and revalidates before writing; new Ideas pin the Idea CAR.
+`create-idea` runs the same Project Task as `check-project` before writing,
+sharing global, repository, branch and layout rules with the Idea Task;
+`check-setup` shares the global rule implementation too. It accepts no Idea
+selector; a successful prerequisite Check is not creation success. Repair
+reported gaps and retry the original creation intent. The CLI writer still locks
+and revalidates before writing; new Ideas pin the Idea CAR.
 
 ## Five decisions
 

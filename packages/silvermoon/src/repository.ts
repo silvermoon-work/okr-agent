@@ -39,6 +39,28 @@ export async function git(
   args: readonly string[],
   signal?: AbortSignal,
 ): Promise<string> {
+  return executeGit(root, args, true, signal);
+}
+export async function preCommitHookPath(
+  root: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  return join(
+    await executeGit(
+      root,
+      ["rev-parse", "--path-format=absolute", "--git-path", "hooks"],
+      false,
+      signal,
+    ),
+    "pre-commit",
+  );
+}
+async function executeGit(
+  root: string,
+  args: readonly string[],
+  disableHooks: boolean,
+  signal?: AbortSignal,
+): Promise<string> {
   const { stdout } = await execute(
     "git",
     [
@@ -47,8 +69,12 @@ export async function git(
       "core.quotepath=false",
       "-c",
       "core.fsmonitor=false",
-      "-c",
-      `core.hooksPath=${process.platform === "win32" ? "NUL" : "/dev/null"}`,
+      ...(disableHooks
+        ? [
+            "-c",
+            `core.hooksPath=${process.platform === "win32" ? "NUL" : "/dev/null"}`,
+          ]
+        : []),
       "-c",
       "diff.external=",
       "-c",

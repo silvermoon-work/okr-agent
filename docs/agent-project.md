@@ -119,11 +119,18 @@
 - Use the device-level Silvermoon CLI and personal skill registration, not a
   project dependency or repository-local Silvermoon skill.
 - Project content defaults to Simplified Chinese (`zh-CN`).
+- For onboarding, use `silvermoon check-setup --audience agent` outside a
+  repository, then `silvermoon check-project --audience agent` in the project.
+  These commands diagnose readiness without initializing or creating an Idea.
 - Discover Ideas with `silvermoon list-ideas --json`, then use
   `silvermoon check-idea <idea> --audience agent` and follow its next action.
-  The Idea selector is required. Creation runs its own prerequisite Task,
-  sharing the first four checkpoints with the Idea Task; each has its own strict
-  contract and CAR. Creation still locks and revalidates before writing.
+  The Idea selector is required. Creation and check-project share the Project
+  Task, which reuses the Idea Task's first four checkpoints and then checks the
+  effective pre-commit hook for fail-closed staged validation; check-setup
+  reuses the first checkpoint only. Preserve existing hook logic and respect
+  `core.hooksPath`; checking does not install or execute hooks. Each Task has
+  its own strict contract and CAR. Creation still locks and revalidates before
+  writing.
 - Validate metadata with `silvermoon check-changes --worktree --audience agent`
   before staging and `silvermoon check-changes --staged --audience agent` before
   committing.

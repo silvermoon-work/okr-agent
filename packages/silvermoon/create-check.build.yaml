@@ -1,9 +1,0 @@
-name: Silvermoon Create Idea
-spec: ../../docs/silvermoon-create-idea-check.yaml
-runtime:
-  minVersion: 22.15.0
-source:
-  entry: src/create-main.ts
-  contract: src/create-contract.ts
-references: references/create
-outDirectory: dist/create-check
