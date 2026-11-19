@@ -5,7 +5,7 @@ import { typescriptProjectDesignSpec } from "../src/typescript-project-design.js
 import type { CheckBundleSpec } from "../src/spec.js";
 import { orderedSpec } from "./fixtures.js";
 
-describe("Spec v2 validation", () => {
+describe("Spec v1 validation", () => {
   it("accepts shipped definitions with one task Target and preserves checkpoint and rule order", () => {
     for (const spec of [
       typescriptProjectSpec,
@@ -44,13 +44,13 @@ describe("Spec v2 validation", () => {
 
   it.each([
     [
-      "old version",
-      (spec: CheckBundleSpec) => Object.assign(spec, { specVersion: "1.0" }),
+      "unsupported version",
+      (spec: CheckBundleSpec) => Object.assign(spec, { specVersion: "2.0" }),
     ],
     [
-      "old annotation",
+      "unsupported annotation",
       (spec: CheckBundleSpec) =>
-        Object.assign(spec, { $schema: "urn:ipfsaw:check-bundle:1" }),
+        Object.assign(spec, { $schema: "urn:ipfsaw:check-bundle:2" }),
     ],
     [
       "unknown annotation",
@@ -217,7 +217,7 @@ describe("Spec v2 validation", () => {
       expect(validateCheckBundleSpec(value).valid).toBe(false);
   });
 
-  it("rejects v1 documents rather than reinterpreting their definition order", () => {
+  it("rejects obsolete graph documents even with the current version", () => {
     const result = validateCheckBundleSpec({
       specVersion: "1.0",
       name: "Legacy",
@@ -225,9 +225,16 @@ describe("Spec v2 validation", () => {
       checkers: {},
     });
     expect(result.valid).toBe(false);
-    if (!result.valid)
+    if (!result.valid) {
+      expect(
+        result.issues.some(
+          ({ path, message }) =>
+            path === "/" && message.includes('"missingProperty":"checkpoints"'),
+        ),
+      ).toBe(true);
       expect(result.issues.some(({ path }) => path === "/specVersion")).toBe(
-        true,
+        false,
       );
+    }
   });
 });

@@ -22,7 +22,10 @@ export function CheckBundleViewer({
         aria-label="Spec 校验错误"
       >
         <h2>无法展示此定义</h2>
-        <p>仅支持 Spec v2；修正以下结构问题后再载入。校验不会执行任何检查。</p>
+        <p>
+          仅支持当前 Spec v1
+          有序检查点格式；修正以下结构问题后再载入。校验不会执行任何检查。
+        </p>
         <ul>
           {result.issues.map((issue, index) => (
             <li key={index}>

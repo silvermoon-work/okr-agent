@@ -99,7 +99,7 @@ Engine snapshot 现在直接暴露 `result` payload，不再套 `output.result`�
 ### Check Bundle 定义工作台（本地 mock）
 
 [`@silvermoon-work/check-bundle-viewer`](packages/check-bundle-viewer/README.md)
-提供版本化声明式 Spec v2 校验与可嵌入 React 的有序检查点列表 / 规则详情。
+提供版本化声明式 Spec v1 校验与可嵌入 React 的有序检查点列表 / 规则详情。
 私有宿主含当前 TypeScript Check 的真实检查点，以及更丰富的项目定义 mock。
 定义为 Check Task → Checkpoint → Rule，不再维护根节点、父子边或 DAG。
 侧栏可拖动调宽、长标题单行省略；

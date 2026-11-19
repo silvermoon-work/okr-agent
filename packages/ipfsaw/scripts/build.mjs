@@ -91,7 +91,7 @@ try {
   await writeFile(
     "dist/check-task.json",
     JSON.stringify(
-      { $schema: "urn:ipfsaw:check-bundle:2", ...typescriptProjectDesignSpec },
+      { $schema: "urn:ipfsaw:check-bundle:1", ...typescriptProjectDesignSpec },
       null,
       2,
     ) + "\n",

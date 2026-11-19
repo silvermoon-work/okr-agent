@@ -12,7 +12,7 @@ Check, writer and replay is the only lifecycle implementation. The Host renders
 `pass/documentation/problems/references`; it never decides a second lifecycle.
 
 The [Idea checkpoint design](../../docs/silvermoon-single-checker.yaml) uses
-Check Bundle Spec v2.0 for ipfsaw preview. The built-in Check executes the same
+Check Bundle Spec v1.0 for ipfsaw preview. The built-in Check executes the same
 ordered stages: environment, repository, Idea observation, five consensus gates,
 implementation, deployment and completion. Each checkpoint owns coded rules and
 one complete document. The first failing checkpoint stops execution; no tree,

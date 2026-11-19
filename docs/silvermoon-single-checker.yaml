@@ -1,5 +1,5 @@
-$schema: urn:ipfsaw:check-bundle:2
-specVersion: "2.0"
+$schema: urn:ipfsaw:check-bundle:1
+specVersion: "1.0"
 name: Silvermoon · Idea 有序检查点（设计稿，未实现）
 parameter:
   schema:

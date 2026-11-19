@@ -68,7 +68,7 @@ await writeFile(
       version: 1,
       openBrowser: false,
       renderers: {
-        "urn:ipfsaw:check-bundle:2": check.cid,
+        "urn:ipfsaw:check-bundle:1": check.cid,
         "urn:ipfsaw:note:1": note.cid,
       },
     },
@@ -78,7 +78,7 @@ await writeFile(
   { flag: "wx" },
 );
 await json("check.json", {
-  $schema: "urn:ipfsaw:check-bundle:2",
+  $schema: "urn:ipfsaw:check-bundle:1",
   ...typescriptProjectSpec,
 });
 await json("note.json", {

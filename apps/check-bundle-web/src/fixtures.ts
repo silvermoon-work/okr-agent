@@ -5,7 +5,7 @@ import {
 import type { CheckBundleSpec } from "@silvermoon-work/check-bundle-viewer";
 
 export const discussionSpec: CheckBundleSpec = {
-  specVersion: "2.0",
+  specVersion: "1.0",
   name: "TypeScript 项目检查（有序讨论 mock）",
   parameter: structuredClone(typescriptProjectSpec.parameter),
   checkpoints: [
@@ -112,8 +112,8 @@ export const fixtures: { id: string; label: string; spec: unknown }[] = [
     },
   },
   {
-    id: "invalid-v1",
-    label: "不支持的旧版 v1 · mock",
-    spec: { specVersion: "1.0", name: "旧文档" },
+    id: "invalid-version",
+    label: "不支持的版本 v2 · mock",
+    spec: { specVersion: "2.0", name: "无效版本文档" },
   },
 ];

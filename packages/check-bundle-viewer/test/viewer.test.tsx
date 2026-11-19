@@ -560,7 +560,7 @@ describe("invalid input and spec replacement", () => {
     expect(heading().textContent).toBe("识别项目");
     render({ specVersion: "1.0", name: "旧文档", root: "entry", checkers: {} });
     expect(host.querySelector('[role="alert"]')?.textContent).toContain(
-      "仅支持 Spec v2",
+      "仅支持当前 Spec v1 有序检查点格式",
     );
     expect(host.querySelector("nav")).toBeNull();
   });

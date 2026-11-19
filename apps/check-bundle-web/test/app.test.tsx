@@ -41,7 +41,7 @@ it("switches ordered real and mock examples, with duplicate, schema and old-form
     ["actual", "身份与 workspace 配置"],
     ["invalid-duplicate", "无法展示此定义"],
     ["invalid", "无法展示此定义"],
-    ["invalid-v1", "无法展示此定义"],
+    ["invalid-version", "无法展示此定义"],
     ["discussion", "识别项目"],
   ]) {
     act(() => {
@@ -94,8 +94,8 @@ it("switches ordered real and mock examples, with duplicate, schema and old-form
       expect(host.textContent).toContain("/checkpoints/0/rules/1/code");
       expect(host.textContent).toContain("无效的参数 JSON Schema");
     }
-    if (value === "invalid-v1")
-      expect(host.textContent).toContain("仅支持 Spec v2");
+    if (value === "invalid-version")
+      expect(host.textContent).toContain("仅支持当前 Spec v1 有序检查点格式");
   }
   act(() => {
     root.unmount();

@@ -2,7 +2,7 @@ import type { CheckBundleSpec } from "./spec.js";
 
 /** Definition of the ordered project identity and workspace configuration checks. */
 export const typescriptProjectSpec: CheckBundleSpec = {
-  specVersion: "2.0",
+  specVersion: "1.0",
   name: "TypeScript 项目 · 身份与 workspace 配置",
   parameter: {
     schema: {

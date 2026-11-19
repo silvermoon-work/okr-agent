@@ -1,7 +1,7 @@
 import type { CheckBundleSpec } from "../src/spec.js";
 
 export const validationSpec: CheckBundleSpec = {
-  specVersion: "2.0",
+  specVersion: "1.0",
   name: "校验用有序定义",
   parameter: {
     schema: {

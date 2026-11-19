@@ -1,8 +1,8 @@
 # Check Bundle 定义视图
 
-私有 React 组件与声明式 Check Bundle Spec v2.0，采用
+私有 React 组件与声明式 Check Bundle Spec v1.0，采用
 **Check Task → 有序 Checkpoint → Rule**。仅展示定义，不连接执行器、不执行检查，
-不发布 npm；旧 v1 文档明确拒绝，不按对象键顺序推测迁移。
+不发布 npm；尚未发布的 Spec 保持 v1 迭代，旧树／图结构明确拒绝，不按对象键顺序推测迁移。
 
 ```tsx
 import {
@@ -20,14 +20,14 @@ const result = validateCheckBundleSpec(typescriptProjectSpec);
 组件接受 `unknown`，在边界再次校验；宿主负责安全解析 JSON/YAML，
 组件不包含文件解析器、编辑器、网络加载器或执行器。
 
-## Spec v2.0
+## Spec v1.0
 
 `checkBundleSpecSchema` 是可序列化的 JSON Schema 2020-12，
 `CheckBundleSpec` 与 `CheckpointDefinition` 提供类型。
 
 ```yaml
-$schema: urn:ipfsaw:check-bundle:2
-specVersion: "2.0"
+$schema: urn:ipfsaw:check-bundle:1
+specVersion: "1.0"
 name: 项目检查
 parameter:
   schema:
@@ -47,8 +47,8 @@ checkpoints:
         description: 目标必须具备合法的项目身份。
 ```
 
-- `$schema` 可省略；存在时只接受准确的 `urn:ipfsaw:check-bundle:2`。
-  `specVersion` 必须为 `"2.0"`，名称及各说明字符串须含非空白字符。
+- `$schema` 可省略；存在时只接受准确的 `urn:ipfsaw:check-bundle:1`。
+  `specVersion` 必须为 `"1.0"`，名称及各说明字符串须含非空白字符。
 - `parameter` 是整个 Check Task 的 Target 契约：
   `schema` 必须是根 `type: object` 的有效 JSON Schema，
   `preconditions` 为无重复的说明字符串数组，可为空。
@@ -147,10 +147,10 @@ jsdom 覆盖顺序、唯一性、格式拒绝、导航、安全 Markdown、拖�
 build 同时生成组件模块、自包含的 `dist/renderer/` browser ESM、CSS、source map、
 `ipfsaw.renderer.json`，保留 `mount/update/dispose` ABI 与全高布局。
 复用同一组件，不复制验证或 Markdown 逻辑。
-用于通用 CLI 的文档须带 v2 `$schema`，配置绑定准确 renderer 根 CID；
+用于通用 CLI 的文档须带 v1 `$schema`，配置绑定准确 renderer 根 CID；
 已有旧 renderer CID 不会自动升级，须重新构建、打包并显式更新绑定。
 受控本地预览见 [ipfsaw](../ipfsaw/README.md)。
 
-同次 build 输出带 v2 `$schema` 的 `dist/typescript-project-design.json`；
-ipfsaw 的标准 browser Task 构建也直接消费同一个 v2 schema 与示例。
-历史 v1 文档／CAR 不会被静默重写；迁移后需重新构建并使用新的准确制品。
+同次 build 输出带 v1 `$schema` 的 `dist/typescript-project-design.json`；
+ipfsaw 的标准 browser Task 构建也直接消费同一个 v1 schema 与示例。
+既有文档／CAR 不会被静默重写；旧结构或临时 v2 标记须显式更新，重新构建并使用新的准确制品。

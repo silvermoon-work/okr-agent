@@ -66,7 +66,7 @@ ipfsaw registry remove <schema-uri> [--data-dir <path>]
   "version": 1,
   "openBrowser": false,
   "renderers": {
-    "urn:ipfsaw:check-bundle:2": "<准确 renderer 根 CID>"
+    "urn:ipfsaw:check-bundle:1": "<准确 renderer 根 CID>"
   }
 }
 ```
@@ -202,15 +202,15 @@ pnpm exec turbo run build --filter=@silvermoon-work/ipfsaw
 
 - `packages/ipfsaw/dist/check-task/task.yaml`、`main.mjs`、`resources/check.css`；
 - `packages/ipfsaw/dist/check-task.car`、准确根 `check-task.cid`；
-- `packages/ipfsaw/dist/check-task.json`：TypeScript 项目有序工程检查设计稿（未实现），带 v2
+- `packages/ipfsaw/dist/check-task.json`：TypeScript 项目有序工程检查设计稿（未实现），带 v1
   `$schema`。
 
 这是标准 Task CAR，不包含
 `ipfsaw.renderer.json`，不依赖旧 mount/update/dispose 对象。
 无远端上传、发布或个人 Store 修改。示例复用共享 Check viewer 及其严格 Spec
-v2／安全 Markdown。
+v1／安全 Markdown。
 Check Task 共享一个 Target，检查点按数组顺序定义为通过继续、不通过即停止；
-这里只展示定义，不执行 Check。旧 v1 明确拒绝，需迁移并重建准确 CAR，
+这里只展示定义，不执行 Check。尚未发布的 Spec 保持 v1 迭代；旧树／图结构明确拒绝，需更新并重建准确 CAR，
 不会自动重解释历史文档或更新旧 renderer CID。
 
 运行前选择自己的受控 `TASK_CONTENT_CONFIG`，不要为试跑重写个人配置。下面只在

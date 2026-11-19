@@ -9,8 +9,8 @@ export interface CheckpointDefinition {
 }
 
 export interface CheckBundleSpec {
-  $schema?: "urn:ipfsaw:check-bundle:2";
-  specVersion: "2.0";
+  $schema?: "urn:ipfsaw:check-bundle:1";
+  specVersion: "1.0";
   name: string;
   parameter: {
     schema: Record<string, unknown>;
@@ -30,8 +30,8 @@ export const checkBundleSpecSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   ...object(
     {
-      $schema: { const: "urn:ipfsaw:check-bundle:2" },
-      specVersion: { const: "2.0" },
+      $schema: { const: "urn:ipfsaw:check-bundle:1" },
+      specVersion: { const: "1.0" },
       name: text,
       parameter: object({
         schema: {

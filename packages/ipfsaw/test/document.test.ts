@@ -15,12 +15,12 @@ import { fixtureDirectory } from "./helpers.js";
 
 const bytes = (value: string) => Buffer.from(value);
 describe("bounded, JSON-compatible document input", () => {
-  it("loads the Silvermoon design as ordered v2 while preserving task Target and scoped rule identities", async () => {
+  it("loads the Silvermoon design as ordered v1 while preserving task Target and scoped rule identities", async () => {
     const source = await readFile(
       new URL("../../../docs/silvermoon-single-checker.yaml", import.meta.url),
     );
     const document = parseDocument(source, ".yaml");
-    expect(document.schema).toBe("urn:ipfsaw:check-bundle:2");
+    expect(document.schema).toBe("urn:ipfsaw:check-bundle:1");
     const result = validateCheckBundleSpec(document.document);
     if (!result.valid) throw new Error(JSON.stringify(result.issues));
     const { parameter, checkpoints } = result.spec;

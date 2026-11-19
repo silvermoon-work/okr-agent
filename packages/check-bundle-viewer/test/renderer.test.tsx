@@ -19,7 +19,7 @@ describe("optional routing annotation and browser renderer ABI", () => {
     expect(
       validateCheckBundleSpec({
         ...typescriptProjectSpec,
-        $schema: "urn:ipfsaw:check-bundle:2",
+        $schema: "urn:ipfsaw:check-bundle:1",
       }).valid,
     ).toBe(true);
     expect(
@@ -50,7 +50,7 @@ describe("optional routing annotation and browser renderer ABI", () => {
     act(() => {
       renderer.mount(container, {
         ...typescriptProjectSpec,
-        $schema: "urn:ipfsaw:check-bundle:2",
+        $schema: "urn:ipfsaw:check-bundle:1",
       });
     });
     expect(container.textContent).toContain(typescriptProjectSpec.name);
