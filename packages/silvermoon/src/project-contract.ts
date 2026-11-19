@@ -1,21 +1,16 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { createCheckContract } from "@silvermoon-work/check-task-sdk/contracts";
-import {
-  RepositoryTarget,
-  Runtime,
-  prerequisiteCodes,
-  prerequisiteCheckpointIds,
-} from "./contract.js";
+import { RepositoryTarget, Runtime } from "./contract.js";
+import { projectDocumentation } from "./checkpoints/catalog.js";
 
 export const ProjectTarget = RepositoryTarget;
 export type ProjectTarget = Static<typeof ProjectTarget>;
-export const projectCheckpointIds = [
-  ...prerequisiteCheckpointIds,
-  "pre-commit",
-] as const;
+export const projectCheckpointIds = projectDocumentation.map(
+  (checkpoint) => checkpoint.id,
+);
 export const ProjectRuleCode = Type.Union(
-  [...prerequisiteCodes, "pre-commit-hook-configured"].map((code) =>
-    Type.Literal(code),
+  projectDocumentation.flatMap((checkpoint) =>
+    checkpoint.rules.map((rule) => Type.Literal(rule.code)),
   ),
 );
 export const projectContract = createCheckContract(

@@ -110,7 +110,7 @@ error, not a successful business observation. Problems identify their checkpoint
 and violated rule. References aggregate one complete document per failed
 checkpoint. Pass outputs remain execution-local and are never logged or
 published automatically. Use `silvermoon get-reference <cid>` to reread a
-reference from either trusted bundled CAR without executing a Check.
+reference from any of the four trusted bundled CARs without executing a Check.
 
 New Ideas live only in `.silvermoon/i`. The legacy archive, project guidance and
 project skills are not read by this Check. A CLI upgrade never replaces the

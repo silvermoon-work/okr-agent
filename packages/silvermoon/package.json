@@ -67,6 +67,7 @@
   },
   "scripts": {
     "build": "rimraf dist && tsc --project tsconfig.build.json && node scripts/build.mjs",
+    "generate-specs": "tsc --project tsconfig.build.json && node scripts/generate-specs.mjs",
     "lint": "eslint . --max-warnings=0",
     "lint-package": "publint --strict",
     "prepublishOnly": "publish-gate check",

@@ -42,3 +42,11 @@ bundles only its `references/idea`, `references/setup`, `references/project` or
 successful outputs through their execution-local context. References are bundled
 once per checkpoint, not per rule. Building never uploads, publishes, links
 global binaries or replaces skills.
+
+Checkpoint implementation and canonical documentation live together under
+`silvermoon/src/checkpoints/`. The shared build helper composes each Task's Spec
+in a read-only overlay from those definitions and the actual Target schema; it
+does not copy definitions into this author workspace. The four
+`docs/silvermoon-*.yaml` files are generated preview snapshots. See the CLI
+README's checkpoint authoring section for the refresh command. Every delivered
+CAR remains self-contained, including its Task overview and checkpoint files.

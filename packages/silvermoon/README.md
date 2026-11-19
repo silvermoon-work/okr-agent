@@ -69,8 +69,42 @@ commit hook, run `silvermoon check-changes --staged --audience agent`; no hook
 is installed automatically. Valid unapproved Ideas, dirty worktrees, detached
 HEAD and absent upstream tracking do not by themselves invalidate a candidate.
 
-All four Specs declare the Task's scope in its root `description` and checked
-parameters once in `parameter.schema`, without `preconditions`. Each
+## Checkpoint authoring and composition
+
+`src/checkpoints/<id>/` owns each checkpoint's canonical `documentation.ts` and
+`check.ts` implementation. The five consensus checkpoints keep their own
+documentation and share the identical phase-checking algorithm in
+`src/checkpoints/consensus.ts`. Documentation includes the ID, title,
+description, Agent instructions, Rules and successful-output explanation;
+implementations spread that same definition rather than maintaining a second
+acceptance list. Factories receive the actual earlier checkpoint definitions and
+create fresh instances per execution for typed `outputOf` dependencies.
+
+`src/checkpoints/catalog.ts` composes the four ordered documentation lists.
+`src/specifications.ts` adds each Task's scope and its actual business Target
+schema. Task execution entries compose the corresponding checkpoint factories;
+their ordering and metadata are checked against the Specs in tests. No runtime
+mode switch, implicit dependency graph or cross-execution output cache is added.
+
+Both CLI and author builds assemble complete Spec v1 documents in a read-only
+file-tree overlay before invoking the existing Check Builder. The four
+`docs/silvermoon-*.yaml` files are generated preview snapshots, not authoring
+sources. After editing checkpoint documentation or Task scope, refresh them
+with:
+
+```sh
+pnpm --filter @silvermoon-work/silvermoon generate-specs
+pnpm exec prettier --write "docs/silvermoon-*.yaml"
+```
+
+Tests reject stale snapshots and compare every bundled checkpoint document with
+its canonical definition. Each CAR still contains its own complete offline
+documentation; source reuse does not require runtime includes or child Tasks.
+Rebuilding changes candidate CIDs and never rewrites historical CARs or pinned
+Idea CIDs.
+
+All four generated Specs declare the Task's scope in its root `description` and
+checked parameters once in `parameter.schema`, without `preconditions`. Each
 checkpoint's `description` briefly states what is checked and guaranteed; its
 separate `instructions` tell the Agent how to read replay-derived facts, prepare
 materials, request review, record explicit events and iterate when not approved.
