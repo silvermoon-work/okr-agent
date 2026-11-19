@@ -16,5 +16,9 @@ upstream reader.
 
 Protocol, revision scopes, five signoffs, host trust, evidence, concurrency and
 Git boundaries are documented in the CLI README. Both use the same domain
-reducer and SDK `runCheck` chain, not a copy of the old Potential Guide.
-Building never uploads, publishes, links global binaries or replaces skills.
+reducer and SDK `createCheckCallback` ordered checkpoints, not a copy of the old
+Potential Guide. The Task entry dispatches lifecycle and snapshot observations
+and supplies execution dependencies. Checkpoints read prior successful outputs
+through their execution-local context. References are bundled once per
+checkpoint, not per rule. Building never uploads, publishes, links global
+binaries or replaces skills.

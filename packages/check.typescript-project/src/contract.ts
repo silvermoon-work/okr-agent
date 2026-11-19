@@ -12,4 +12,7 @@ export const ProblemCode = Type.Union([
 ]);
 export type ProblemCode = Static<typeof ProblemCode>;
 
-export default createCheckContract(Input, ProblemCode);
+export default createCheckContract(Input, ProblemCode, [
+  "project",
+  "workspace",
+]);

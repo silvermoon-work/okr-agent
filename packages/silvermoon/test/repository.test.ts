@@ -35,6 +35,29 @@ import {
 } from "./fixtures.js";
 
 describe("bounded Git snapshots and archive isolation", () => {
+  it("distinguishes confirmed missing primary branches from transport failures", async () => {
+    const { root, remote } = await repository();
+    const project = await readProject(root);
+    await expect(
+      primary(project, { localRemote: remote, fetch: true, checkBranch: true }),
+    ).resolves.toHaveProperty("tip");
+    await git(remote, ["update-ref", "-d", "refs/heads/main"]);
+    await expect(
+      primary(project, { localRemote: remote, fetch: true, checkBranch: true }),
+    ).rejects.toMatchObject({
+      code: "primary-branch-missing",
+    });
+    await git(root, ["remote", "set-url", "origin", join(remote, "missing")]);
+    await expect(
+      primary(project, {
+        localRemote: join(remote, "missing"),
+        fetch: true,
+        checkBranch: true,
+      }),
+    ).rejects.not.toMatchObject({
+      code: "primary-branch-missing",
+    });
+  });
   it("validates snapshot history even when a candidate deletes every new Idea", async () => {
     const { root } = await repository();
     await expect(

@@ -13,6 +13,7 @@ import { loadBrowserTask, TaskInvocation } from "./task.js";
 import type { TaskSource } from "./task.js";
 import { isTaskBundlePath, TaskError } from "@silvermoon-work/task-protocol";
 import { taskHostClient } from "./task-browser.js";
+import { previewNavigation } from "./navigation.js";
 
 export type PreviewState =
   | { type: "loading"; revision: number }
@@ -464,7 +465,7 @@ export async function startPreview(options: PreviewOptions): Promise<{
       );
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       response.end(
-        `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ipfsaw preview</title><style nonce="${nonce}">html,body{height:100%;margin:0;color:#203047;background:#fff;font:14px "Segoe UI",sans-serif}body{display:flex;flex-direction:column}#status{margin:0;padding:10px 18px;border-bottom:1px solid #c6d3e2;background:#eef4fa;overflow-wrap:anywhere;flex-shrink:0}#renderer{flex:1;min-height:0}iframe{display:block;height:100%;width:100%;border:0}[hidden]{display:none!important}</style><p id="status" role="status">Connecting…</p><main id="renderer" hidden></main><script nonce="${nonce}">(${(task ? taskHostClient : hostClient).toString()})()</script></html>`,
+        `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ipfsaw preview</title><style nonce="${nonce}">html,body{height:100%;margin:0;color:#203047;background:#fff;font:14px "Segoe UI",sans-serif}body{display:flex;flex-direction:column}#status{margin:0;padding:10px 18px;border-bottom:1px solid #c6d3e2;background:#eef4fa;overflow-wrap:anywhere;flex-shrink:0}#renderer{flex:1;min-height:0}iframe{display:block;height:100%;width:100%;border:0}[hidden]{display:none!important}</style><p id="status" role="status">Connecting…</p><main id="renderer" hidden></main><script nonce="${nonce}">(${previewNavigation.toString()})();(${(task ? taskHostClient : hostClient).toString()})()</script></html>`,
       );
       return;
     }

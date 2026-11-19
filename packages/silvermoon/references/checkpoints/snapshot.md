@@ -1,5 +1,7 @@
 # Invalid snapshot
 
+## snapshot
+
 Repair the reported structural, identity, event, regular-path, language or
 capacity error in the selected snapshot. `check` defaults to committed HEAD;
 `--worktree`, `--staged`, `--commit` and `--remote` select distinct snapshots.

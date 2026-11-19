@@ -14,7 +14,7 @@ import {
   type ProblemReporter,
   type Problem as TargetProblem,
   type CheckerResult,
-} from "@silvermoon-work/check-task-sdk";
+} from "@silvermoon-work/check-task-sdk/legacy";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {

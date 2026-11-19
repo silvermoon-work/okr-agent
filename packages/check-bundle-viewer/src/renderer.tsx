@@ -10,7 +10,7 @@ export default {
     root = createRoot(container);
     root.render(
       <div className="cbv-fill">
-        <CheckBundleViewer spec={document} />
+        <CheckBundleViewer spec={document} navigation />
       </div>,
     );
   },
@@ -18,7 +18,7 @@ export default {
     if (!root) throw new Error("Check renderer is not mounted.");
     root.render(
       <div className="cbv-fill">
-        <CheckBundleViewer spec={document} />
+        <CheckBundleViewer spec={document} navigation />
       </div>,
     );
   },

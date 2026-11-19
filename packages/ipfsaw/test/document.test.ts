@@ -1,6 +1,7 @@
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { validateCheckBundleSpec } from "@silvermoon-work/check-bundle-viewer";
 import {
   boundedRead,
   DocumentError,
@@ -14,6 +15,52 @@ import { fixtureDirectory } from "./helpers.js";
 
 const bytes = (value: string) => Buffer.from(value);
 describe("bounded, JSON-compatible document input", () => {
+  it("loads the Silvermoon design as ordered v2 while preserving task Target and scoped rule identities", async () => {
+    const source = await readFile(
+      new URL("../../../docs/silvermoon-single-checker.yaml", import.meta.url),
+    );
+    const document = parseDocument(source, ".yaml");
+    expect(document.schema).toBe("urn:ipfsaw:check-bundle:2");
+    const result = validateCheckBundleSpec(document.document);
+    if (!result.valid) throw new Error(JSON.stringify(result.issues));
+    const { parameter, checkpoints } = result.spec;
+    expect(parameter.schema.required).toEqual(["userHome", "repoRoot", "idea"]);
+    expect(checkpoints.map(({ id }) => id)).toEqual([
+      "environment",
+      "repository",
+      "observation",
+      "requirements",
+      "research",
+      "technical",
+      "cases",
+      "tests",
+      "implementation",
+      "deployment",
+      "completion",
+    ]);
+    expect(checkpoints[0]!.rules.map(({ code }) => code)).toEqual([
+      "environment-runtime",
+      "environment-skill",
+      "environment-configuration",
+    ]);
+    expect(checkpoints[1]!.rules.map(({ code }) => code)).toEqual([
+      "repository-root-invalid",
+      "project-configuration-invalid",
+      "project-layout-invalid",
+      "primary-branch-missing",
+      "branch-detached",
+      "branch-upstream-mismatch",
+      "primary-sync-required",
+      "worktree-uncommitted",
+      "event-history-rewritten",
+      "idea-identity-modified",
+    ]);
+    expect(checkpoints.slice(3, 8).map(({ rules }) => rules[1]!.code)).toEqual(
+      Array.from({ length: 5 }, () => "synchronization"),
+    );
+    expect(checkpoints.at(-1)!.rules).toHaveLength(1);
+    expect(checkpoints.at(-1)!.rules[0]!.description).toContain("执行错误");
+  });
   it("reads JSON/YAML, exact URI and shared noncyclic aliases", () => {
     expect(
       parseDocument(

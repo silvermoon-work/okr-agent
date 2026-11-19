@@ -8,8 +8,8 @@ import {
   type CheckContext,
   type CheckerResult,
   type CheckOutputOptions,
-} from "../src/index.js";
-import { createCheckContract, problemCodes } from "../src/contracts.js";
+} from "../src/legacy.js";
+import { createCheckContract, problemCodes } from "../src/legacy-contracts.js";
 import { ContentRef } from "@silvermoon-work/task-protocol";
 
 vi.mock("@silvermoon-work/task-sdk", () => ({ runTask: vi.fn() }));

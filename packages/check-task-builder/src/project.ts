@@ -76,19 +76,21 @@ import { createCheckContract } from "@silvermoon-work/check-task-sdk/contracts";
 
 export const Input = Type.Object({ text: Type.String() }, { additionalProperties: false });
 export type Input = Static<typeof Input>;
-export const ProblemCode = Type.Union([Type.Literal("text-mismatch")]);
-export type ProblemCode = Static<typeof ProblemCode>;
-export default createCheckContract(Input, ProblemCode);
+export const RuleCode = Type.Union([Type.Literal("text-mismatch")]);
+export type RuleCode = Static<typeof RuleCode>;
+export default createCheckContract(Input, RuleCode, ["text"]);
 `,
-    "src/main.ts": `import { defineChecker, runCheck, type CheckerResult } from "@silvermoon-work/check-task-sdk";
-import contract, { Input, type ProblemCode } from "./contract.js";
+    "src/main.ts": `import { defineCheckpoint, runCheck, type CheckpointResult } from "@silvermoon-work/check-task-sdk";
+import contract, { Input, type RuleCode } from "./contract.js";
 
 runCheck(contract, {
-  root: "text",
-  registry: (context) => ({
-    text: defineChecker({
+  checkpoints: (context) => [
+    defineCheckpoint({
+      id: "text",
       target: Input,
-      check: async (input, signal): Promise<CheckerResult<never, ProblemCode>> => {
+      description: "Compare supplied text with the bundled standard.",
+      rules: [{ code: "text-mismatch", description: "Text must match the bundled standard." }],
+      check: async (input, { signal }): Promise<CheckpointResult<undefined, RuleCode>> => {
         signal.throwIfAborted();
         const cid = await context.resolveContent(context.bundle, "resources/expected.txt", { signal });
         const node = await context.readContent(cid, { signal });
@@ -96,17 +98,17 @@ runCheck(contract, {
         const expected = await new Response(node.content).text();
         signal.throwIfAborted();
         return input.text === expected.trimEnd()
-          ? { pass: true, children: [] }
+          ? { pass: true, output: undefined }
           : { pass: false, problems: [{ code: "text-mismatch", brief: \`Text \${JSON.stringify(input.text)} must equal \${JSON.stringify(expected.trimEnd())}.\` }] };
       },
     }),
-  }),
+  ],
 });
 `,
     "assets/expected.txt": "hello\n",
     "references/check.md":
       "# Text standard\n\nThe supplied text must equal the bundled expected text (ignoring its final newline).\n",
-    "references/problems/text-mismatch.md":
+    "references/checkpoints/text.md":
       "# Text mismatch\n\nReplace the input text with the exact bundled expected text.\n",
     "README.md":
       '# Check project\n\nInstall with `pnpm install`, edit `src/contract.ts`, `src/main.ts`, and `references/`, then run `pnpm typecheck` and `pnpm build`.\n\nUse input `{"text":"hello"}` to pass and `{"text":"other"}` for a normal nonpassing result. Missing resources or thrown errors are execution faults, not problems.\n',

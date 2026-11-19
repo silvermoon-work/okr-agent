@@ -322,7 +322,12 @@ export interface Primary {
 }
 export async function primary(
   project: Project,
-  options: { fetch?: boolean; signal?: AbortSignal; localRemote?: string } = {},
+  options: {
+    fetch?: boolean;
+    signal?: AbortSignal;
+    localRemote?: string;
+    checkBranch?: boolean;
+  } = {},
 ): Promise<Primary> {
   const { root, config } = project;
   const signal = options.signal;
@@ -353,6 +358,30 @@ export async function primary(
     "primary",
     "Upstream remote does not identify configured primaryRepository.",
   );
+  if (options.fetch && options.checkBranch) {
+    try {
+      await git(
+        root,
+        [
+          "ls-remote",
+          "--exit-code",
+          "--heads",
+          "--",
+          remote,
+          `refs/heads/${config.primaryBranch}`,
+        ],
+        signal,
+      );
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (error instanceof Error && "code" in error && error.code === 2)
+        throw new SilvermoonError(
+          "primary-branch-missing",
+          "The configured remote primary branch does not exist.",
+        );
+      throw error;
+    }
+  }
   if (options.fetch)
     await git(
       root,
@@ -386,8 +415,12 @@ export async function primary(
     const current = project.ideas.get(id);
     invariant(
       current &&
-        JSON.stringify(current.bootstrap) === JSON.stringify(past.bootstrap) &&
-        current.eventSource.startsWith(past.eventSource),
+        JSON.stringify(current.bootstrap) === JSON.stringify(past.bootstrap),
+      "identity",
+      "Primary Idea identity/history must be preserved as an exact append-only prefix.",
+    );
+    invariant(
+      current.eventSource.startsWith(past.eventSource),
       "history",
       "Primary Idea identity/history must be preserved as an exact append-only prefix.",
     );

@@ -71,7 +71,7 @@ export async function runCli(
         "agent",
       ]),
     )
-    .option("--json", "Machine-readable silvermoon/v1 response")
+    .option("--json", "Machine-readable silvermoon/v2 response")
     .configureOutput({
       writeOut: (message) => {
         io.stdout.write(message);
@@ -121,7 +121,7 @@ export async function runCli(
         : typeof value === "object" &&
             value !== null &&
             "schema" in value &&
-            value.schema === "silvermoon/v1" &&
+            value.schema === "silvermoon/v2" &&
             "result" in value
           ? renderReport(value as Report)
           : JSON.stringify(value, null, 2) + "\n",

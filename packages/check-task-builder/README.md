@@ -7,7 +7,7 @@ Engine snapshot 直接提供 `result` payload。源码集成与 smoke 已按该�
 历史 npm/CAR 不重写，旧 `worker.cjs` 的加载兼容由上游保留。
 
 把 Check 项目只读文件树转换为标准 Task Builder 输入，再复用
-`@silvermoon-work/task-builder@0.2.0-rc.4`
+`@silvermoon-work/task-builder@0.2.1-rc.0`
 编译、绑定、校验和编码 CAR。不复制上游编译器，不生成编辑器类型文件，不保留完整中间项目。
 
 ## CLI
@@ -29,7 +29,7 @@ check-task-builder build [build-file] [--out-dir <directory>] [--no-car]
 `init` 创建实际读取 `assets/expected.txt` 并判断输入文本的可编辑项目。输入
 `{"text":"hello"}` 通过，`{"text":"other"}`
 正常不通过。目标目录必须不存在且父目录存在；不交互、不安装、不覆盖。模板固定本包/SDK版本，并显式声明
-`task-builder-cli@0.2.0-rc.4` 开发依赖； `pnpm car` 调用上游 CLI，本 CLI
+`task-builder-cli@0.2.1-rc.0` 开发依赖； `pnpm car` 调用上游 CLI，本 CLI
 **没有** `car` 命令。
 
 ```yaml
@@ -47,16 +47,19 @@ binary: []
 outDirectory: dist/text-check
 ```
 
-生成入口使用 `defineChecker` 和 `runCheck(contract,{registry,root})`，
-输出 `pass`、`documentation` 和失败时的 `problems`，不再生成
-reporter callback 或旧 DFS。遍历过程进入 Task 日志，不进入业务结果；
-节点只有首次发现的 parent，没有单独 root 或 edges。
+生成入口使用 `defineCheckpoint` 和 `runCheck(contract,{checkpoints})`，
+按列表顺序执行，首个失败 Checkpoint 停止后续步骤。
+输出 `pass`、`documentation`、`references` 和失败时的 `problems`；
+问题仅包含 checkpoint、code、brief，不再有逐问题文档或图节点来源。
+过程日志只含 checkpoint 与 pass，执行期 output 不进入日志或业务结果。
 这是当前源码模板；消费尚未发布的候选时须使用同一验证 SDK tarball，
 不能假定历史 registry 版本已具有新 API。
 
-`source.entry` 使用 SDK 的 `runCheck`；`source.contract` 默认导出
-`createCheckContract` 生成的契约。问题码仅来自作者 TypeBox Schema；不接受 YAML
-`problemCodes`，也不接受 source 的
+`source.entry` 是显式 Task 入口，使用 SDK 的 `runCheck` 或自行包装
+`createCheckCallback`；`source.contract` 默认导出
+`createCheckContract(Input, RuleCode, checkpointIds)` 生成的契约。
+共享 schema 必须包含 `check-rule-code` 和 `check-checkpoint-id`；
+规则码仅来自作者 TypeBox Schema；不接受 YAML `problemCodes`，也不接受 source 的
 `mode/sdk/exportName`。契约模块求值是受信任代码执行，不是沙箱。可选 `$schema` 为
 `https://silvermoon-work.github.io/okr-agent/schemas/check-build/v1.json`，是格式标识，不要求联网下载。
 
@@ -89,8 +92,11 @@ API 调用须迁移，随后重建子包和父包并更新 CID。
 
 ## 参考标准和资源
 
-必需 `references/check.md` 和每个已声明问题码的
-`references/problems/<code>.md`，均为非空有效 UTF-8。这些约定路径严格区分大小写，包括在 Windows 上构建时。未声明的问题 Markdown、缺失/空白/无效编码文档均构建失败；不要求 frontmatter，不抓取全部 Markdown 链接。收录整个有效
+必需 `references/check.md` 和每个已声明 Checkpoint 的
+`references/checkpoints/<checkpoint-id>.md`，均为非空有效 UTF-8。
+不再接受 `references/problems/` 逐规则文档。
+这些约定路径严格区分大小写，包括在 Windows 上构建时。未声明的 Checkpoint
+Markdown、缺失/空白/无效编码文档均构建失败；不要求 frontmatter，不抓取全部 Markdown 链接。收录整个有效
 `references/`
 子树，保持图片和相对链接路径，无需逐一列出参考资源。二进制参考附件沿用上游规则，在
 `binary` 中选择输出路径，例如
@@ -161,14 +167,15 @@ try {
 `await content.close()`。构建宿主要求 Node.js >=22.15.0，Engine 另要求
 `^22.15.0 || >=23.5.0`。
 
-开发验证：`pnpm check`。`scripts/smoke.mjs`
-可复制到独立安装目录，使用已发布 Task Engine 0.2.0-rc.2 执行 Bundle，通过
-`run.output.result.data` 验证 pass/fail，校验 schema 生成的 cidPaths，
+开发验证：本包的 `build`、`typecheck`、`test-coverage`、`lint` 和
+`lint-package`。`scripts/smoke.mjs`
+可复制到独立安装目录，使用 Task Engine `0.2.1-rc.1` 执行 Bundle，通过
+`run.result.data` 验证 pass/fail，校验 schema 生成的 cidPaths，
 按 documentation 直接 CID 读取文档，并验证资源回收；第三参数 `fault`
 验证抛错制品。若 Bundle 包含参考附属资源（例如
 `references/assets/standard.txt`），还会验证输出资源的字节与 Bundle 一致。需要显式安装
-`@silvermoon-work/task-engine@0.2.0-rc.4`、`@silvermoon-work/task-builder@0.2.0-rc.4`、
-`@silvermoon-work/task-builder-cli@0.2.0-rc.4`、`@silvermoon-work/ipfs-store@0.1.0-rc.3`
+`@silvermoon-work/task-engine@0.2.1-rc.1`、`@silvermoon-work/task-builder@0.2.1-rc.0`、
+`@silvermoon-work/task-builder-cli@0.2.1-rc.0`、`@silvermoon-work/ipfs-store@0.1.0`
 和 `ipfs-unixfs-exporter@16.2.3`。
 
 ```sh

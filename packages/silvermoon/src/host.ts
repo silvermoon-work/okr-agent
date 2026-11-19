@@ -22,14 +22,18 @@ export interface Artifact {
 export interface Result {
   readonly pass: boolean;
   readonly documentation: string;
+  readonly references: readonly {
+    readonly checkpoint: string;
+    readonly documentation: string;
+  }[];
   readonly problems?: readonly {
+    readonly checkpoint: string;
     readonly code: string;
     readonly brief: string;
-    readonly documentation: string;
   }[];
 }
 export interface Report {
-  readonly schema: "silvermoon/v1";
+  readonly schema: "silvermoon/v2";
   readonly checkCid: string;
   readonly target: Target;
   readonly result: Result;
@@ -41,12 +45,18 @@ export interface Report {
 const resultSchema = Type.Object({
   pass: Type.Boolean(),
   documentation: Type.String(),
+  references: Type.Array(
+    Type.Object({
+      checkpoint: Type.String(),
+      documentation: Type.String(),
+    }),
+  ),
   problems: Type.Optional(
     Type.Array(
       Type.Object({
         code: Type.String(),
         brief: Type.String(),
-        documentation: Type.String(),
+        checkpoint: Type.String(),
       }),
       { minItems: 1 },
     ),
@@ -212,7 +222,7 @@ export async function observe(
     invariant(
       task.stage === "completed" && task.result,
       "engine",
-      `Check execution did not complete: ${task.stage}.`,
+      `Check execution did not complete: ${task.stage}.${task.error ? ` ${task.error.code}: ${task.error.message}` : ""}`,
     );
     invariant(
       typeof task.result === "object" &&
@@ -232,7 +242,7 @@ export async function observe(
     const references = [
       ...new Set([
         result.documentation,
-        ...(result.problems ?? []).map((problem) => problem.documentation),
+        ...result.references.map((reference) => reference.documentation),
       ]),
     ];
     invariant(
@@ -252,7 +262,7 @@ export async function observe(
         ),
       });
     return {
-      schema: "silvermoon/v1",
+      schema: "silvermoon/v2",
       checkCid: artifact.cid,
       target,
       result,

@@ -315,14 +315,10 @@ describe("explicit browser callback and genuine context", () => {
       document.head.replaceChildren();
     },
   );
-  it("rejects a shape-valid but cyclic Check graph before mounting UI", async () => {
-    const cyclic = structuredClone(typescriptProjectSpec);
-    cyclic.checkers[cyclic.root]!.children.push({
-      checker: cyclic.root,
-      when: "always",
-      parameter: "same",
-    });
-    const h = frame((_parameters, context) => startCheck(cyclic, context));
+  it("rejects duplicate checkpoint IDs before mounting UI", async () => {
+    const invalid = structuredClone(typescriptProjectSpec);
+    invalid.checkpoints.push(structuredClone(invalid.checkpoints[0]!));
+    const h = frame((_parameters, context) => startCheck(invalid, context));
     h.connect();
     h.start();
     await vi.waitFor(() => {

@@ -1,7 +1,11 @@
-import { defineChecker, type Problem } from "@silvermoon-work/check-task-sdk";
+import { stat } from "node:fs/promises";
+import {
+  defineCheckpoint,
+  type RuleFailure,
+} from "@silvermoon-work/check-task-sdk";
 import type { Host, ToolEntry } from "../inspect.js";
-import type { Input, ProblemCode, Tool } from "../contract.js";
-import { schemas, type Item, type Result } from "./model.js";
+import { Input, type Tool } from "../contract.js";
+import type { InstallationRule } from "./model.js";
 
 export function compareVersions(actual: string, expected: string): number {
   if (![actual, expected].every((v) => /^[0-9]+(?:\.[0-9]+)*$/.test(v)))
@@ -18,7 +22,7 @@ export function compareVersions(actual: string, expected: string): number {
 }
 type Fact =
   | { pass: true; entry: ToolEntry; version: string }
-  | { pass: false; problems: [Problem<ProblemCode>] };
+  | { pass: false; problems: [RuleFailure<InstallationRule>] };
 export function toolChecks(input: Input, host: Host, signal: AbortSignal) {
   const r = input.requirements;
   const cwd = input.context.projectDirectory;
@@ -27,7 +31,6 @@ export function toolChecks(input: Input, host: Host, signal: AbortSignal) {
     if (r.tools?.[name]) requested.add(name);
   if (r.management) requested.add("nvm");
   if (r.registries?.nrm) requested.add("nrm");
-  const facts = new Map<string, Promise<Fact>>();
   const inspectTool = async (name: Tool): Promise<Fact> => {
     signal.throwIfAborted();
     const entry = await host.locate(name, cwd);
@@ -72,63 +75,42 @@ export function toolChecks(input: Input, host: Host, signal: AbortSignal) {
       };
     return { pass: true, entry, version };
   };
-  const fact = (name: Tool): Promise<Fact> => {
-    if (!requested.has(name)) throw new Error("Undeclared tool requirement.");
-    let value = facts.get(name);
-    if (!value) {
-      value = inspectTool(name);
-      facts.set(name, value);
-    }
-    return value;
-  };
-  const registry = {
-    tool: defineChecker({
-      target: schemas.tool,
-      check: async ({ name }): Promise<Result> => {
-        const value = await fact(name);
-        if (!value.pass) return value;
-        const children: Item[] = [];
-        if (r.tools?.[name]?.minimumVersion)
-          children.push({ checker: "minimum", target: { name } });
-        if (
-          (name === "node" || name === "npm") &&
-          r.pairing?.npmWithNode &&
-          (await fact(name === "node" ? "npm" : "node")).pass
-        )
-          children.push({ checker: "pairing", target: {} });
-        if (
-          (name === "node" || name === "npm") &&
-          r.management?.appliesTo.includes(name) &&
-          (await fact("nvm")).pass
-        )
-          children.push({ checker: "management", target: { name } });
-        if ((name === "npm" || name === "pnpm") && r.registries?.active?.[name])
-          children.push({ checker: "registry", target: { name } });
-        if (name === "nrm" && r.registries?.nrm)
-          children.push({ checker: "nrm", target: {} });
-        return { pass: true, children };
-      },
-    }),
-    minimum: defineChecker({
-      target: schemas.minimum,
-      check: async ({ name }): Promise<Result> => {
-        const value = await fact(name);
-        if (!value.pass) return value;
+  return defineCheckpoint({
+    id: "installation",
+    target: Input,
+    description: "所需工具的安装、可执行性与版本就绪。",
+    rules: [
+      { code: "tool-missing", description: "所需工具必须存在。" },
+      { code: "tool-unusable", description: "版本命令必须可执行。" },
+      { code: "version-unparseable", description: "版本输出必须可识别。" },
+      { code: "version-too-low", description: "版本必须满足声明下限。" },
+    ],
+    check: async () => {
+      signal.throwIfAborted();
+      if (!(await stat(cwd)).isDirectory())
+        throw new Error("projectDirectory must exist and be a directory.");
+      if (!["win32", "linux", "darwin"].includes(host.platform))
+        throw new Error("Unsupported execution platform.");
+      const entries = new Map<Tool, ToolEntry>();
+      const problems: RuleFailure<InstallationRule>[] = [];
+      for (const name of requested) {
+        const value = await inspectTool(name);
+        if (!value.pass) {
+          problems.push(...value.problems);
+          continue;
+        }
+        entries.set(name, value.entry);
         const minimum = r.tools?.[name]?.minimumVersion;
-        if (!minimum) throw new Error("Undeclared minimum requirement.");
-        return compareVersions(value.version, minimum) < 0
-          ? {
-              pass: false,
-              problems: [
-                {
-                  code: "version-too-low",
-                  brief: `${name}：当前 ${value.version}，要求不低于 ${minimum}。`,
-                },
-              ],
-            }
-          : { pass: true, children: [] };
-      },
-    }),
-  };
-  return { requested, fact, registry };
+        if (minimum && compareVersions(value.version, minimum) < 0)
+          problems.push({
+            code: "version-too-low",
+            brief: `${name}：当前 ${value.version}，要求不低于 ${minimum}。`,
+          });
+      }
+      const [first, ...rest] = problems;
+      return first
+        ? { pass: false, problems: [first, ...rest] }
+        : { pass: true, output: entries };
+    },
+  });
 }

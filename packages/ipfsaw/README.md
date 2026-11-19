@@ -66,7 +66,7 @@ ipfsaw registry remove <schema-uri> [--data-dir <path>]
   "version": 1,
   "openBrowser": false,
   "renderers": {
-    "urn:ipfsaw:check-bundle:1": "<准确 renderer 根 CID>"
+    "urn:ipfsaw:check-bundle:2": "<准确 renderer 根 CID>"
   }
 }
 ```
@@ -109,7 +109,8 @@ SIGTERM 为 143。已输出就绪结果后发生清理失败只写 stderr 并非
 服务运行期间，可在本机不同浏览器、新标签页或无痕窗口中直接打开、复制和刷新，
 不依赖 URL fragment、history、cookie 或浏览器存储。
 正常预览没有常驻宿主标题栏；加载时显示状态，成功后让应用占满窗口，
-错误或断连时重新显示提示。Check viewer 的标题下方，树与详情填满剩余高度。
+错误或断连时重新显示提示。Check
+viewer 的标题下方，有序检查点侧栏与详情填满剩余高度。
 最后一个预览页面的 SSE 连接断开后，CLI 等待 3 秒重连窗口，再关闭 HTTP、
 自己持有的 Store/会话/opener 并正常退出（0）；清理失败仍为非零。
 刷新期间重连会取消退出，仍有其他标签页/浏览器连接时不退出。
@@ -201,13 +202,16 @@ pnpm exec turbo run build --filter=@silvermoon-work/ipfsaw
 
 - `packages/ipfsaw/dist/check-task/task.yaml`、`main.mjs`、`resources/check.css`；
 - `packages/ipfsaw/dist/check-task.car`、准确根 `check-task.cid`；
-- `packages/ipfsaw/dist/check-task.json`：真实 TypeScript 项目定义文档。
+- `packages/ipfsaw/dist/check-task.json`：TypeScript 项目有序工程检查设计稿（未实现），带 v2
+  `$schema`。
 
 这是标准 Task CAR，不包含
 `ipfsaw.renderer.json`，不依赖旧 mount/update/dispose 对象。
-无远端上传、发布或个人 Store 修改。示例复用共享 Check
-viewer 及其严格 DAG/安全 Markdown，
-不会执行 Check checker。
+无远端上传、发布或个人 Store 修改。示例复用共享 Check viewer 及其严格 Spec
+v2／安全 Markdown。
+Check Task 共享一个 Target，检查点按数组顺序定义为通过继续、不通过即停止；
+这里只展示定义，不执行 Check。旧 v1 明确拒绝，需迁移并重建准确 CAR，
+不会自动重解释历史文档或更新旧 renderer CID。
 
 运行前选择自己的受控 `TASK_CONTENT_CONFIG`，不要为试跑重写个人配置。下面只在
 **不存在的新目录**创建独立 local 配置，使用完恢复原环境变量；不会向 gateway/Kubo 回退：
@@ -276,7 +280,17 @@ parameters 输入规则一致，包括显式
 Schema
 要求对象根；这是协议约束，而非旧 `$schema` 分流约束。不需要
 `$schema`，除非作者 schema 要求。
-需要 router 的应用自行定义参数；正常前端导航不重新启动 Task。
+前端导航不重新启动 Task，也不应把导航位置放进 Task 参数。
+宿主提供有界的 `ipfsaw-navigation/v1` 展示层桥接：
+活动的 opaque iframe 发送 `ready` 获取外层 URL fragment，
+发送 `{type:"navigate", hash:"#...", replace:boolean}` 更新同源预览页的历史；
+宿主以 `{type:"state", hash}` 回复，并同步前进／后退和 hash 变化。
+消息均带 `protocol`；宿主校验活动 frame 的 source、opaque origin、
+fragment 形状和 4096 字符上限，只允许修改 fragment，不接受路径或外部 URL。
+应用应校验父页 source/origin，且不能在 fragment 中放凭据或私密文档。
+这不是 TaskContext 能力，也不改变 Task 输入、结果或 legacy renderer ABI。
+内置 Check viewer 用它保存
+`#checkpoint=<Checkpoint ID>`，普通应用不使用则行为不变。
 
 参数和结果使用公共 payload 编解码；只有声明的 ContentRef 才提供引用能力，普通 CID 字符串
 不会变成授权。结果按官方 resultSchema 验证；函数、DOM、函数 handle 和不合法引用不能作为结果。
@@ -330,8 +344,10 @@ CLI 只输出一次
 真实内容变化后立刻隐藏旧页面，在新 iframe 进行一次新的启动；普通保存、原子替换、
 暂时缺失、非法文件及纠错恢复由有界重读处理。只提交最新 revision，不让旧成功/错误覆盖新内容，
 稳定坏输入不重复拉包或刷屏。同内容保存不重复启动。
-**首版会重置应用和 router 状态**；不是永久更新协议，legacy
-renderer 仍走自己的 update。
+保存仍会重置应用内存状态；不是永久更新协议，legacy renderer 仍走自己的 update。
+外层 URL fragment 保持不变，内置 Check
+viewer 因而能在更新、刷新后恢复所选检查点；
+不存在的 ID 回到当前有序数组的第一项。侧栏宽度和滚动位置不持久化。
 
 不提供容易误解为停止服务的 **Cancel startup / Close app** 宿主按钮。
 关闭最后一个页面后由 CLI 回收整个预览；未完成的启动仍受超时及取消信号控制。
@@ -343,7 +359,7 @@ Ctrl+C 关闭自己持有的 HTTP/Store/会话/opener 并等待资源回收，�
 新回归在 `test/task.test.ts`、`task-frame.test.ts`、`task-browser.test.ts`
 与扩展的
 `cli.test.ts`；复用既有 viewer
-DAG/Markdown/mobile 回归。DOM-only 测试不替代父会话的
+有序列表／格式校验／导航／Markdown/mobile 回归。DOM-only 测试不替代父会话的
 真实桌面/mobile、准确 CAR/CID 和制品消费者验收；没有把历史制品或旧 RC 的通过当新 Task 证明。
 
 ## 薄入口稳定接口

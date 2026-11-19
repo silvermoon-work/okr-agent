@@ -59,23 +59,27 @@ describe("IDs, config and bounded domain inputs", () => {
       /calendar/,
     );
   });
+  it.each([
+    "https://github.com/example/project.git",
+    "https://github.com/example/project/",
+    "git@github.com:example/project.git",
+    "ssh://git@github.com/example/project.git",
+  ])(
+    "normalizes legacy primary URL %s without Git or network transport",
+    (primary) => {
+      expect(
+        projectConfig(
+          `version: 2\nprimaryRepository: ${primary}\nprimaryBranch: main`,
+        ).primaryRepository,
+      ).toBe("example/project");
+    },
+  );
   it("retains config v2 fields without accepting credentials, unknown fields or invalid languages", () => {
     expect(
       projectConfig(
         "version: 2\nprimaryRepository: example/project\nprimaryBranch: main\npreferredLanguage: zh-CN",
       ).preferredLanguage,
     ).toBe("zh-CN");
-    for (const primary of [
-      "https://github.com/example/project.git",
-      "https://github.com/example/project/",
-      "git@github.com:example/project.git",
-      "ssh://git@github.com/example/project.git",
-    ])
-      expect(
-        projectConfig(
-          `version: 2\nprimaryRepository: ${primary}\nprimaryBranch: main`,
-        ).primaryRepository,
-      ).toBe("example/project");
     for (const input of [
       "version: 3",
       "version: 2\nversion: 2",

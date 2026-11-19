@@ -13,16 +13,17 @@ import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createCheckCallback,
-  defineChecker,
+  executeCheck,
 } from "@silvermoon-work/check-task-sdk";
 import contract, {
   type Input,
-  type ProblemCode,
+  type RuleCode,
   type Tool,
 } from "../src/contract.js";
 import {
   compareVersions,
   inspect,
+  toolchainCheckpoints,
   nativeHost,
   posixNrmTarget,
   parseNrm,
@@ -121,7 +122,7 @@ function fixture(
   };
 }
 async function check(requirements: Input["requirements"], host = fixture()) {
-  const problems: { code: ProblemCode; brief: string }[] = [];
+  const problems: { code: RuleCode; brief: string }[] = [];
   await inspect(
     { context, requirements },
     signal(),
@@ -268,7 +269,7 @@ describe("composite requirements", () => {
       run.mock.calls.filter(([, args]) => args[0] === "root"),
     ).toHaveLength(2);
   });
-  it("uses scoped tool prerequisites, prunes relationship probes, and continues independent registry/version leaves", async () => {
+  it("collects all installation failures and suppresses every configuration probe", async () => {
     const host = fixture({
       missing: ["node", "nvm"],
       output: { "npm:--version": "1.0.0", "pnpm:--version": "1.0.0" },
@@ -288,9 +289,9 @@ describe("composite requirements", () => {
       host,
     );
     expect(problems.map((problem) => problem.code)).toEqual([
-      "version-too-low",
-      "version-too-low",
       "tool-missing",
+      "version-too-low",
+      "version-too-low",
       "tool-missing",
     ]);
     expect(locate.mock.calls.map(([name]) => name)).toEqual([
@@ -308,19 +309,10 @@ describe("composite requirements", () => {
             `${entry.executable.slice(cwd.length + 1)}:${args.join(" ")}`,
         )
         .sort(),
-    ).toEqual(
-      [
-        "npm:--version",
-        "pnpm:--version",
-        "nrm:--version",
-        "npm:config get registry",
-        "pnpm:config get registry",
-        "nrm:ls",
-      ].sort(),
-    );
+    ).toEqual(["npm:--version", "pnpm:--version", "nrm:--version"].sort());
     expect(await check(all)).toEqual([]);
   });
-  it("does not let a low version prune feasible pairing or registry checks", async () => {
+  it("short circuits configuration on a low version even when relationship probes are feasible", async () => {
     const host = fixture({
       npm: null,
       output: {
@@ -329,6 +321,7 @@ describe("composite requirements", () => {
       },
     });
     const provenance = vi.spyOn(host, "npmLocation");
+    const run = vi.spyOn(host, "run");
     const problems = await check(
       {
         tools: { node: { minimumVersion: "99" }, npm: {} },
@@ -341,10 +334,50 @@ describe("composite requirements", () => {
     );
     expect(problems.map((problem) => problem.code)).toEqual([
       "version-too-low",
-      "pairing-unconfirmed",
-      "registry-mismatch",
     ]);
-    expect(provenance).toHaveBeenCalledTimes(1);
+    expect(provenance).not.toHaveBeenCalled();
+    expect(run.mock.calls.every(([, args]) => args[0] === "--version")).toBe(
+      true,
+    );
+  });
+  it("collects independently assessable configuration failures with one checkpoint reference", async () => {
+    const host = fixture({
+      npm: null,
+      output: {
+        "npm:config get registry": "https://outside.test",
+        "pnpm:config get registry": "https://outside.test",
+        "nrm:ls": "target ---- https://outside.test",
+      },
+    });
+    const input: Input = { context, requirements: all };
+    const result = await executeCheck({
+      checkpoints: toolchainCheckpoints(input, signal(), host),
+      target: input,
+      signal: signal(),
+    });
+    expect(result).toMatchObject({
+      pass: false,
+      references: [
+        {
+          checkpoint: "configuration",
+          documentation: "references/checkpoints/configuration.md",
+        },
+      ],
+    });
+    if (result.pass) throw new Error("Expected configuration failures.");
+    expect(result.problems.map(({ code }) => code)).toEqual([
+      "pairing-unconfirmed",
+      "management-unconfirmed",
+      "registry-mismatch",
+      "registry-mismatch",
+      "nrm-registration-mismatch",
+    ]);
+    expect(
+      result.problems.every(({ checkpoint }) => checkpoint === "configuration"),
+    ).toBe(true);
+    expect(
+      result.problems.every((problem) => !("documentation" in problem)),
+    ).toBe(true);
   });
   it("does not require undeclared tools or a manager, and accepts independent empty tool policies", async () => {
     expect(
@@ -396,8 +429,8 @@ describe("composite requirements", () => {
       ),
     ).toMatchObject([
       { code: "version-unparseable" },
-      { code: "tool-missing" },
       { code: "tool-unusable" },
+      { code: "tool-missing" },
     ]);
   });
   it("separates pairing, uncertain evidence and per-tool nvm management", async () => {
@@ -411,24 +444,24 @@ describe("composite requirements", () => {
       "npm-cli.js",
     );
     expect(await check(all, fixture({ npm: outside }))).toMatchObject([
+      { code: "pairing-mismatch" },
       {
         code: "management-mismatch",
         brief: expect.stringContaining("npm") as string,
       },
-      { code: "pairing-mismatch" },
     ]);
     expect(await check(all, fixture({ npm: null }))).toMatchObject([
-      { code: "management-unconfirmed" },
       { code: "pairing-unconfirmed" },
+      { code: "management-unconfirmed" },
     ]);
     expect(
       await check(all, fixture({ npmNode: join(cwd, "system", "node.exe") })),
     ).toMatchObject([
+      { code: "pairing-mismatch" },
       {
         code: "management-mismatch",
         brief: expect.stringContaining("npm") as string,
       },
-      { code: "pairing-mismatch" },
     ]);
     expect(
       await check({ tools: { node: {}, npm: {} } }, fixture({ npm: outside })),
@@ -495,8 +528,8 @@ describe("composite requirements", () => {
         }),
       ),
     ).toMatchObject([
-      { code: "nrm-registration-mismatch" },
       { code: "registry-mismatch" },
+      { code: "nrm-registration-mismatch" },
     ]);
     expect(
       await check(
@@ -541,13 +574,11 @@ describe("composite requirements", () => {
     // SDK callback is used by the entrypoint, not a bespoke result envelope.
     expect(
       typeof createCheckCallback(contract, {
-        root: "toolchain",
-        registry: {
-          toolchain: defineChecker({
-            target: contract.parameters,
-            check: () => Promise.resolve({ pass: true, children: [] } as const),
-          }),
-        },
+        checkpoints: toolchainCheckpoints(
+          { context, requirements: all },
+          signal(),
+          fixture(),
+        ),
       }),
     ).toBe("function");
   });
@@ -1048,7 +1079,7 @@ process.stdout.write("11.22.0\\n");`,
       expect((await host.npmLocation(npm!, cwd, signal()))?.cli).toBe(
         await realpath(join(packageRoot, "bin", "npm-cli.js")),
       );
-      const problems: ProblemCode[] = [];
+      const problems: RuleCode[] = [];
       await inspect(
         {
           context: {

@@ -8,7 +8,7 @@ const { typescriptProjectDesignSpec } =
 await writeFile(
   "dist/typescript-project-design.json",
   JSON.stringify(
-    { $schema: "urn:ipfsaw:check-bundle:1", ...typescriptProjectDesignSpec },
+    { $schema: "urn:ipfsaw:check-bundle:2", ...typescriptProjectDesignSpec },
     null,
     2,
   ) + "\n",

@@ -20,7 +20,7 @@ rc.3 已通过旧框架和固定的 rc.1 门禁发布；现已移除根清单和
 
 ## Check Task 作者入口
 
-- [`@silvermoon-work/check-task-sdk`](packages/check-task-sdk/README.md)：TypeBox 输入/问题码契约、命名 Checker 与有界并发检查图、v2 结果及来源文档。
+- [`@silvermoon-work/check-task-sdk`](packages/check-task-sdk/README.md)：TypeBox 输入契约、有序 Checkpoints、Rule 定义与类型化成功输出、按检查点聚合的参考文档。
 - [`@silvermoon-work/check-task-builder`](packages/check-task-builder/README.md)：
   `check-task-builder init/build`，一次构建交付标准 Task Bundle/CAR。
 
@@ -30,10 +30,11 @@ Store/Payload `0.1.0`。不复制运行时或编译器，不自动升级历史 n
 `check-task-builder init text-check`，编辑逻辑、契约与
 `references/`，再运行生成项目中的 `pnpm build`。
 
-当前源码迁移为 `runCheck(contract,{registry,root})` 和 `check-report/v2`；
-Bundle 适配仅支持调用方拥有的执行端口，原始 Worker invokeTask 不提供单次
-取消或 output envelope，不能冒充该端口。历史已发布 npm/CAR 不自动升级，
-新候选需重建并以准确 tarball/CID 验证，详见 SDK 迁移说明。
+当前源码使用 `runCheck(contract,{checkpoints})`，检查点按顺序执行，
+失败即停止；前置成功输出只在本次执行内经 `context.outputOf()` 共享。
+问题报告规则码、brief 和 checkpoint，文档通过 references 聚合，不在每个问题内重复。
+历史图 API 仅保留在显式 legacy 入口供归档回归使用。历史已发布 npm/CAR 不自动升级，
+新候选须重建并验证准确 CID，详见 SDK 迁移说明。
 
 - [`@silvermoon-work/check.nodejs-toolchain`](packages/check.nodejs-toolchain/README.md)：私有 Node.js 工具链 Check 作者项目，仅交付标准 CAR/CID，不发布 npm。显式执行上下文、CAR-only 消费方式与真实平台证据边界见包文档。
 
@@ -98,12 +99,14 @@ Engine snapshot 现在直接暴露 `result` payload，不再套 `output.result`�
 ### Check Bundle 定义工作台（本地 mock）
 
 [`@silvermoon-work/check-bundle-viewer`](packages/check-bundle-viewer/README.md)
-提供版本化声明式 Spec 校验与可嵌入 React 的折叠脉络 / 契约详情。
-私有宿主含当前 TypeScript Check 的真实身份分流子图，以及更丰富的项目定义 mock。
-桌面为限制视觉缩进、长标题完整换行的紧凑脉络树与独立滚动详情；移动端使用模态导航侧栏。
+提供版本化声明式 Spec v2 校验与可嵌入 React 的有序检查点列表 / 规则详情。
+私有宿主含当前 TypeScript Check 的真实检查点，以及更丰富的项目定义 mock。
+定义为 Check Task → Checkpoint → Rule，不再维护根节点、父子边或 DAG。
+侧栏可拖动调宽、长标题单行省略；
+按钮保留完整可访问名称与 title，选中后详情显示完整标题。
+详情独立滚动，移动端使用模态导航侧栏。
 说明支持安全 Markdown，Parameters 从 Schema 的直接字段生成列表，
-Problems 使用表格，Parents 从 children 逐边反向推导。
-定义图采用 DAG：允许共享引用，禁止循环。
+Rules 使用 code / description 表格；只展示定义，不执行检查点。
 
 ```sh
 pnpm --filter @silvermoon-work/check-bundle-viewer build
@@ -127,8 +130,9 @@ node packages\ipfsaw\dist\bin.js run --car packages\ipfsaw\dist\check-task.car -
 选择受控内容配置和 app 目录。`--cid` 可选择同一准确 Bundle；
 HTTP
 listening 不表示 Task 已启动。浏览器调用显式 ESM 默认导出，返回后应用继续存活；
-保存内容会替换页面、重置应用/router 状态。原根位置参数、registry 和旧 renderer
-ABI 保留独立，
+保存内容会替换页面、重置应用内存状态；Check viewer 通过 URL
+fragment 恢复所选节点，
+并支持浏览器前进／后退。原根位置参数、registry 和旧 renderer ABI 保留独立，
 已发布 `0.1.0-rc.0` / `0.1.0-rc.1` 不会因此获得新 `run` 命令。
 本地预览 URL 不含访问凭据，可复制到本机其他浏览器直接打开；
 仍限制 loopback Host/Origin、同源文档/RPC 与隔离 iframe。

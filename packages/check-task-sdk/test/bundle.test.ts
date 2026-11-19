@@ -7,8 +7,8 @@ import {
   executeCheck,
   validateCheckReport,
   type CheckerResult,
-} from "../src/index.js";
-import { documentPath, exactCid } from "../src/report.js";
+} from "../src/legacy.js";
+import { documentPath, exactCid } from "../src/legacy-report.js";
 import {
   ContentRef,
   encodeChannel,

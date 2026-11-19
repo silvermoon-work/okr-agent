@@ -61,22 +61,26 @@ Verification。它只复制当前授权宿主的原样 Node/npm 文件到自有�
 
 ## 输入与授权
 
-实际检查使用 defineChecker 静态 object 注册表，普通根名为 `toolchain`，
-Task input 作为根 target，通过 `{checker,target}`
-children 展开 FIFO 有界并发图，
-输出 `pass`、`documentation` 和失败时的 `problems`，图不进入业务结果。
-Task 输出使用 `{data,cidPaths}`，documentation 是直接文档 CID，不再有 output
-space。
-过程节点通过 Task 日志记录，仅保留首次发现的 parent。
-工具目标与可用性/版本职责位于 `src/checks/`；
-每个工具的定位、只读版本探测是本次执行内共享事实；
-minimumVersion 为独立叶，版本过低不会剪去可执行的配对或 registry。
-pairing、逐工具 nvm management、active registry 和 nrm 注册项显式取得
-各自必要工具前置，缺失/不可用/版本无法识别的工具按根因报告一次，只阻断
-依赖它的关系探测，其他兄弟继续。原生配置优先级、nrm 身份约束、子进程预算/
-回收与故障边界不变；没有跨执行缓存、全局 code 去重或隐式兄弟排序依赖。
-图内故障 signal 也传到 Host.run，在实际清理完成后结束。
-旧 CAR/历史平台实证不自动证明新图模型，须重建并验证准确新 CID。
+实际检查使用 SDK 的 `defineCheckpoint` 与 `executeCheck`，由 Check Task
+顺序执行两个 Checkpoint，每个声明 Rule：
+
+1. `installation`：所需工具定位、只读版本命令、版本解析与 minimumVersion；
+   收集所有可独立判断的失败。任一失败即结束，不执行配置探测。
+2. `configuration`：从 `context.outputOf(installation)` 取得本次执行的工具入口，
+   检查 pairing、逐工具 nvm management、active registry 与全部 nrm 注册项。
+   收集所有可独立判断的配置失败。
+
+主入口使用 `runCheck(contract,{checkpoints})` 工厂捕获授权输入与 signal；
+没有旧图、children、registry 或跨执行缓存。工具就绪职责位于 `src/checks/`。
+原生配置优先级、nrm 身份约束、子进程预算/回收与故障边界不变；
+signal 传到 Host.run，在实际清理完成后结束。
+
+Task 输出使用 `{data,cidPaths}`，包含 `pass/documentation/references`；
+失败问题仅含 `{checkpoint,code,brief}`，同码多工具失败保留，brief 标明工具。
+references 只为失败 Checkpoint 聚合一份直接文档 CID，成功为空；
+文档为 `references/check.md` 和 `references/checkpoints/<id>.md`，无逐问题文档。
+过程日志只记录 Checkpoint 标识与通过状态，不记录工具入口或内部输出。
+旧 CAR/历史平台实证不自动证明新顺序阶段模型，须重建并验证准确新 CID。
 
 见 [`src/contract.ts`](./src/contract.ts)、
 [`src/execution-context.ts`](./src/execution-context.ts) 和
@@ -173,8 +177,8 @@ ipfs pin ls <verified-root-cid>
 以上是消费方操作说明，本次未上传或远程 pin；本地 CAR 不表示远程可用。Engine 的 ipfsClient 必须可读该精确 CID 的完整 DAG。以
 `engine.submit({requestId, bundle: "<verified-root-cid>", input, timeoutMs}, caller)`
 提交，不能用 workspace 名、npm 版本或 latest 代替 CID。成功完成的 Run 从
-`run.output.result` 读取结果，从 `run.output.cid/<documentation>`
-读取相对参考文档。
+`run.result.data` 读取结果，documentation 与 references 中的 documentation
+为可直接读取的文档 CID；`run.result.cidPaths` 标明这些内容引用路径。
 
 建议父级部署验收：在不链接本仓库的独立目录只放 CAR，安装/使用已发布 Task
 Engine/Builder 0.2.0-rc.2、IPFS Store

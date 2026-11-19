@@ -4,21 +4,41 @@ import { parseDocument } from "yaml";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
-  defineChecker,
-  type CheckerResult,
+  defineCheckpoint,
+  type CheckpointResult,
 } from "@silvermoon-work/check-task-sdk";
-import { Input, type ProblemCode } from "../contract.js";
+import { Input } from "../contract.js";
 import { readProjectFile } from "../read-file.js";
+import { project } from "./project.js";
 
 const Configuration = Type.Object({
   packages: Type.Array(Type.String({ pattern: "\\S" }), { minItems: 1 }),
 });
 
-export const workspace = defineChecker({
+export const workspace = defineCheckpoint({
+  id: "workspace",
   target: Input,
-  check: async (target, signal): Promise<CheckerResult<never, ProblemCode>> => {
+  description: "核验 monorepo 的 pnpm workspace 配置。",
+  rules: [
+    {
+      code: "workspace-configuration-invalid",
+      description:
+        "monorepo 必须提供合法的 pnpm-workspace.yaml，显式声明非空 packages 字符串数组。",
+    },
+  ],
+  check: async (
+    target,
+    context,
+  ): Promise<
+    CheckpointResult<undefined, "workspace-configuration-invalid">
+  > => {
+    const { signal } = context;
+    if (context.outputOf(project).kind === "single-repo")
+      return { pass: true, output: undefined };
     const path = join(target.projectDirectory, "pnpm-workspace.yaml");
-    const invalid = (reason: string): CheckerResult<never, ProblemCode> => ({
+    const invalid = (
+      reason: string,
+    ): CheckpointResult<undefined, "workspace-configuration-invalid"> => ({
       pass: false,
       problems: [
         {
@@ -58,6 +78,6 @@ export const workspace = defineChecker({
       return invalid(
         "必须是 YAML 对象，且显式声明非空 packages 数组，每项为非空白字符串。",
       );
-    return { pass: true, children: [] };
+    return { pass: true, output: undefined };
   },
 });

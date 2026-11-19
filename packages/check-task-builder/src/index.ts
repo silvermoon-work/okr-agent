@@ -57,7 +57,7 @@ export async function transformCheckTree(
   const source = config.source as Record<string, unknown>;
   if (Object.keys(source).some((key) => !["entry", "contract"].includes(key)))
     throw new Error(
-      "Check source only accepts entry and contract; runCheck owns the wrapper.",
+      "Check source only accepts entry and contract; the explicit Task entry owns the SDK wrapper.",
     );
   const include = config.include ?? [];
   if (!Array.isArray(include)) throw new Error("Include must be an array.");
@@ -112,14 +112,27 @@ export async function transformCheckTree(
   };
 }
 
-function literalCodes(value: unknown): string[] {
+function literalCodes(value: unknown, allowEmpty = false): string[] {
   if (!value || typeof value !== "object")
-    throw new Error("Missing Check problem code schema.");
-  const schema = value as { const?: unknown; anyOf?: unknown[] };
-  if (Array.isArray(schema.anyOf)) return schema.anyOf.flatMap(literalCodes);
+    throw new Error("Missing Check rule code or checkpoint ID schema.");
+  const schema = value as { const?: unknown; anyOf?: unknown[]; not?: unknown };
+  if (
+    allowEmpty &&
+    schema.not !== null &&
+    typeof schema.not === "object" &&
+    Object.keys(schema.not).length === 0
+  )
+    return [];
+  if (Array.isArray(schema.anyOf)) {
+    const codes = schema.anyOf.flatMap((member) => literalCodes(member));
+    if (!codes.length || new Set(codes).size !== codes.length)
+      throw new Error("Empty or duplicate Check identifiers.");
+    return codes;
+  }
   if (
     typeof schema.const !== "string" ||
-    !/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(schema.const)
+    !/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(schema.const) ||
+    /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(schema.const)
   )
     throw new Error("Check codes must be finite portable string literals.");
   return [schema.const];
@@ -136,15 +149,24 @@ async function validateReferences(
     !rootEntries.some(
       (entry) => entry.name === "check.md" && entry.kind === "file",
     ) ||
-    !rootEntries.some(
-      (entry) => entry.name === "problems" && entry.kind === "directory",
-    )
+    (codes.length > 0 &&
+      !rootEntries.some(
+        (entry) => entry.name === "checkpoints" && entry.kind === "directory",
+      ))
   )
     throw new Error(
-      "References require exact case-sensitive check.md and problems/ paths.",
+      "References require exact case-sensitive check.md and checkpoints/ paths.",
     );
-  const problemEntries = await listTree(input, `${root}/problems`, options);
-  const required = ["check.md", ...codes.map((code) => `problems/${code}.md`)];
+  const hasCheckpoints = rootEntries.some(
+    (entry) => entry.name === "checkpoints" && entry.kind === "directory",
+  );
+  const problemEntries = hasCheckpoints
+    ? await listTree(input, `${root}/checkpoints`, options)
+    : [];
+  const required = [
+    "check.md",
+    ...codes.map((code) => `checkpoints/${code}.md`),
+  ];
   for (const path of required) {
     if (
       path !== "check.md" &&
@@ -176,14 +198,16 @@ async function validateReferences(
       options,
     )) {
       if (++visited > 16_384)
-        throw new Error("Problem references exceed path capacity.");
+        throw new Error("Checkpoint references exceed path capacity.");
       const path = `${directory}/${entry.name}`;
       if (entry.kind === "directory") await walk(path);
       else if (/\.md$/i.test(entry.name) && !required.includes(path))
-        throw new Error(`Undeclared problem Markdown: ${root}/${path}`);
+        throw new Error(`Undeclared checkpoint Markdown: ${root}/${path}`);
     }
   };
-  await walk("problems");
+  if (hasCheckpoints) await walk("checkpoints");
+  if (rootEntries.some((entry) => entry.name.toLowerCase() === "problems"))
+    throw new Error("Per-code problem documentation is not supported.");
 }
 
 /** Compile and validate the Check-specific contract/docs, leaving Bundle/CAR mechanics upstream. */
@@ -198,7 +222,18 @@ export async function buildCheckBundle(
     Buffer.from(
       await readBytes(
         bundle,
-        "schemas/shared/check-problem-code.json",
+        "schemas/shared/check-rule-code.json",
+        65_536,
+        options,
+      ),
+    ).toString(),
+  );
+  literalCodes(codeSchema);
+  const checkpointSchema: unknown = JSON.parse(
+    Buffer.from(
+      await readBytes(
+        bundle,
+        "schemas/shared/check-checkpoint-id.json",
         65_536,
         options,
       ),
@@ -207,7 +242,7 @@ export async function buildCheckBundle(
   await validateReferences(
     input,
     definition.references,
-    literalCodes(codeSchema),
+    literalCodes(checkpointSchema, true),
     options,
   );
   return bundle;

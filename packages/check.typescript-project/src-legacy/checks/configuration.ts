@@ -3,7 +3,7 @@ import {
   defineChecker,
   type CheckerResult,
   type Problem,
-} from "@silvermoon-work/check-task-sdk";
+} from "@silvermoon-work/check-task-sdk/legacy";
 import type { ProblemCode } from "../contract.js";
 import { FindingGroup } from "./rules.js";
 

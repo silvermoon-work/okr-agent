@@ -56,7 +56,12 @@ it("imports a production CAR into the published Engine with controlled tools, do
     expect(
       evidence.results.find((sample) => sample.name === "multiple-problems")
         ?.problems,
-    ).toEqual(["version-too-low", "version-too-low", "registry-mismatch"]);
+    ).toEqual(["version-too-low", "version-too-low"]);
+    expect(
+      evidence.results.find(
+        (sample) => sample.name === "fixture-nrm-missing-and-mismatch",
+      )?.problems,
+    ).toEqual(["nrm-registration-mismatch", "nrm-registration-missing"]);
     expect(evidence.results.every((sample) => sample.reclaimed)).toBe(true);
     expect(evidence.configurationUnchanged).toBe(true);
     expect(evidence.fixtureChildrenReclaimed).toBe(true);

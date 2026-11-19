@@ -265,7 +265,7 @@ try {
       assert.match(result.problems[0].brief, /当前 1\.2\.2，/);
     const documents = [
       result.documentation,
-      ...(result.problems ?? []).map((problem) => problem.documentation),
+      ...result.references.map((reference) => reference.documentation),
     ];
     for (const path of new Set(documents)) {
       const file = await exporter(path, {
@@ -287,7 +287,7 @@ try {
             car.tree,
             path === result.documentation
               ? "resources/references/check.md"
-              : `resources/references/problems/${result.problems.find((problem) => problem.documentation === path).code}.md`,
+              : `resources/references/checkpoints/${result.references.find((reference) => reference.documentation === path).checkpoint}.md`,
             262144,
           ),
         ),

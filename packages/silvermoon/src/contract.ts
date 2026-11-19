@@ -12,6 +12,14 @@ export const Target = Type.Object(
   closed,
 );
 export type Target = Static<typeof Target>;
+export const SnapshotTarget = Type.Object(
+  {
+    ...Target.properties,
+    snapshot: Type.String({ minLength: 1 }),
+  },
+  closed,
+);
+export type SnapshotTarget = Static<typeof SnapshotTarget>;
 export const Operation = Type.Object(
   {
     mode: Type.Union([Type.Literal("lifecycle"), Type.Literal("snapshot")]),
@@ -40,9 +48,21 @@ export const Input = Type.Object(
 );
 export type Input = Static<typeof Input>;
 export const codes = [
-  "device",
-  "project",
-  "repository",
+  "environment-runtime",
+  "environment-skill",
+  "environment-configuration",
+  "repository-root-invalid",
+  "project-configuration-invalid",
+  "project-layout-invalid",
+  "primary-branch-missing",
+  "branch-detached",
+  "branch-upstream-mismatch",
+  "primary-sync-required",
+  "worktree-uncommitted",
+  "event-history-rewritten",
+  "idea-identity-modified",
+  "idea-invalid",
+  "completion-unsynchronized",
   "snapshot",
   "requirements",
   "research",
@@ -55,4 +75,32 @@ export const codes = [
   "abandoned",
 ] as const;
 export const ProblemCode = Type.Union(codes.map((code) => Type.Literal(code)));
-export default createCheckContract(Input, ProblemCode);
+export const RuleCode = ProblemCode;
+export type RuleCode = Static<typeof RuleCode>;
+export const checkpointIds = [
+  "environment",
+  "repository",
+  "observation",
+  "requirements",
+  "research",
+  "technical",
+  "cases",
+  "tests",
+  "implementation",
+  "deployment",
+  "completion",
+] as const;
+export const lifecycleContract = createCheckContract(
+  Target,
+  RuleCode,
+  checkpointIds,
+);
+export const snapshotContract = createCheckContract(
+  SnapshotTarget,
+  ProblemCode,
+  ["snapshot"],
+);
+export default createCheckContract(Input, RuleCode, [
+  ...checkpointIds,
+  "snapshot",
+]);

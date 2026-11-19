@@ -1,7 +1,7 @@
 import type { Static, TObject } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { types } from "node:util";
-import { checkerName } from "./report.js";
+import { checkerName } from "./legacy-report.js";
 
 export interface ProblemSource {
   readonly kind: "bundle";

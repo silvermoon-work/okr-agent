@@ -26,7 +26,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("switches real and mock examples, with reference/schema failures surfaced to the reader", () => {
+it("switches ordered real and mock examples, with duplicate, schema and old-format errors surfaced", () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -34,29 +34,14 @@ it("switches real and mock examples, with reference/schema failures surfaced to 
     root.render(<App />);
   });
   expect(host.textContent).toContain("仅定义，未执行");
-  expect(host.querySelector('[aria-label="按对象展开"]')).not.toBeNull();
-  expect(host.textContent).toContain("共享定义");
-  const shared = Array.from(host.querySelectorAll("nav button")).find(
-    (item) => item.textContent === "共享检查配置",
-  )!;
-  act(() => {
-    (shared as HTMLButtonElement).click();
-  });
-  expect(
-    host.querySelector(".cbv-parents-table tbody")?.querySelectorAll("tr"),
-  ).toHaveLength(4);
-  expect(
-    host.querySelector(".cbv-details .cbv-preconditions code")?.textContent,
-  ).toBe("projectDirectory");
-  expect(host.querySelector(".cbv-details h3")?.textContent).toBe(
-    "共享检查配置",
-  );
+  expect(host.querySelectorAll("nav ol")).toHaveLength(1);
   const select = host.querySelector("select")!;
   for (const [value, expected] of [
-    ["typescript-design", "Monorepo 下一层设计（未实现）"],
-    ["actual", "当前身份分流与 workspace 配置"],
-    ["invalid-cycle", "无法展示此定义"],
+    ["typescript-design", "有序工程检查设计（未实现）"],
+    ["actual", "身份与 workspace 配置"],
+    ["invalid-duplicate", "无法展示此定义"],
     ["invalid", "无法展示此定义"],
+    ["invalid-v1", "无法展示此定义"],
     ["discussion", "识别项目"],
   ]) {
     act(() => {
@@ -65,20 +50,13 @@ it("switches real and mock examples, with reference/schema failures surfaced to 
     });
     expect(host.textContent).toContain(expected);
     if (value === "typescript-design") {
-      expect(host.querySelector('[aria-label="按对象展开"]')).not.toBeNull();
-      expect(host.textContent).toContain("成员发现 · 设计候选");
-      expect(host.textContent).toContain("单个 package · 职责边界");
-      expect(host.textContent).toContain("全局工程配置 · 职责节点");
-      expect(host.textContent).toContain("根 Scripts · 固定 Turbo 聚合接口");
-      expect(host.textContent).toContain("Turbo · 内容检查待细化");
-      expect(host.textContent).toContain("脚本所需工具 · 设计候选");
-      expect(host.textContent).not.toContain("test-coverage 根聚合脚本");
       const scripts = Array.from(
         host.querySelectorAll<HTMLButtonElement>("nav button"),
-      ).find((item) => item.textContent === "根 Scripts · 固定 Turbo 聚合接口");
-      expect(scripts).toBeDefined();
+      ).find(
+        (item) => item.textContent === "根 Scripts · 固定 Turbo 聚合接口",
+      )!;
       act(() => {
-        scripts!.click();
+        scripts.click();
       });
       expect(host.querySelector(".cbv-details")?.textContent).toContain(
         "workspace-script-unexpected",
@@ -87,14 +65,14 @@ it("switches real and mock examples, with reference/schema failures surfaced to 
         "turbo run",
       );
       expect(host.textContent).toContain("@vitest/coverage-v8 工具声明");
+      expect(host.querySelector("nav ol ol, nav ul")).toBeNull();
     }
     if (value === "actual") {
-      const workspace = Array.from(host.querySelectorAll("nav button")).find(
-        (item) => item.textContent === "Workspace 配置",
-      );
-      expect(workspace).toBeDefined();
+      const workspace = Array.from(
+        host.querySelectorAll<HTMLButtonElement>("nav button"),
+      ).find((item) => item.textContent === "Workspace 配置")!;
       act(() => {
-        (workspace as HTMLButtonElement).click();
+        workspace.click();
       });
       expect(host.querySelector(".cbv-details h3")?.textContent).toBe(
         "Workspace 配置",
@@ -106,19 +84,18 @@ it("switches real and mock examples, with reference/schema failures surfaced to 
         "packages",
       );
     }
-    if (value === "invalid-cycle") {
-      const error = host.querySelector('[role="alert"]');
-      expect(error?.textContent).toContain("alpha → beta → alpha");
-      expect(error?.textContent).toContain("/checkers/beta/children/0/checker");
+    if (value === "invalid-duplicate") {
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+        "/checkpoints/1/id",
+      );
       expect(host.querySelector("nav")).toBeNull();
     }
     if (value === "invalid") {
-      expect(host.querySelector('[role="alert"]')?.textContent).toContain(
-        "unknown-root",
-      );
-      expect(host.textContent).toContain("unknown-child");
+      expect(host.textContent).toContain("/checkpoints/0/rules/1/code");
       expect(host.textContent).toContain("无效的参数 JSON Schema");
     }
+    if (value === "invalid-v1")
+      expect(host.textContent).toContain("仅支持 Spec v2");
   }
   act(() => {
     root.unmount();

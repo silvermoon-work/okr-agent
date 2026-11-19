@@ -170,7 +170,7 @@ const cases = [
       },
     },
     pass: false,
-    codes: ["nrm-registration-missing", "nrm-registration-mismatch"],
+    codes: ["nrm-registration-mismatch", "nrm-registration-missing"],
   },
   {
     name: "directory-fault",
@@ -497,8 +497,8 @@ try {
     assert.deepEqual(
       Object.keys(result).sort(),
       sample.pass
-        ? ["documentation", "pass"]
-        : ["documentation", "pass", "problems"],
+        ? ["documentation", "pass", "references"]
+        : ["documentation", "pass", "problems", "references"],
     );
     assert.equal(
       result.pass,
@@ -510,7 +510,7 @@ try {
       output.cidPaths,
       sample.pass
         ? ['$["documentation"]']
-        : ['$["documentation"]', '$["problems"][*]["documentation"]'],
+        : ['$["documentation"]', '$["references"][*]["documentation"]'],
     );
     if (!sample.pass) {
       if (sample.codes)
@@ -518,25 +518,27 @@ try {
           result.problems.map((p) => p.code),
           sample.codes,
         );
-      else assert.equal(result.problems.length, 3);
+      else assert.equal(result.problems.length, 2);
     }
+    assert.equal(result.references.length, sample.pass ? 0 : 1);
+    if (!sample.pass)
+      assert.equal(
+        result.references[0].checkpoint,
+        ["multiple-problems", "pnpm-version"].includes(sample.name)
+          ? "installation"
+          : "configuration",
+      );
     const paths = [
       result.documentation,
-      ...(result.problems ?? []).map((p) => p.documentation),
+      ...result.references.map((reference) => reference.documentation),
     ];
     for (const problem of result.problems ?? []) {
       assert.deepEqual(Object.keys(problem).sort(), [
         "brief",
+        "checkpoint",
         "code",
-        "documentation",
-        "nodeKey",
-        "source",
       ]);
-      assert.equal(problem.source.kind, "local");
-      assert.equal(problem.source.nodeKey, problem.nodeKey);
-      const [checker, target] = JSON.parse(problem.nodeKey);
-      assert.equal(checker, problem.source.checker);
-      assert.equal(typeof target, "object");
+      assert.equal(problem.checkpoint, result.references[0].checkpoint);
     }
     for (const path of new Set(paths)) {
       const file = await exporter(path, {
@@ -558,7 +560,7 @@ try {
             car.tree,
             path === result.documentation
               ? "resources/references/check.md"
-              : `resources/references/problems/${result.problems.find((problem) => problem.documentation === path).code}.md`,
+              : `resources/references/checkpoints/${result.references.find((reference) => reference.documentation === path).checkpoint}.md`,
             262144,
           ),
         ),

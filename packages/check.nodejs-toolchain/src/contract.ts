@@ -91,7 +91,7 @@ export const Input = Type.Object(
   closed,
 );
 export type Input = Static<typeof Input>;
-export const ProblemCode = Type.Union([
+export const RuleCode = Type.Union([
   Type.Literal("tool-missing"),
   Type.Literal("tool-unusable"),
   Type.Literal("version-unparseable"),
@@ -105,6 +105,9 @@ export const ProblemCode = Type.Union([
   Type.Literal("nrm-registration-missing"),
   Type.Literal("nrm-registration-mismatch"),
 ]);
-export type ProblemCode = Static<typeof ProblemCode>;
+export type RuleCode = Static<typeof RuleCode>;
 export type Tool = keyof NonNullable<Input["requirements"]["tools"]>;
-export default createCheckContract(Input, ProblemCode);
+export default createCheckContract(Input, RuleCode, [
+  "installation",
+  "configuration",
+]);

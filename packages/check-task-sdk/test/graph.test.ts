@@ -5,7 +5,7 @@ import {
   executeCheck,
   type CheckerResult,
   type ReportNode,
-} from "../src/index.js";
+} from "../src/legacy.js";
 import { canonicalSnapshot } from "../src/canonical.js";
 import { executeCheckInput } from "../src/graph.js";
 

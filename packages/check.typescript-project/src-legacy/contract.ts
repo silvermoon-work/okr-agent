@@ -1,5 +1,5 @@
 import { Type, type Static } from "@sinclair/typebox";
-import { createCheckContract } from "@silvermoon-work/check-task-sdk/contracts";
+import { createCheckContract } from "@silvermoon-work/check-task-sdk/legacy-contracts";
 
 export const Input = Type.Object(
   {

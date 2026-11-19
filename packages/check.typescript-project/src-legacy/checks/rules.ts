@@ -2,7 +2,7 @@ import type {
   ProblemReporter,
   Problem,
   CheckerResult,
-} from "@silvermoon-work/check-task-sdk";
+} from "@silvermoon-work/check-task-sdk/legacy";
 import {
   ProblemCode as ProblemCodeSchema,
   type ProblemCode,

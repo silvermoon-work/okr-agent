@@ -9,16 +9,17 @@ The CLI hosts the exact Check CAR in a real Task Engine. Each observation owns a
 fresh `MemoryStore`, Engine and offline `IpfsStore`; target identity does not
 contain mutable revisions or a random nonce. A domain reducer shared by the
 Check, writer and replay is the only lifecycle implementation. The Host renders
-`pass/documentation/problems`; it never decides a second lifecycle.
+`pass/documentation/problems/references`; it never decides a second lifecycle.
 
-The
-[Idea-rooted checker-tree design draft](../../docs/silvermoon-single-checker.yaml)
-uses Check Bundle Spec v1.0 for ipfsaw preview. One Idea entry owns a
-progressive chain of internal checkers: device/repository prerequisites, Idea
-observation, five consensus gates with per-gate synchronization, implementation,
-deployment and terminal synchronization. This is one business entry, not one
-registered checker or three independent lifecycles. It is not implemented; the
-current Check still uses Device → Project → Idea.
+The [Idea checkpoint design](../../docs/silvermoon-single-checker.yaml) uses
+Check Bundle Spec v2.0 for ipfsaw preview. The built-in Check executes the same
+ordered stages: environment, repository, Idea observation, five consensus gates,
+implementation, deployment and completion. Each checkpoint owns coded rules and
+one complete document. The first failing checkpoint stops execution; no tree,
+child expansion or separate lifecycle level is returned. Successful outputs are
+shared only within the current execution through `outputOf`. Repository
+advancement requires every change committed and HEAD synchronized with primary;
+Idea draft/event exceptions are no longer accepted.
 
 ## Commands
 
@@ -42,12 +43,14 @@ state filters, and `--all`; default hides abandoned/completed Ideas.
 Exit codes: `0` successful command/observation (including normal lifecycle
 gaps), `1` invalid snapshot or execution/data/concurrency/cancellation fault,
 `2` invalid command/options. JSON navigation/snapshot output is
-`{schema:"silvermoon/v1",checkCid,target,result,documents}`. The result is the
+`{schema:"silvermoon/v2",checkCid,target,result,documents}`. The result is the
 unmodified Check result; documents are bounded offline UTF-8 reads of its direct
 ContentRefs. Creation, inventory and event commands return domain objects.
 Errors go to stderr as `{error:{code,message}}`; no command reports partial
-success after a content/Engine fault. JSON v1 deliberately breaks the legacy
-four-projection report shape.
+success after a content/Engine fault. JSON v2 uses checkpoint-scoped references,
+not the old per-problem document/source envelope. Older CARs remain immutable;
+an unsupported historical report fails explicitly rather than being
+reinterpreted.
 
 Inventory and replay resolve the actual configured local remote-tracking primary
 snapshot without fetching or requiring a clean worktree, upstream branch or
@@ -99,13 +102,29 @@ omit Idea/repository identity. Config, primary, language and Idea facts are read
 from these roots, never supplied as asserted readiness. An Idea requires a
 repository.
 
-The Check request separates `{target, operation, runtime}`. Operation contains
-lifecycle/snapshot selection and refresh policy. Runtime identifies the current
-CLI entry, host executable search path and optional SSH agent socket: these
-cannot be inferred from a home directory. `Report.target` contains only the
-business Target. `observe(target, {operation, runtime})` supplies defaults from
-the authorized running host; direct Check callers supply the explicit request.
-There is no arbitrary environment map or repository allowlist.
+Each checkpoint accepts its Target and execution-local checkpoint context.
+Lifecycle targets contain `userHome`, optional `repoRoot` and optional `idea`;
+snapshot targets additionally identify the exact `snapshot`. Neither schema
+accepts an operation, runtime, stage, approval flag or caller-asserted
+readiness. The shared reducer derives the current gate, exact signoffs and
+rollbacks from events and current content. No checkpoint records progress merely
+because it was invoked.
+
+The Task adapter selects the lifecycle or dedicated snapshot entry before
+executing the checkpoint list. Runtime and refresh policy are supplied once as
+execution dependencies when constructing that list, not propagated through
+business targets or emitted success outputs. Snapshot validation uses its own
+checkpoint and bypasses environment/lifecycle prerequisites.
+
+The existing CAR Task transport still uses `{target, operation, runtime}`: this
+envelope is a host/Worker boundary, not a checkpoint Target. Runtime identifies
+the actual CLI entry, host executable search path and optional SSH agent socket,
+which cannot be inferred from a home directory. The Task Engine's isolated
+Worker does not inherit these host facts; this change does not invent an
+out-of-band environment capability or silently fall back to ambient state.
+`Report.target` remains the business Target.
+`observe(target, {operation, runtime})` and existing CLI snapshot options are
+preserved. There is no arbitrary environment map or repository allowlist.
 
 Git reads its user/SSH configuration under `userHome` and runs in `repoRoot`.
 Repository operations use an async-local runtime scope, not mutation of
@@ -274,6 +293,15 @@ pnpm --filter @silvermoon-work/check.silvermoon test-coverage
 pnpm --filter @silvermoon-work/silvermoon lint-package
 pnpm check
 ```
+
+The lifecycle integration runs the real checkpoints, writers and reducer against
+an owned local worktree and bare primary, including local fetch/push, all five
+signoffs, evidence and revision rollback. It uses the library's exact
+`localRemote` host authorization, not a fake GitHub remote or SSH transport.
+This override is not exposed as a CLI option, Task input or project setting;
+ordinary primary identity validation remains unchanged. Legacy GitHub URL
+normalization is tested separately without Git or network. Independent CLI and
+real Engine/CAR tests retain their own execution and document-binding coverage.
 
 CLI build compiles ESM/declarations/maps, then uses the existing Check Builder
 and upstream Task Builder to produce `dist/check.car` and `dist/check.json`.
