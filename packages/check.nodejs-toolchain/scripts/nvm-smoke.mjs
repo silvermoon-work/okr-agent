@@ -34,7 +34,8 @@ assert.equal(
 );
 const packageDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const carPath = resolve(
-  process.argv[2] ?? join(packageDirectory, "dist", "nodejs-toolchain.car"),
+  process.argv[2] ??
+    join(packageDirectory, "dist", "nodejs-toolchain-legacy.car"),
 );
 assert.ok(
   process.argv[3],

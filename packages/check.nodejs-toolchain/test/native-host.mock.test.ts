@@ -2,7 +2,7 @@ import { dirname, join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CommandResult } from "../src/command.js";
 import type * as command from "../src/command.js";
-import { nativeHost, type ToolEntry } from "../src/inspect.js";
+import { nativeHost, type ToolEntry } from "../src/legacy/inspect.js";
 
 const mocks = vi.hoisted(() => {
   const files = new Map<string, string>();

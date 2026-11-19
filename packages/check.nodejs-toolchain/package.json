@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@silvermoon-work/check-task-sdk": "workspace:*",
+    "@silvermoon-work/task-sdk": "catalog:",
     "@sinclair/typebox": "catalog:",
     "yaml": "catalog:"
   },

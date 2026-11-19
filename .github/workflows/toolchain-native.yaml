@@ -32,4 +32,5 @@ jobs:
           pnpm exec turbo run build
           --filter=@silvermoon-work/check.nodejs-toolchain
       - run: pnpm --filter @silvermoon-work/check.nodejs-toolchain native-test
-      - run: pnpm --filter @silvermoon-work/check.nodejs-toolchain smoke
+      - run:
+          pnpm --filter @silvermoon-work/check.nodejs-toolchain smoke --fixture

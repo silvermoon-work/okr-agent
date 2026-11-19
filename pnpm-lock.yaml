@@ -25,8 +25,8 @@ catalogs:
       specifier: 0.2.1-rc.0
       version: 0.2.1-rc.0
     '@silvermoon-work/task-engine':
-      specifier: 0.2.1-rc.1
-      version: 0.2.1-rc.1
+      specifier: 0.2.2-rc.0
+      version: 0.2.2-rc.0
     '@silvermoon-work/task-protocol':
       specifier: 0.2.1-rc.1
       version: 0.2.1-rc.1
@@ -253,7 +253,7 @@ importers:
     devDependencies:
       '@silvermoon-work/task-engine':
         specifier: 'catalog:'
-        version: 0.2.1-rc.1(supports-color@10.2.2)
+        version: 0.2.2-rc.0(supports-color@10.2.2)
       '@silvermoon-work/task-sdk':
         specifier: 'catalog:'
         version: 0.2.0
@@ -284,6 +284,9 @@ importers:
       '@silvermoon-work/check-task-sdk':
         specifier: workspace:*
         version: link:../check-task-sdk
+      '@silvermoon-work/task-sdk':
+        specifier: 'catalog:'
+        version: 0.2.0
       '@sinclair/typebox':
         specifier: 'catalog:'
         version: 0.34.52
@@ -305,7 +308,7 @@ importers:
         version: 0.2.1-rc.0(supports-color@10.2.2)
       '@silvermoon-work/task-engine':
         specifier: 'catalog:'
-        version: 0.2.1-rc.1(supports-color@10.2.2)
+        version: 0.2.2-rc.0(supports-color@10.2.2)
       ipfs-unixfs-exporter:
         specifier: 'catalog:'
         version: 16.2.3
@@ -361,7 +364,7 @@ importers:
         version: 0.2.1-rc.0(supports-color@10.2.2)
       '@silvermoon-work/task-engine':
         specifier: 'catalog:'
-        version: 0.2.1-rc.1(supports-color@10.2.2)
+        version: 0.2.2-rc.0(supports-color@10.2.2)
       '@types/semver':
         specifier: 'catalog:'
         version: 7.8.0
@@ -455,7 +458,7 @@ importers:
         version: 0.2.1-rc.0(supports-color@10.2.2)
       '@silvermoon-work/task-engine':
         specifier: 'catalog:'
-        version: 0.2.1-rc.1(supports-color@10.2.2)
+        version: 0.2.2-rc.0(supports-color@10.2.2)
       '@sinclair/typebox':
         specifier: 'catalog:'
         version: 0.34.52
@@ -1051,12 +1054,16 @@ packages:
     resolution: {integrity: sha512-i16x6l/CgbzKcegFMKIYId+FW11idzKsbTOZqW7/aAPCOfAHZtZkjuXs1Bh9XHT267FX7yfIb6DGdtFsu3O12Q==}
     engines: {node: '>=22.15.0'}
 
-  '@silvermoon-work/task-engine@0.2.1-rc.1':
-    resolution: {integrity: sha512-yKtQphRU5QSXmMoRi/ldMd2ZzFco89chXNICcUxsytRyskLcgwjcuBvL0jOLBHwt9JHS4cFUQ+312hX0SXvVOQ==}
+  '@silvermoon-work/task-engine@0.2.2-rc.0':
+    resolution: {integrity: sha512-WbOMuaLvo/9JeVUpgGFm4C8IrKSOoeECH9RwM106nWz3f+y1FQUDZ4VBNb8oZhomSpgtfRK9dpbOnatENDe/kg==}
     engines: {node: ^22.15.0 || >=23.5.0}
 
   '@silvermoon-work/task-protocol@0.2.0':
     resolution: {integrity: sha512-HMIrhYCo/pxObQddul+2NgEiprjfojDaFu5MDg28sX1ylvg+SyXCbx+klJ4znve1T3wpJyUgyMZD85gQccOLyg==}
+    engines: {node: '>=22.13.0'}
+
+  '@silvermoon-work/task-protocol@0.2.1':
+    resolution: {integrity: sha512-2KSnRwFSBkrfn+ly/iCoQhsFJF6+XMdYT3Ph5iH+LzQOCw2tPqpEhhSxpXTgCZble+kQjszCa+hGNqnW1lG/uA==}
     engines: {node: '>=22.13.0'}
 
   '@silvermoon-work/task-protocol@0.2.1-rc.1':
@@ -3508,13 +3515,13 @@ snapshots:
       - encoding
       - supports-color
 
-  '@silvermoon-work/task-engine@0.2.1-rc.1(supports-color@10.2.2)':
+  '@silvermoon-work/task-engine@0.2.2-rc.0(supports-color@10.2.2)':
     dependencies:
       '@helia/unixfs': 8.0.9(supports-color@10.2.2)
       '@silvermoon-work/ipfs-access': 0.1.0
       '@silvermoon-work/ipfs-payload': 0.1.0
       '@silvermoon-work/ipfs-store': 0.1.0(supports-color@10.2.2)
-      '@silvermoon-work/task-protocol': 0.2.1-rc.1
+      '@silvermoon-work/task-protocol': 0.2.1
       blockstore-core: 7.0.1
       ipfs-unixfs-exporter: 16.2.3
       ipfs-unixfs-importer: 17.1.1(supports-color@10.2.2)
@@ -3525,6 +3532,14 @@ snapshots:
       - supports-color
 
   '@silvermoon-work/task-protocol@0.2.0':
+    dependencies:
+      '@silvermoon-work/ipfs-access': 0.1.0
+      '@silvermoon-work/ipfs-payload': 0.1.0
+      ajv: 8.20.0
+      multiformats: 14.0.5
+      yaml: 2.9.1
+
+  '@silvermoon-work/task-protocol@0.2.1':
     dependencies:
       '@silvermoon-work/ipfs-access': 0.1.0
       '@silvermoon-work/ipfs-payload': 0.1.0

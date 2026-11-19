@@ -1,213 +1,106 @@
 # Node.js Toolchain Check
 
-私有 CAR 作者项目
-`@silvermoon-work/check.nodejs-toolchain`，不发布 npm，不在 release 映射中，也不要求消费者安装作者包。一个项目、一个 Check
-Task，复用工作区 Check Task SDK/Builder、已发布 SDK/Protocol
-0.2.0-rc.1 与 Builder/Engine 0.2.0-rc.2。
+私有 Check Task 作者包 `@silvermoon-work/check.nodejs-toolchain`，交付标准 CAR，
+不发布 npm。生产实现按 [docs/spec.yaml](docs/spec.yaml) 执行七个有序检查点；
+通过继续、首次业务失败即停止。业务输入不含项目目录、PATH 或 context。
 
-原先 sanitized
-Worker 缺少 PATH 的问题已通过获批准的显式执行上下文解决，没有改变 Engine 隔离。真实 CAR 的 Node-only、Node/npm 配对、npm/pnpm/nrm、有效配置、输出文档与生命周期场景已通过。官方 portable
-nvm-windows
-1.2.2 已在隔离环境通过真实 CAR 的 Node/npm 管理与配对、双工具未受管及仅 npm 未受管反例；未改共享安装、配置、链接或 PATH。原共享 nvm 二进制仍存在启动挂起问题，未声称修复该宿主问题。Check 不会自动改用验证缓存；工具选择始终遵循调用方授权的显式上下文。
+## 设备标准与输入
 
-## 模型预览
+固定检查 nvm、node、npm、pnpm、nrm。最小默认全局包基线为 `pnpm` 和
+`nrm@1.2.6`；固定 registry 为 `npm → https://registry.npmjs.org/`，默认选择
+`npm`。
+nrm 固定版本源于现有只读启动支持边界，不代表它是最新版本。
+基线写在 [policy.ts](src/policy.ts)，不从当前设备或 NRM 设置反推。
 
-[docs/spec.yaml](docs/spec.yaml) 使用 Spec v1.0 描述改造后的六个有序检查点：
-nvm、node、npm、pnpm、nrm 各自安装检查，以及最后的 configuration。
-规格固定检查五种工具，默认输入为 `{}`，唯一可选参数为 `minimumVersions`，
-例如 `{"minimumVersions":{"node":"22.15.0"}}`；示例不是默认下限。
-每种工具包含 executable、version-valid 两条基础安装规则；
-node、npm 各自另有 managed-by-nvm 规则，独立确认属于 nvm 管理的安装，
-不以 node 受管推定 npm 受管；Node/npm 配对仍由 configuration 单独检查。
-具体失败原因由 brief 区分。
-检查对象仅为执行设备，直接读取设备环境与用户级/全局配置，不需要业务 context、
-项目目录或另一套宿主 context 参数，不受目标项目配置覆盖。
-各安装步骤独立输出工具入口；首个业务失败即停止，不再跨工具收集安装问题，可用 ipfsaw 查看。
-它只展示定义，不执行探测，也不代表当前设备或新 CAR 已通过检查。
-规格中的 Rule code 尽量采用所属 Checkpoint
-ID 前缀；简化输入、统一政策、拆分流程、逐工具 Context 输出及
-新命名尚未同步到运行时契约、问题码和参考文档。registry 白名单、nrm 必需注册项的
-准确值及设备环境读取适配尚待细化，不从本机配置自动继承统一政策。
-当前生产实现仍要求下文的 context/requirements 输入，按
-installation → configuration 两步执行，使用原规则码与工具入口 Map；
-实际输入及语义校验仍以源码契约为准。
+默认输入 `{}`，仅允许四个可选参数：
 
-## 作者构建与验证
+```json
+{
+  "minimumVersions": { "node": "22.15.0" },
+  "defaultPackages": ["typescript"],
+  "additionalRegistries": [
+    { "name": "company", "url": "https://registry.example.test/" }
+  ],
+  "defaultRegistry": "company"
+}
+```
+
+示例不是默认政策。最低版本按任意精度数字段比较；省略下限不跳过工具。
+`defaultPackages` 仅接受追加包名，不能覆盖基线版本约束。注册清单为基线与追加项
+的并集，同名同 URL 规范化去重，同名不同 URL 拒绝；默认项必须引用合并清单中的名称。
+无效输入在探测前拒绝，不从设备上的额外项或当前选择兜底。
+
+| 顺序 | Checkpoint        | 职责                                                    |
+| ---- | ----------------- | ------------------------------------------------------- |
+| 1    | nvm-installation  | 入口可执行、版本可识别且满足可选下限。                  |
+| 2    | node-installation | Node 可执行、版本合格，并确认属于 nvm 管理的安装。      |
+| 3    | npm-installation  | npm 可执行、版本合格、独立确认 nvm 管理及与 Node 配对。 |
+| 4    | pnpm-installation | 入口可执行、版本可识别且满足可选下限。                  |
+| 5    | nrm-installation  | 先验证只读启动身份，再核验可执行性与版本。              |
+| 6    | nvm-configuration | 自动重装配置包含固定全局包基线及追加项。                |
+| 7    | nrm-configuration | 必需注册名称、URL 和 nrm 当前选择符合期望。             |
+
+Rule code 使用所属 Checkpoint
+ID 前缀，brief 区分具体失败事实。同一步可保留多个问题，
+前置失败不追加派生问题。安装步骤的成功入口与版本仅通过本次 `outputOf` 共享；
+不自动进入日志、业务结果或 IPFS。配置成功不新增数据。
+
+## 环境与只读边界
+
+使用 Task Engine `0.2.2-rc.0`。Node Worker 可以正常读取 `process.env`；
+设备环境由受信任的执行宿主决定，不是业务参数，也不扫描父进程补全。
+该 Engine 默认使用 Node 原生环境继承，可能包含凭据，**只执行可信 Task**。
+本包运行脚本显式使用公开
+`workerEnv`，只传所需命名字段，不将整个环境塞入输入或日志。
+
+每次 Run 创建独立设备探测目录并在成功、业务失败或执行错误后清理，
+不受目标项目的 .npmrc/workspace 配置覆盖。远程执行只证明远端执行设备，不证明控制机。
+只运行固定只读命令，不安装、切换、更新、发布、修改配置或测试网络/认证；
+保留原生适配器的启动副作用防护、每命令 10 秒预算、256
+KiB 输出上限及实际子进程回收。
+
+nvm-sh 使用设备 `NVM_DIR/default-packages`；nvm-windows v2 读取
+`auto_installed_modules`，旧版 1.2.2 没有该原生机制时不通过，不自动升级。
+新 Windows v2 读取格式有受控测试，但未据此声明真实 v2 宿主已通过验收。
+配置合格不等于已安装全局包，也不保证每次 `nvm use` 都补装。
+
+nrm 只读启动仍仅支持已验证的 1.2.6 标准入口；未知包装入口或其他实现先拒绝，
+不执行可能改写配置的未知 CLI。当前选择按 URL 比较，同 URL 别名等价；
+不额外查询或推断 npm/pnpm 的实际生效 registry。
+
+## 构建与本机检查
 
 在仓库根执行：
 
-```sh
-pnpm --filter @silvermoon-work/check.nodejs-toolchain typecheck
-pnpm --filter @silvermoon-work/check.nodejs-toolchain test
-pnpm --filter @silvermoon-work/check.nodejs-toolchain build
-node packages/check.nodejs-toolchain/scripts/smoke.mjs packages/check.nodejs-toolchain/dist/nodejs-toolchain.car .
-```
-
-Builder 一次生成标准目录和
-`dist/nodejs-toolchain.car`（忽略目录），并报告根 CID；无需重复运行 task-builder
-car。默认测试独立构建生产 CAR，完整校验 DAG，通过公开 Engine 在受控工具目录执行并从输出 CID 读取中文文档字节，检查取消/超时与实际子 PID 回收。工具响应由明确的 fixture 提供，只依赖执行测试的 Node，不读取宿主 npm/pnpm/nrm 安装或个人配置。受控脚本不是实际工具支持证据。默认测试不是上面不带参数的原生 smoke；原生 smoke 必须显式运行。可增加
-`--nvm` 诊断宿主原有 nvm；该原安装仍会超时，不用于替代下面的官方隔离实证。
-
-单元测试 mock 外部工具结果，并用真实文件系统中的新旧 pnpm shim
-fixture 检查入口识别。默认测试只选择当前 Node 和自有 fixture 目录，不从宿主 PATH 猜测其他工具；原生 smoke 才选择宿主 PATH 中已去引号的绝对目录。两者都不修改宿主 PATH，不放宽 Check 输入校验。
-
-依赖真实 npm 安装的优先级及 Windows npm-prefix 用例默认不运行，可显式执行：
-
-```sh
-pnpm --filter @silvermoon-work/check.nodejs-toolchain native-test
+```powershell
+pnpm exec turbo run build --filter=@silvermoon-work/check.nodejs-toolchain
 pnpm --filter @silvermoon-work/check.nodejs-toolchain smoke
 ```
 
-仓库的 `Native toolchain compatibility` workflow 自动覆盖 main
-push 与所有 PR，也可手动在 Ubuntu 和 Windows 上执行这两组验证，工具来自固定 packageManager、lockfile 和 devDependencies。无 paths 过滤确保源码、内部依赖、根锁文件、工具配置和 workflow 自身变更都触发；缓存命中仍冻结安装并执行 build/native-test/smoke，每个 job 有显式 timeout 与隔离 PR/main 的安全并发。它独立于默认质量门禁，不代表每台开发机都需安装这些工具。Windows
-npm-prefix 回归复制真实 npm 本体，通过私有 junction 只读复用原安装依赖，清理仅删除私有副本和链接。真实 npm 用例使用 30 秒测试预算；每条工具命令仍保留 10 秒执行限制。
-
-### 官方 portable nvm-windows 隔离实证
-
-仅用于作者验证的前置工具，不是 Check 行为或消费者自动安装。在 Windows 上从官方固定 tag 下载两个精确资产，先验证 checksum 再解包：
+默认运行当前执行设备的真实 CAR。标准输出为单份 JSON，包含准确 Bundle CID、
+Task/Run 状态及业务报告；业务不通过或执行故障均为非零退出码，不伪装成验收成功。
+可用 `--parameters <JSON文件>` 提供上述业务参数，不支持旧项目目录位置参数。
+文档引用为真实 CID，脚本验证文档可读及 Run 已回收。
 
 ```powershell
-$owned = Join-Path (Get-Location) ('packages\check.nodejs-toolchain\dist\nvm-validation-' + [guid]::NewGuid())
-New-Item -ItemType Directory -Path $owned | Out-Null
-gh release download 1.2.2 --repo nvm-windows/nvm --pattern nvm-noinstall.zip --pattern nvm-noinstall.zip.checksum.txt --dir $owned
-$expected = (Get-Content (Join-Path $owned 'nvm-noinstall.zip.checksum.txt') -Raw).Trim()
-if ((Get-FileHash (Join-Path $owned 'nvm-noinstall.zip') -Algorithm MD5).Hash -ne $expected) { throw 'Checksum mismatch' }
-Expand-Archive (Join-Path $owned 'nvm-noinstall.zip') (Join-Path $owned '1.2.2')
-node packages\check.nodejs-toolchain\scripts\nvm-smoke.mjs packages\check.nodejs-toolchain\dist\nodejs-toolchain.car (Join-Path $owned '1.2.2')
+pnpm --filter @silvermoon-work/check.nodejs-toolchain smoke --fixture
+pnpm --filter @silvermoon-work/check.nodejs-toolchain typecheck
+pnpm --filter @silvermoon-work/check.nodejs-toolchain test-coverage
 ```
 
-官方 checksum 资产使用 MD5；harness 还核对已记录的 archive SHA-256 和 nvm.exe
-SHA-256。来源与摘要见 Inner
-Verification。它只复制当前授权宿主的原样 Node/npm 文件到自有目录，以独立 NVM_HOME/settings 和私有 junction 表达当前受管安装，不声称 nvm 执行过历史安装；不执行 setup/install/use，不下载 Node/npm。真实 Engine 以同一 CAR 验证正向管理与配对、两个反向场景和 nvm
-1.2.2 版本事实，读取输出 CID 中文参考文档；检查设置/链接/源文件未变并删除整个自有运行环境。经校验的 portable 下载缓存留在忽略的 dist 中，可复验或由所有者另行删除。
+`--fixture` 使用自有工具、用户目录及显式 Worker 环境，通过真实 Engine/CAR
+验证通过与不通过；不是实际设备或平台兼容性证明。普通测试不依赖个人工具和配置。
+`native-test` 仍显式保留真实已安装工具的原生适配回归，CI 的 smoke 使用受控环境。
 
-## 输入与授权
+## 文档、历史与制品
 
-实际检查使用 SDK 的 `defineCheckpoint` 与 `executeCheck`，由 Check Task
-顺序执行两个 Checkpoint，每个声明 Rule：
+Builder 从 Spec 生成 Task 总览与每个 Checkpoint 的 Agent instructions、Rules 和
+成功输出文档，不回写源 Markdown；生产文档范围为 `references/device`。
+过程日志只记录 checkpoint/pass，失败 references 按 Checkpoint 聚合，不维护逐规则文档。
 
-1. `installation`：所需工具定位、只读版本命令、版本解析与 minimumVersion；
-   收集所有可独立判断的失败。任一失败即结束，不执行配置探测。
-2. `configuration`：从 `context.outputOf(installation)` 取得本次执行的工具入口，
-   检查 pairing、逐工具 nvm management、active registry 与全部 nrm 注册项。
-   收集所有可独立判断的配置失败。
-
-主入口使用 `runCheck(contract,{checkpoints})` 工厂捕获授权输入与 signal；
-没有旧图、children、registry 或跨执行缓存。工具就绪职责位于 `src/checks/`。
-原生配置优先级、nrm 身份约束、子进程预算/回收与故障边界不变；
-signal 传到 Host.run，在实际清理完成后结束。
-
-Task 输出使用 `{data,cidPaths}`，包含 `pass/documentation/references`；
-失败问题仅含 `{checkpoint,code,brief}`，同码多工具失败保留，brief 标明工具。
-references 只为失败 Checkpoint 聚合一份直接文档 CID，成功为空；
-文档为 `references/check.md` 和 `references/checkpoints/<id>.md`，无逐问题文档。
-过程日志只记录 Checkpoint 标识与通过状态，不记录工具入口或内部输出。
-旧 CAR/历史平台实证不自动证明新顺序阶段模型，须重建并验证准确新 CID。
-
-见 [`src/contract.ts`](./src/contract.ts)、
-[`src/execution-context.ts`](./src/execution-context.ts) 和
-[`references/check.md`](./references/check.md)。
-
-`context.projectDirectory` 是目标执行机绝对目录；必填的
-`context.executionEnvironment`
-只接受命名字段，不接受原始环境 map、命令或探测结论。同一个 env 用于工具定位、版本、npm-prefix、配对、nvm 和有效 registry 查询。没有 ambient 环境扩展、其他进程扫描或 process.execPath 工具回退。
-
-例如，由**实际 Engine 所在宿主的管理员**选择已存在路径：
-
-```js
-const executionEnvironment = {
-  path: ["D:\\Tools\\node", "D:\\Tools\\pnpm", "D:\\Tools\\nrm"],
-  pathExtensions: [".COM", ".EXE", ".BAT", ".CMD"], // Windows 必填
-  userProfile: "D:\\ToolchainUser",
-  home: "D:\\ToolchainUser",
-  npmConfig: {
-    userConfig: "D:\\ToolchainUser\\.npmrc",
-    globalConfig: "D:\\ToolchainUser\\global.npmrc",
-    registry: "https://registry.example.test/",
-  },
-};
-const input = {
-  context: { projectDirectory: "D:\\Projects\\demo", executionEnvironment },
-  requirements: {
-    tools: { node: { minimumVersion: "22.13" }, npm: {}, pnpm: {} },
-    pairing: { npmWithNode: true },
-    registries: {
-      active: { npm: { allowedUrls: ["https://registry.example.test/"] } },
-    },
-  },
-};
-```
-
-示例路径/URL 是占位选择，不是默认政策；必须由执行宿主替换并授权。Unix 不传 Windows 专用字段。完整固定字段和映射由 schema 定义。宿主可按已知键捕获（内部 captureExecutionEnvironment 已有别名冲突测试），但不能复制整个 process.env。捕获必须拒绝空/相对 PATH 项和冲突大小写别名，不能默默改变选择；有意缩小 PATH 应作为管理员显式选择记录。
-
-远程适配层必须忽略客户端自报环境并注入服务端选定上下文；Engine 的 authorize 只审核 caller/operation/scope，不接收业务 input，不能声称它签认了路径。直接提交者必须已获授权选择目标机路径/配置。输入会持久化，只传非秘密参数；token、NODE_OPTIONS、NODE_PATH、代理凭据等不传入。SystemRoot/WINDIR 仅复用 Worker 允许的系统值。Worker 不是安全沙箱。
-
-## 检测范围
-
-- tools 仅为 node/npm/pnpm/nvm/nrm；`{}`
-  表示可用，minimumVersion为任意精度数字点分下限。未声明且不被约束依赖的工具不要求。
-- pairing 要求显式 node/npm；management 仅支持 nvm 和已声明 node/npm。各工具分别验证其受管安装；management 不隐式要求同一版本，配对由 pairing 决定。
-- active
-  npm/pnpm 分别查询实际项目/工作区有效默认 registry；allowedUrls 任意匹配，nrm.required 对精确名称/URL 全部匹配。npm 与 pnpm 的原生覆盖顺序不互相推断。
-- pnpm
-  11 的工作区边界由 pnpm-workspace.yaml 决定；嵌套 package.json 不一定隔离外层工作区配置。实际 pnpm
-  10/11 的 npm_config_registry 优先级不同，smoke 先通过同一 CAR 观察版本，再分别验证其原生结果。
-- 对 pnpm 11 会默默忽略的 YAML
-  registry 插值，额外只读解析实际工作区和全局 YAML 的默认 registry，明确执行故障，不能靠允许的 fallback
-  URL 通过。YAML 解析复用 catalog 的 yaml，不执行项目代码。
-- nrm
-  **只读启动目前只验证并允许 1.2.6**。2.1.0 在 --version/ls 前无条件重写用户 .npmrc，因此先检查已选入口/package 身份并拒绝执行；其他未验证实现也不跳过后宣称通过。1.2.6 仅为作者测试 devDependency，不随 CAR 安装到目标环境，不是 npm 发布依赖。
-
-不安装、切换、修改配置、运行项目 scripts/实际构建、检查网络或发布权限。子进程禁止 Corepack 下载/自动 pin 和 pnpm 自动管理版本，并关闭更新通知；只影响检测子进程，不修改调用方环境。每条命令预算 10 秒、输出上限 256
-KiB。故障、取消、未知协议或清理失败不生成正常 Check 结果。
-
-固定禁止项目/全局 pnpmfile 执行、编译缓存与 pnpm
-11 自动版本下载；在首次启动 pnpm 前拒绝 configDependencies，避免配置查询本身安装配置包。
-
-即使没有 pnpm-workspace.yaml，也预检 cwd/.npmrc；另按已安装 pnpm
-10.22/11.22 相同的 local-prefix 标记定位实际父级项目 .npmrc，并保留工作区 .npmrc 检查。只检查这条项目祖先链的固定配置名及 cwd 的真实路径，不遍历其他项目、不改原生命令或 registry 优先级。pnpm
-11 的 .npmrc 只接纳 registry/auth/网络相关键，不把该文件中的 configDependencies 当作安装设置；pnpm
-10 的通用 INI 读取也不代表每个原始键都成为有效 configDependencies。预检对发现的该声明一律防御性拒绝，不假定它在两个版本均会触发安装；YAML 中的配置依赖能力保持原有拒绝策略。
-
-## 真实支持证据
-
-Windows 证据限 x64 运行时，不代表其他体系结构已经验证。
-
-| 组合                                   | 当前证据                                                            | 限制                               |
-| -------------------------------------- | ------------------------------------------------------------------- | ---------------------------------- |
-| Windows Node、标准 modern npm.cmd 配对 | 真实 CAR；真实 npm-prefix 覆盖与原样 npm 本体副本、只读依赖链接回归 | 不承诺未知 shim/发行版拆分布局     |
-| Windows npm 有效 registry              | 真实 CAR，隔离用户/项目/显式覆盖，配置字节未变                      | 不检查 scoped registry、认证或网络 |
-| Windows pnpm 10.22.0 / 11.22.0         | 真实 CAR；项目/用户/显式上下文；11 的插值忽略被拒绝                 | 不推断与 npm 有相同优先级          |
-| Windows nrm 1.2.6                      | 真实 CAR；隔离 .nrmrc 的命中、缺失、URL 不符与额外项                | 未验证/会修改配置的版本先拒绝      |
-| nvm-windows 1.2.2                      | 官方 portable；真实 CAR 中管理+配对通过，两个真实反例及版本事实通过 | 当前管理实证，不证明历史安装过程   |
-| Linux/macOS nvm                        | 独立 shell-function 适配与受控逻辑                                  | 未在真实 Unix 执行，不声明支持     |
-
-Unix nvm 通过绝对 NVM_DIR/nvm.sh 与固定 bash --noprofile
---norc 脚本查询，不加载 profile、不使用继承函数、不执行 nvm
-use。管理关系使用 nvm 已确认管理的安装与实际 CLI/运行时路径，不用字符串前缀。
-
-## CAR-only 独立消费
-
-消费者只需标准 Task
-Engine 与可读的 IPFS 存储，不安装作者包或读取作者源码。先校验 CAR 根 CID 与提供的准确 CID 相同，再经独立授权导入受控存储：
-
-```sh
-ipfs dag import --pin-roots=true nodejs-toolchain.car
-ipfs pin ls <verified-root-cid>
-```
-
-以上是消费方操作说明，本次未上传或远程 pin；本地 CAR 不表示远程可用。Engine 的 ipfsClient 必须可读该精确 CID 的完整 DAG。以
-`engine.submit({requestId, bundle: "<verified-root-cid>", input, timeoutMs}, caller)`
-提交，不能用 workspace 名、npm 版本或 latest 代替 CID。成功完成的 Run 从
-`run.result.data` 读取结果，documentation 与 references 中的 documentation
-为可直接读取的文档 CID；`run.result.cidPaths` 标明这些内容引用路径。
-
-建议父级部署验收：在不链接本仓库的独立目录只放 CAR，安装/使用已发布 Task
-Engine/Builder 0.2.0-rc.2、IPFS Store
-0.1.0-rc.1 和标准 exporter，将 readTaskBundleCar 的已验证 block port 通过
-`IpfsStore.fromClient` 适配，再以 `ipfsStore`
-创建 Engine；由该宿主构造上述授权上下文，执行 Node-only
-pass 和多问题 fail，从输出 CID 读取中文文档。不得调用本包 src、SDK 私有 API 或作者 smoke 作为替代。这验证离线 CAR 消费，不等于远程 IPFS 发布；D-* 由父级另行验收。
-
-升级后需重建 CAR 并使用新根 CID，不覆盖或声称历史已交付 CAR 自动采用新版模型。Engine 只借用
-`ipfsStore`，宿主应在 Engine 关闭后关闭它；CAR reader 由宿主另行关闭。
+[src/legacy](src/legacy/) 保留旧输入与两步编排，旧回归仍执行原断言，
+仍处于严格 TypeScript、lint 和覆盖率范围，不是生产入口。
+原生成熟适配器复用自该目录；它们的既有防护和边界没有因迁移放宽。
+`check.fixture.build.yaml` 与 `legacy-smoke.mjs` 只构建历史回归 CAR；
+历史平台记录见 [README-legacy.md](README-legacy.md)，不代表新流程验收。
+新输入拒绝旧 context/requirements，历史 npm/CAR 不会自动升级，消费方必须重建并固定准确新 CID。

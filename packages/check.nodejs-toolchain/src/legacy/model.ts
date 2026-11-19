@@ -1,4 +1,4 @@
-import type { RuleCode } from "../contract.js";
+import type { RuleCode } from "./contract.js";
 
 export type InstallationRule = Extract<
   RuleCode,

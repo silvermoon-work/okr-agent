@@ -1,0 +1,7 @@
+name: Node.js Toolchain historical adapter regression
+runtime:
+  minVersion: 22.15.0
+source:
+  entry: src/legacy/main.ts
+  contract: src/legacy/contract.ts
+outDirectory: dist/nodejs-toolchain-legacy

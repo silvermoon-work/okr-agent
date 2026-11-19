@@ -3,8 +3,8 @@ import {
   defineCheckpoint,
   type RuleFailure,
 } from "@silvermoon-work/check-task-sdk";
-import type { Host, ToolEntry } from "../inspect.js";
-import { Input, type Tool } from "../contract.js";
+import type { Host, ToolEntry } from "./inspect.js";
+import { Input, type Tool } from "./contract.js";
 import type { InstallationRule } from "./model.js";
 
 export function compareVersions(actual: string, expected: string): number {

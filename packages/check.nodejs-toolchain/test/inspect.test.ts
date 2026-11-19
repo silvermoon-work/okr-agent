@@ -19,7 +19,7 @@ import contract, {
   type Input,
   type RuleCode,
   type Tool,
-} from "../src/contract.js";
+} from "../src/legacy/contract.js";
 import {
   compareVersions,
   inspect,
@@ -32,7 +32,7 @@ import {
   within,
   type Host,
   type ToolEntry,
-} from "../src/inspect.js";
+} from "../src/legacy/inspect.js";
 import { execute, stopTree } from "../src/command.js";
 import {
   captureExecutionEnvironment,
@@ -164,7 +164,7 @@ describe("composite requirements", () => {
       "npm-cli.js",
     );
     const host = fixture({ platform: "linux", npm: cli, npmNode: nodePath });
-    const originalRun = host.run.bind(host);
+    const originalRun = host.run;
     host.env.NVM_DIR = home;
     host.locate = (name) =>
       Promise.resolve({
@@ -204,7 +204,7 @@ describe("composite requirements", () => {
       const version = mode === "invalid-version" ? "unknown" : "v22.13.0";
       const nodePath = join(home, "versions", "node", version, "bin", "node");
       const host = fixture({ platform: "darwin" });
-      const originalRun = host.run.bind(host);
+      const originalRun = host.run;
       host.env.NVM_DIR = home;
       host.locate = (name) =>
         Promise.resolve({

@@ -4,30 +4,49 @@ name: Node.js 工具链检查 · 改造规格
 description: |
   描述 @silvermoon-work/check.nodejs-toolchain 的统一标准改造。
   按 nvm-installation、node-installation、npm-installation、pnpm-installation、
-  nrm-installation、configuration 的顺序执行，通过继续，首次业务失败即停止。
-  不再在单个 installation 检查点中收集所有工具问题；configuration 仍收集本步可独立判断的问题。
+  nrm-installation、nvm-configuration、nrm-configuration 的顺序执行，
+  通过继续，首次业务失败即停止，不再在单个 installation 检查点中收集所有工具问题。
+  Node/npm 配对在 npm-installation 核验；两个配置检查点只负责各自工具的配置。
   固定检查 nvm、node、npm、pnpm、nrm，不允许调用方选择或跳过工具与配置规则。
-  用户无需配置即可传入 {}；唯一允许的业务参数是 minimumVersions，
-  可分别指定各工具的数字点分最低版本。未指定下限时只要求版本可识别，
+  用户无需配置即可传入 {}；可选 minimumVersions 分别指定各工具的数字点分最低版本，
+  可选 defaultPackages 只追加必须配置为自动重装的全局 npm 包名。
+  可选 additionalRegistries 只追加必需的 nrm 名称/URL，defaultRegistry
+  按合并清单中的准确名称选择期望默认源，省略时使用 Check 版本固定的默认项。
+  未指定最低版本时只要求版本可识别，
   不引入隐藏的默认下限，也不因省略某工具的下限而跳过该工具。
+  默认全局包要求为 Check 固定基线与 defaultPackages 的并集；
+  省略参数或传空数组不删除基线，设备配置中允许存在额外包。
   Rule code 尽量以所属 Checkpoint ID 加连字符为前缀，并表达正向约束。
-  本规格已采用简化输入、拆分流程与新命名；运行时仍要求旧 context/requirements 输入，
-  仍为 installation → configuration 两步并输出工具入口 Map，尚未同步本次改造。
+  生产入口采用本规格的简化输入、七个有序检查点及新规则码；
+  历史 context/requirements 两步模型仅保留在 src/legacy 及显式 fixture 构建中供原生适配器回归。
+  新构建使用 Engine 0.2.2-rc.0 的宿主环境能力，业务输入不承担环境传递。
   这是定义说明，不代表当前设备或任何新 CAR 已通过检查。
 
   检查对象是实际执行设备的工具安装与设备配置，不是目标项目或工作区。
   不需要 context、projectDirectory、executionEnvironment，也不另建一套宿主 context 参数。
   直接读取执行设备自身的 PATH、平台及用户级/全局工具配置，不接受客户端指定路径、
   环境 map、命令或探测结论，不扫描其他进程，不以其他安装回退。
-  registry 探测应在不含项目配置的设备探测目录进行，不让项目 .npmrc 或 workspace 覆盖影响结论。
+  nrm 读取设备用户的 registry 注册配置及 nrm 所报告的当前选择，不额外查询 npm/pnpm 实际生效 registry，
+  不读取项目 .npmrc 或 workspace 覆盖，也不据 nrm 注册项推断实际使用地址。
   远程执行时检查远端实际设备，不代表控制机；设备环境读取适配须实现并验证，
   不通过关闭 Worker 隔离来实现。凭据及内部资源能力不进入业务输入、结果或日志。
 
-  Node/npm 配对、nvm 管理、registry 和 nrm 注册项等政策由 Check 版本固定，
+  Node/npm 配对、nvm 管理、默认全局包基线和 nrm 注册项等政策由 Check 版本固定，
   不再从 requirements、pairing、management 或 registries 输入读取。
-  registry 允许地址与 nrm 必需注册项的准确名单尚待确定，相关规则仍为设计候选；
-  不从当前开发机、个人 NRM 设置或历史调用参数自动推导统一名单，
-  不以未确定名单作为空要求后宣称配置通过。
+  nrm 必需清单由固定基线与 additionalRegistries 合并，按区分大小写的准确名称归并；
+  同名且 URL 规范化等价时去重，同名但不同 URL（包括与基线冲突）属于非法输入，
+  不使用数组顺序覆盖或删除原项。追加清单省略或 [] 不能移除基线。
+  defaultRegistry 必须引用合并后清单中的名称，不能引用仅在设备上偶然存在的额外项；
+  未知名称、非法 URL 或同名冲突须在设备探测前拒绝，不作为业务失败或默认回退。
+  URL 必须是无凭据、插值、query、fragment、空白或反斜线的绝对 HTTP(S) URL，
+  除 Schema 结构约束外仍须通过 URL 解析和语义校验。
+  参数只改变期望配置，Check 不执行 nrm add/use。
+  最小固定全局包基线为 pnpm 与 nrm@1.2.6，后者固定到已验证只读启动的版本；
+  registry 基线为 npm → https://registry.npmjs.org/，标准默认名称为 npm。
+  基线作为明确的 Check 政策固化，不从当前开发机、个人 NRM 设置或历史调用参数推导，
+  不以空要求或缺少追加参数绕过验收。
+  nvm 自动重装配置只保证安装新 Node 版本时的默认包要求，不声称每次 nvm use
+  都会补装，也不以当前全局包已安装代替自动重装配置。
   非法输入、意外 I/O、未知协议、取消、超时及清理失败属于执行故障，不生成正常业务结论。
 
   Check 只运行固定的只读探测命令，不安装、切换、更新或修改配置，不运行目标 scripts、
@@ -64,10 +83,49 @@ parameter:
             $ref: "#/$defs/minimumVersion"
           nrm:
             $ref: "#/$defs/minimumVersion"
+      defaultPackages:
+        type: array
+        description: |
+          可选的追加全局 npm 包名，如 typescript 或 @silvermoon-work/silvermoon；
+          示例不是固定基线。省略或 [] 仍保留完整基线，不替代、关闭或削弱统一要求。
+          每项仅接受小写 registry 包名（可带 scope），不接受版本、tag、范围、URL、路径或命令。
+          基线若固定某包版本，追加同名包不能取消该版本要求；允许设备配置包含其他额外包。
+        uniqueItems: true
+        items:
+          type: string
+          pattern: "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$"
+      additionalRegistries:
+        type: array
+        description: |
+          可选追加的 nrm 必需注册项，如 [{"name":"company","url":"https://registry.example.test/"}]；
+          示例不是固定基线。省略或 [] 不移除基线，设备上仍允许其他额外注册项。
+          按准确名称合并，同名且 URL 规范化等价时去重，同名不同 URL 拒绝，不覆盖基线。
+        items:
+          type: object
+          additionalProperties: false
+          required: [name, url]
+          properties:
+            name:
+              $ref: "#/$defs/registryName"
+            url:
+              type: string
+              pattern: '^https?://[^\s\\@?#]+$'
+              description:
+                无凭据或插值的绝对 HTTP(S) registry URL，还须经过 URL
+                解析及语义校验。
+      defaultRegistry:
+        $ref: "#/$defs/registryName"
+        description: |
+          可选的期望默认 registry 名称，区分大小写，必须位于固定基线与 additionalRegistries 的合并清单；
+          如 company。省略时使用 Check 标准默认项，不使用本机当前选择填充。
+          仅选择期望目标，不自动执行 nrm use，也不允许改变该名称对应的基线 URL。
     $defs:
       minimumVersion:
         type: string
         pattern: '^[0-9]+(?:\.[0-9]+)*$'
+      registryName:
+        type: string
+        pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$"
 checkpoints:
   - id: nvm-installation
     title: nvm 安装与版本就绪
@@ -96,10 +154,11 @@ checkpoints:
           解析失败或版本过低均报告本规则，由 brief 区分。
     output:
       description: |
-        拟定成功输出本次已确认的 nvm ToolEntry（executable、args 及可选 realPath），
+        成功输出本次已确认的 nvm ToolEntry（executable、args、version 及可选 realPath），
         不再提供不适用分支，也不是全部工具的 Map。
-        供 node-installation 与 npm-installation 通过 context.outputOf(nvmInstallation) 读取；nvmInstallation
-        指本检查点的定义对象，不是字符串 ID。本步尚未实现。
+        供 node-installation、npm-installation 与 nvm-configuration 通过
+        context.outputOf(nvmInstallation) 读取；nvmInstallation
+        指本检查点的定义对象，不是字符串 ID。
   - id: node-installation
     title: node 安装与版本就绪
     description: 核验 Node.js 入口、版本及其属于 nvm 管理安装的关系。
@@ -132,21 +191,23 @@ checkpoints:
           未知 nvm 协议属于执行故障。只证明当前安装归属，不伪造历史安装命令记录。
     output:
       description: |
-        拟定成功输出本次已确认的 node ToolEntry（executable、args 及可选 realPath），
+        成功输出本次已确认的 node ToolEntry（executable、args、version 及可选 realPath），
         其入口已通过本检查点的 nvm 管理归属核验；
-        供 configuration 通过 context.outputOf(nodeInstallation)
-        读取该定义对象的成功值，不序列化或自动发布。本步尚未实现。
+        供 npm-installation 通过 context.outputOf(nodeInstallation)
+        读取该定义对象的成功值，不序列化或自动发布。
   - id: npm-installation
     title: npm 安装与版本就绪
     description:
-      核验 npm 入口、版本及其属于 nvm 管理安装的关系，Node/npm
-      配对留给配置检查。
+      核验 npm 的可执行性、版本、nvm 管理归属及与当前 Node 安装的配对。
     instructions: |
       npm 为固定必需工具，不因没有最低版本参数而跳过。
       按执行设备 PATH 定位 npm，运行固定 --version，解析后比较声明下限。
       从 context.outputOf(nvmInstallation) 取得本次已确认的 nvm 入口，
       结合 npm CLI 与实际运行时路径，独立确认 npm 属于 nvm 管理的安装；
       不以 node-installation 已通过推定 npm 也受管。
+      从 context.outputOf(nodeInstallation) 取得本次已确认的 node 入口，
+      独立确认当前 npm CLI 和实际运行时与该 Node 安装配对，
+      不能因为两个工具都受 nvm 管理就推定来自同一安装。
       不因 node 已就绪就推定 npm 存在或与其配对；前置失败不追加派生问题，并停止后续检查点。
       brief 标明 npm 与失败事实，不回显完整环境或原始命令输出；
       由管理员修正入口后从任务起点重验，不执行安装或修改 npm prefix。
@@ -171,12 +232,19 @@ checkpoints:
           不受管或证据不足均不通过，由 brief 区分已确认不受管和无法确认；
           未知 nvm 协议属于执行故障。管理归属不替代与当前 node 的配对检查，
           也不证明历史安装过程。
+      - code: npm-installation-paired-with-node
+        description: |
+          当前 npm CLI 及其实际运行时必须属于前序 node-installation 确认的 Node 安装；
+          必须结合两个实际入口、规范化后的真实路径及受支持的安装布局建立关系，
+          不以两者都受 nvm 管理或各自版本合格替代证明，
+          也不要求 npm 是该 Node 原厂附带的精确版本。
+          已确认不配对或证据不足均不通过，由 brief 区分不配对与无法确认；
+          意外 I/O、取消和未知协议属于执行故障，不追加依赖前置失败的配对问题。
     output:
       description: |
-        拟定成功输出本次已确认的 npm ToolEntry（executable、args 及可选 realPath），
-        其入口已通过本检查点的 nvm 管理归属核验；
-        供 configuration 通过 context.outputOf(npmInstallation)
-        读取该定义对象的成功值，不序列化或自动发布。本步尚未实现。
+        成功输出本次已确认的 npm ToolEntry（executable、args、version 及可选 realPath），
+        其入口已通过本检查点的 nvm 管理归属及 Node 配对核验；
+        当前没有后续检查点读取该值，不序列化或自动发布。
   - id: pnpm-installation
     title: pnpm 安装与版本就绪
     description: 核验统一标准要求的 pnpm 入口、版本命令与可选最低版本。
@@ -198,13 +266,12 @@ checkpoints:
           pnpm 版本标准输出去首尾空白后必须是独立数字点分版本，至少含一个点，允许前置 v。
           声明 minimumVersions.pnpm 时，实际版本必须满足数字点分下限；
           按任意精度数字段比较，忽略前导零，缺少尾段补零。
-          未声明下限时只核验版本可识别，版本合格不证明有效 registry 已符合要求；
+          未声明下限时只核验版本可识别，不检查 pnpm 实际生效 registry；
           解析失败或版本过低均报告本规则，由 brief 区分。
     output:
       description: |
-        拟定成功输出本次已确认的 pnpm ToolEntry（executable、args 及可选 realPath），
-        供 configuration 通过 context.outputOf(pnpmInstallation)
-        读取该定义对象的成功值，不序列化或自动发布。本步尚未实现。
+        成功输出本次已确认的 pnpm ToolEntry（executable、args、version 及可选 realPath），
+        当前没有后续检查点读取该值，不序列化或自动发布。
   - id: nrm-installation
     title: nrm 安装与版本就绪
     description: 核验统一标准要求的 nrm 入口、版本命令与可选最低版本。
@@ -231,60 +298,80 @@ checkpoints:
           下限不覆盖只读启动身份约束；解析失败或版本过低均报告本规则，由 brief 区分。
     output:
       description: |
-        拟定成功输出本次已确认的 nrm ToolEntry（executable、args 及可选 realPath），
-        供 configuration 通过 context.outputOf(nrmInstallation)
-        读取该定义对象的成功值，不序列化或自动发布。本步尚未实现。
-  - id: configuration
-    title: 工具链配置
-    description:
-      安装阶段全部通过后，按统一标准核验 Node/npm 配对、有效 registry 和 nrm
-      注册项。
+        成功输出本次已确认的 nrm ToolEntry（executable、args、version 及可选 realPath），
+        供 nrm-configuration 通过 context.outputOf(nrmInstallation)
+        读取该定义对象的成功值，不序列化或自动发布。
+  - id: nvm-configuration
+    title: nvm 默认全局包配置
+    description: 确认 nvm 已配置在安装新 Node 版本时自动安装全部必需全局包。
     instructions: |
-      分别通过 context.outputOf(nodeInstallation)、
-      context.outputOf(npmInstallation)、context.outputOf(pnpmInstallation) 和
-      context.outputOf(nrmInstallation) 获取本次较早成功的工具入口；
-      参数是相应检查点的同一份定义对象，不是字符串 ID，不再读取 installation 的工具 Map。
-      所需入口必须已由对应步骤确认，不再有不适用分支；不得用其他 PATH 或缓存安装回退。
-      按 Check 版本固定的政策执行只读探测，收集所有可独立判断的失败；
-      brief 标明工具或注册名称，不回显实际 registry URL、认证信息或完整配置。
-      两个安装步骤已分别确认 nvm 管理关系；本步仍须独立确认当前 Node/npm 的配对，
-      不能因两者都受 nvm 管理就推定来自同一安装，不再重复报告工具管理归属规则。
-      在不含项目配置的设备探测目录，按各自原生优先级查询 npm/pnpm 用户级与全局配置的
-      有效默认 registry，不从 nrm 列表推断，也不读取目标项目配置。
-      registry 统一白名单与 nrm 必需注册项准确名单尚待确定，不通过业务输入提供，
-      不以当前机器值或空名单填补缺失政策；确定后须固化到 Check 版本再实现相应规则。
-      由管理员修复设备后使用相同 minimumVersions 从任务起点重验；
-      不以切换 registry 修复管理关系，也不以改用系统安装绕过 nvm 要求。
+      从 context.outputOf(nvmInstallation) 取得本次已确认的 nvm 入口，
+      只读确认该平台、实现和版本支持的默认全局包配置，不切换或安装 Node 来试验。
+      Unix nvm-sh 对应设备 NVM_DIR 下的 default-packages 文件；
+      nvm-windows v2 对应 auto_installed_modules，不能直接套用于旧版 1.2.2。
+      读取适配及版本支持须有真实验证；已知不支持该能力时报告不通过，不自动升级工具。
+      将 Check 固定基线与输入 defaultPackages 合并，去重并保留基线已有的版本约束；
+      不以追加同名包、传 [] 或省略参数覆盖固定基线，不从当前已安装的全局包反推基线。
+      固定基线为 pnpm、nrm@1.2.6，不把当前已安装的全局包当成自动重装配置。
+      按 Rules 核对自动重装配置，brief 指出缺失项或不符事实，不回显完整配置及秘密。
+      由管理员按对应平台机制配置后，以相同业务参数从任务起点重验；
+      Check 不实际重装包、不共享 npm prefix，也不把 nvm 的缺版本自动下载开关当作默认包配置。
     rules:
-      - code: configuration-node-npm-paired
+      - code: nvm-configuration-default-packages-configured
         description: |
-          当前 npm CLI 及其运行时必须属于当前 Node 的标准安装布局；
-          不要求 npm 是该 Node 原厂附带的精确版本。
-      - code: configuration-node-npm-pairing-verifiable
-        description: |
-          入口与实际路径必须足以确认 Node/npm 的安装关系；
-          证据不足不能当作已配对，也不等同于已证明不配对。
-      - code: configuration-registry-allowed
-        description: |
-          npm 与 pnpm 的实际有效默认 registry 必须命中 Check 版本固定的统一白名单；
-          尾斜线可等价，协议、主机、非默认端口和有意义路径须匹配。
-          白名单准确值尚待确定；不读取调用方地址政策，不检查 scoped registry、认证或网络健康。
-      - code: configuration-registry-readable
-        description: |
-          npm 与 pnpm 的 config get registry 查询必须分别成功；
-          非零退出码为本规则失败，不依据旧文件猜测有效值。
-          未支持的插值（包括 pnpm 11 默默忽略的 YAML registry 插值）属于执行故障。
-      - code: configuration-nrm-registration-present
-        description: |
-          Check 版本固定的必需注册项中，每个区分大小写的精确名称必须存在于执行设备当前用户的注册列表；
-          必需名单准确值尚待确定，允许额外注册项，当前选中项不能替代必需名单。
-      - code: configuration-nrm-registration-url-matched
-        description: |
-          每个已存在的必需注册名称，其 URL 必须与 Check 固定名单按 registry URL 规范化规则匹配；
-          名称与 URL 的准确对应关系尚待确定，不从当前开发机配置推导；
-          注册存在不代表 npm/pnpm 当前使用该地址，也不证明地址可达。
+          当前 nvm 必须具备可验证的原生默认全局包机制，其配置必须包含 Check 固定基线
+          与 defaultPackages 的全部必需项；省略参数或 [] 只表示没有追加项，允许配置中存在额外包。
+          追加项按准确包名匹配（scope 为包名一部分），不以子串、相似名或 shell 表达式匹配；
+          配置条目若带版本须按包声明解析名称，基线若固定版本还必须满足该固定声明，
+          不能借追加同名但无版本的要求削弱基线版本约束。
+          配置缺失、缺少必需项、不符基线或已知 nvm 版本不支持该机制均不通过，
+          由 brief 说明；意外 I/O、无法识别的配置协议、取消或探测故障属于执行故障。
+          当前全局包已安装不替代自动重装配置；通过只证明配置符合要求，
+          不证明已执行安装、每次 nvm use 会补装、依赖兼容或网络可用。
     output:
-      description:
-        拟定成功输出为 undefined，不新增 Context
-        数据，不安装、切换或修改工具配置；统一政策、逐工具 outputOf
-        接线与新规则码尚未实现。
+      description: 成功输出为 undefined，不新增 Context 数据。
+  - id: nrm-configuration
+    title: nrm Registry 注册配置
+    description:
+      确认设备 nrm 注册表满足基线及追加清单，并选中期望的默认 registry。
+    instructions: |
+      从 context.outputOf(nrmInstallation) 取得本次已确认的 nrm 入口，
+      只读核对设备当前用户的 registry 注册表和当前选择，不安装、切换或修改 registry。
+      使用探测前已核验的“固定基线＋additionalRegistries”合并清单，
+      按准确名称与规范化 URL 去重；冲突不能靠后项覆盖前项或修改基线来消解。
+      defaultRegistry 显式提供时从合并清单解析目标，否则使用标准默认项；
+      引用不存在的名称属于非法输入，不借设备上的额外注册项兜底。
+      按合并清单收集本步可独立判断的问题；
+      前置名称缺失时不追加其 URL 不匹配问题，brief 只标明名称与差异类型，不回显完整配置。
+      目标项注册正确后，使用经验证的只读接口取得 nrm 当前选择，并与目标 URL 比较，
+      不以“目标已注册”替代“当前已选中”；不假设 nrm 一定持久化选择的名称。
+      固定基线为 npm → https://registry.npmjs.org/，标准默认名称为 npm，
+      不从当前机器或空名单补全；追加项只能扩展，defaultRegistry 只能选择，均不能改写基线。
+      本步不额外查询 npm/pnpm 实际生效 registry、认证或网络，也不重复安装阶段的 Node/npm 配对。
+      由管理员按期望修复注册与默认选择后，以相同业务参数从任务起点重验；
+      Check 不执行 nrm add/use，不通过切换当前源掩盖必需注册项缺失。
+    rules:
+      - code: nrm-configuration-registration-present
+        description: |
+          固定基线与 additionalRegistries 合并后的每个必需注册名称，
+          必须以区分大小写的准确名称存在于执行设备当前用户的注册列表；
+          追加项省略或 [] 不免除基线，允许其他额外注册项，当前选中项不能替代必需名单。
+      - code: nrm-configuration-registration-url-matched
+        description: |
+          每个已存在的必需注册名称，其 URL 必须与基线及追加项合并后的对应 URL 规范化匹配；
+          尾斜线可等价，协议、主机、非默认端口和有意义路径须匹配；
+          固定基线中的名称/URL 不可由追加项或 defaultRegistry 改写；
+          注册存在不代表 npm/pnpm 当前使用该地址，也不证明地址可达。
+      - code: nrm-configuration-default-registry-selected
+        description: |
+          nrm 所报告的当前选择必须指向期望默认项的 URL；
+          期望项由 defaultRegistry 的准确名称在合并清单中解析，省略参数时取 Check 标准默认项，
+          不从设备当前选择反推期望值。
+          使用相同 URL 规范化规则比较；不同名称对应同一 URL 时视为相同选择，
+          不要求 nrm 持久化别名，不以任意取第一个同 URL 名称代替参数引用校验。
+          目标注册项须先满足存在和 URL 匹配规则，前置不符时不追加派生选择问题；
+          目标正确但已知未选中或未设置选择时不通过，由 brief 标明期望名称及不符事实，不回显敏感 URL。
+          无法识别的当前选择协议、意外 I/O、取消或探测故障属于执行故障，不默认为已选中。
+          通过仅证明 nrm 当前选择符合期望，不独立证明 npm/pnpm 的实际生效地址、认证或网络。
+    output:
+      description: 成功输出为 undefined，不新增 Context 数据。

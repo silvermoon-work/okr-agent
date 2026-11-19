@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import contract, { type Input } from "../src/contract.js";
+import contract, { type Input } from "../src/legacy/contract.js";
 
 const mocks = vi.hoisted(() => ({
   runCheck: vi.fn<
@@ -18,12 +18,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@silvermoon-work/check-task-sdk", () => ({
   runCheck: mocks.runCheck,
 }));
-vi.mock("../src/inspect.js", () => ({
+vi.mock("../src/legacy/inspect.js", () => ({
   toolchainCheckpoints: mocks.toolchainCheckpoints,
 }));
 
 it("registers sequential checkpoints and binds input/signal without swallowing factory faults", async () => {
-  await import("../src/main.js");
+  await import("../src/legacy/main.js");
   expect(mocks.runCheck).toHaveBeenCalledExactlyOnceWith(contract, {
     checkpoints: expect.any(Function) as unknown,
   });

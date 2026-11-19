@@ -1,113 +1,77 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { createCheckContract } from "@silvermoon-work/check-task-sdk/contracts";
-import { ExecutionEnvironment } from "./execution-context.js";
 
 const closed = { additionalProperties: false };
 const version = Type.String({ pattern: "^[0-9]+(?:\\.[0-9]+)*$" });
-const tool = Type.Object({ minimumVersion: Type.Optional(version) }, closed);
-const active = Type.Object(
-  {
-    allowedUrls: Type.Array(Type.String({ minLength: 1 }), {
-      minItems: 1,
-      uniqueItems: true,
-    }),
-  },
-  closed,
-);
+const registryName = Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" });
 export const Input = Type.Object(
   {
-    context: Type.Object(
-      {
-        projectDirectory: Type.String({ minLength: 1 }),
-        executionEnvironment: ExecutionEnvironment,
-      },
-      closed,
+    minimumVersions: Type.Optional(
+      Type.Object(
+        {
+          nvm: Type.Optional(version),
+          node: Type.Optional(version),
+          npm: Type.Optional(version),
+          pnpm: Type.Optional(version),
+          nrm: Type.Optional(version),
+        },
+        closed,
+      ),
     ),
-    requirements: Type.Object(
-      {
-        tools: Type.Optional(
-          Type.Object(
-            {
-              node: Type.Optional(tool),
-              npm: Type.Optional(tool),
-              pnpm: Type.Optional(tool),
-              nvm: Type.Optional(tool),
-              nrm: Type.Optional(tool),
-            },
-            { ...closed, minProperties: 1 },
-          ),
-        ),
-        pairing: Type.Optional(
-          Type.Object({ npmWithNode: Type.Boolean() }, closed),
-        ),
-        management: Type.Optional(
-          Type.Object(
-            {
-              provider: Type.Literal("nvm"),
-              appliesTo: Type.Array(
-                Type.Union([Type.Literal("node"), Type.Literal("npm")]),
-                { minItems: 1, uniqueItems: true },
-              ),
-            },
-            closed,
-          ),
-        ),
-        registries: Type.Optional(
-          Type.Object(
-            {
-              active: Type.Optional(
-                Type.Object(
-                  { npm: Type.Optional(active), pnpm: Type.Optional(active) },
-                  { ...closed, minProperties: 1 },
-                ),
-              ),
-              nrm: Type.Optional(
-                Type.Object(
-                  {
-                    required: Type.Array(
-                      Type.Object(
-                        {
-                          name: Type.String({
-                            pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-                          }),
-                          url: Type.String({ minLength: 1 }),
-                        },
-                        closed,
-                      ),
-                      { minItems: 1, uniqueItems: true },
-                    ),
-                  },
-                  closed,
-                ),
-              ),
-            },
-            { ...closed, minProperties: 1 },
-          ),
-        ),
-      },
-      { ...closed, minProperties: 1 },
+    defaultPackages: Type.Optional(
+      Type.Array(
+        Type.String({
+          pattern: "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$",
+        }),
+        { uniqueItems: true },
+      ),
     ),
+    additionalRegistries: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            name: registryName,
+            url: Type.String({ pattern: "^https?://[^\\s\\\\@?#]+$" }),
+          },
+          closed,
+        ),
+      ),
+    ),
+    defaultRegistry: Type.Optional(registryName),
   },
   closed,
 );
 export type Input = Static<typeof Input>;
-export const RuleCode = Type.Union([
-  Type.Literal("tool-present"),
-  Type.Literal("tool-executable"),
-  Type.Literal("tool-version-readable"),
-  Type.Literal("tool-version-minimum"),
-  Type.Literal("node-npm-paired"),
-  Type.Literal("node-npm-pairing-verifiable"),
-  Type.Literal("tool-managed"),
-  Type.Literal("tool-management-verifiable"),
-  Type.Literal("registry-allowed"),
-  Type.Literal("registry-readable"),
-  Type.Literal("nrm-registration-present"),
-  Type.Literal("nrm-registration-url-matched"),
-]);
+export const tools = ["nvm", "node", "npm", "pnpm", "nrm"] as const;
+export type Tool = (typeof tools)[number];
+export const checkpointIds = [
+  "nvm-installation",
+  "node-installation",
+  "npm-installation",
+  "pnpm-installation",
+  "nrm-installation",
+  "nvm-configuration",
+  "nrm-configuration",
+] as const;
+export const ruleCodes = [
+  "nvm-installation-executable",
+  "nvm-installation-version-valid",
+  "node-installation-executable",
+  "node-installation-version-valid",
+  "node-installation-managed-by-nvm",
+  "npm-installation-executable",
+  "npm-installation-version-valid",
+  "npm-installation-managed-by-nvm",
+  "npm-installation-paired-with-node",
+  "pnpm-installation-executable",
+  "pnpm-installation-version-valid",
+  "nrm-installation-executable",
+  "nrm-installation-version-valid",
+  "nvm-configuration-default-packages-configured",
+  "nrm-configuration-registration-present",
+  "nrm-configuration-registration-url-matched",
+  "nrm-configuration-default-registry-selected",
+] as const;
+export const RuleCode = Type.Union(ruleCodes.map((code) => Type.Literal(code)));
 export type RuleCode = Static<typeof RuleCode>;
-export type Tool = keyof NonNullable<Input["requirements"]["tools"]>;
-export default createCheckContract(Input, RuleCode, [
-  "installation",
-  "configuration",
-]);
+export default createCheckContract(Input, RuleCode, [...checkpointIds]);

@@ -22,7 +22,7 @@ export async function stopTree(pid: number): Promise<void> {
     }
     return;
   }
-  const root = process.env.SystemRoot;
+  const root = process.env.SystemRoot ?? process.env.SYSTEMROOT;
   if (!root || !isAbsolute(root))
     throw new Error("Cannot locate Windows process cleanup utility.");
   await new Promise<void>((resolve, reject) => {
@@ -59,10 +59,10 @@ export async function execute(
     // Only fixed, read-only arguments reach cmd. Reject expansion/metacharacters in PATH entries.
     if (
       /[%"!^&|<>]/.test(executable) ||
-      args.some((a) => !/^[a-zA-Z0-9-]+$/.test(a))
+      args.some((a) => !/^[a-zA-Z0-9_-]+$/.test(a))
     )
       throw new Error("Unsupported Windows shim path or arguments.");
-    const root = process.env.SystemRoot;
+    const root = process.env.SystemRoot ?? process.env.SYSTEMROOT;
     if (!root || !isAbsolute(root))
       throw new Error("Windows system directory unavailable.");
     command = join(root, "System32", "cmd.exe");

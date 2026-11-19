@@ -24,9 +24,10 @@ rc.3 已通过旧框架和固定的 rc.1 门禁发布；现已移除根清单和
 - [`@silvermoon-work/check-task-builder`](packages/check-task-builder/README.md)：
   `check-task-builder init/build`，一次构建交付标准 Task Bundle/CAR。
 
-历史发布基于 Task SDK/Protocol 0.2.0 RC；本工作树对接 Protocol/Engine
-`0.2.1-rc.1`、Builder/Builder CLI `0.2.1-rc.0`、Node-only SDK `0.2.0` 与 IPFS
-Store/Payload `0.1.0`。不复制运行时或编译器，不自动升级历史 npm/CAR。先运行
+历史发布基于 Task SDK/Protocol 0.2.0 RC；本工作树对接
+Protocol `0.2.1-rc.1`、Engine `0.2.2-rc.0`、Builder/Builder CLI
+`0.2.1-rc.0`、Node-only SDK `0.2.0` 与 IPFS Store/Payload
+`0.1.0`。不复制运行时或编译器，不自动升级历史 npm/CAR。先运行
 `check-task-builder init text-check`，编辑逻辑、契约与
 `references/`，再运行生成项目中的 `pnpm build`。
 
