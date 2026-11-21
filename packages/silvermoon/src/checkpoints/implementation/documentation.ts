@@ -25,7 +25,7 @@ export const documentation = {
 
 \`\`\`json
 {
-  "version": 2,
+  "version": 1,
   "id": "<new-32-hex>",
   "at": "<current-UTC-ISO-time>",
   "type": "verify",
@@ -41,7 +41,7 @@ export const documentation = {
     {
       code: "implementation-evidence-valid",
       description:
-        "五个准确版本的共识及各自 primary 同步满足后，按日志顺序取最后一条 version=2、phase=implementation 的 verify。其 rev 必须是 HEAD 的祖先或自身，且其快照中的五个共识版本等于当前有效签署版本。 按 idea-folder 定义比较受测提交与当前快照，除本 Idea 的 events.jsonl 和 evidence/ 外，其他受跟踪内容必须相同；不能只比较最终业务源码而忽略测试、 锁文件或配置。Agent 必须已实际执行该提交对应的全部自动化用例并确认通过， 测试实现及明确入口可重现，不要求实现报告或测试输出副本。 checker 校验提交、材料和事件绑定，不自动运行目标代码，也不独立证明实际执行； 缺少、失效或无法确认本次通过事实时不得推进，不回退旧事件。 有效时 state.implementation 直接等于该 rev。",
+        "五个准确版本的共识及各自 primary 同步满足后，按日志顺序取最后一条 version=1、phase=implementation 的 verify。其 rev 必须是 HEAD 的祖先或自身，且其快照中的五个共识版本等于当前有效签署版本。 按 idea-folder 定义比较受测提交与当前快照，除本 Idea 的 events.jsonl 和 evidence/ 外，其他受跟踪内容必须相同；不能只比较最终业务源码而忽略测试、 锁文件或配置。Agent 必须已实际执行该提交对应的全部自动化用例并确认通过， 测试实现及明确入口可重现，不要求实现报告或测试输出副本。 checker 校验提交、材料和事件绑定，不自动运行目标代码，也不独立证明实际执行； 缺少、失效或无法确认本次通过事实时不得推进，不回退旧事件。 有效时 state.implementation 直接等于该 rev。",
     },
     {
       code: "implementation-synchronized",

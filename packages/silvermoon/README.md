@@ -47,10 +47,10 @@ Checkpoint naming does not rename existing files or historical event/reducer
 phases: `research` matches its event/state key directly, while `test-index` and
 `test-cases` inspect the existing `cases` and `tests` phases respectively.
 
-Implementation requires actual reproducible automated tests and a v2 `verify`
-binding the exact passing commit, without an implementation report. Deployment
-requires Agent-led manual E2E cases recorded in the fixed append-only
-`evidence/deployment/report.jsonl`, with a v2 `verify` binding its raw-byte
+Implementation requires actual reproducible automated tests and a paired
+`verify` binding the exact passing commit, without an implementation report.
+Deployment requires Agent-led manual E2E cases recorded in the fixed append-only
+`evidence/deployment/report.jsonl`, with a paired `verify` binding its raw-byte
 hash. Both phases synchronize their materials and events to primary before
 continuing. The user then operates the delivery and explicitly accepts its exact
 submitted report revision; that paired confirmation must also synchronize. Each
@@ -131,17 +131,17 @@ errors rather than invalid-data reports.
 valid event history with current revisions, evidence, tested subjects and
 observed primary facts. `level` in a lifecycle Problem brief is the first unmet
 domain phase, not a phase already passed; `signed` holds matching signoff event
-IDs and `submitted` holds the latest request IDs. In v2, `implementation` is the
-tested Git commit and `deployment` is the fixed report hash; pure v1 library
-reduction retains historical batch collection digests. The new Idea CAR requires
-v2 paired standards and never treats v1 evidence as new acceptance. Earlier
-readiness failures return their own diagnostics rather than fabricating a
-reduced state. A passing Idea Check establishes completion. Each consensus
-instruction contains its submit JSON and direct predecessor revision;
-idea-folder documents the shared signOff reference template, and verification
-instructions contain phase-specific verify templates. Placeholders must be
-replaced with current observed facts, and a event never substitutes for the
-user's real approval.
+IDs and `submitted` holds the latest request IDs. In the paired format,
+`implementation` is the tested Git commit and `deployment` is the fixed report
+hash; pure v1 library reduction retains historical batch collection digests. The
+new Idea CAR requires paired standards and never treats old inline evidence as
+new acceptance. Earlier readiness failures return their own diagnostics rather
+than fabricating a reduced state. A passing Idea Check establishes completion.
+Each consensus instruction contains its submit JSON and direct predecessor
+revision; idea-folder documents the shared signOff reference template, and
+verification instructions contain phase-specific verify templates. Placeholders
+must be replaced with current observed facts, and a event never substitutes for
+the user's real approval.
 
 Repository acceptance covers the Git root, attached branch and clean worktree;
 branch acceptance covers project configuration, primary existence, upstream and
@@ -369,7 +369,13 @@ arbitrary `GIT_*`, `NODE_OPTIONS` and the full host environment are not
 forwarded. Engine Worker isolation and Git's
 noninteractive/hook/external-protocol protections remain.
 
-## Lifecycle protocol (v2 with historical v1 reading)
+## Lifecycle protocol (version 1)
+
+This lifecycle has not been formally released. Events, case indexes and
+deployment report start rows all remain `version: 1`; paired and old inline
+formats are distinguished by their strict fields, not by a version increment.
+Other event/index versions are explicitly rejected. This does not change the
+separate existing project configuration or CLI report envelope.
 
 Only new `.silvermoon/i/<id>` is read. `.silvermoon/ideas` is untouched archival
 data, never scanned or validated. `.silvermoon/guidance` is not consumed. There
@@ -407,7 +413,7 @@ Example test index:
 
 ```json
 {
-  "version": 2,
+  "version": 1,
   "cases": [
     {
       "id": "I-01",
@@ -421,9 +427,9 @@ Example test index:
 }
 ```
 
-Both phases are mandatory. The v2 index contains only `id` and `phase`; actual
-test conditions and platform requirements belong in the detailed cases. The
-index specifies scope, while Test Spec describes prerequisites, operations,
+Both phases are mandatory. The paired index contains only `id` and `phase`;
+actual test conditions and platform requirements belong in the detailed cases.
+The index specifies scope, while Test Spec describes prerequisites, operations,
 expectations and required proof. Nonempty files are structural checks, not
 semantic approval.
 
@@ -438,14 +444,14 @@ types (identity, alias, language, abandonment and resume remain version 1):
 - `setLanguage`: canonical `language` or `null` to return to inherited content.
 - `abandon`: nonempty `reason`; `resume`: explicit reversal. No intervening
   lifecycle facts while abandoned.
-- v2 `submit`: `object`, exact `revision` and one direct predecessor `upstream`
-  revision (`null` for requirements). Objects are the five standards plus
-  `user-acceptance`, whose revision is the current deployment report hash.
-- v2 `signOff`: only `submit`, referencing an earlier latest request exactly
+- paired `submit`: `object`, exact `revision` and one direct predecessor
+  `upstream` revision (`null` for requirements). Objects are the five standards
+  plus `user-acceptance`, whose revision is the current deployment report hash.
+- paired `signOff`: only `submit`, referencing an earlier latest request exactly
   once, after actual explicit acceptance. No `decision`, revision or vector is
   repeated.
-- v2 `verify`: only `phase` and `rev`; implementation uses an exact passing Git
-  commit, deployment uses the fixed report's raw-byte SHA-256.
+- paired `verify`: only `phase` and `rev`; implementation uses an exact passing
+  Git commit, deployment uses the fixed report's raw-byte SHA-256.
 
 The Check returns current full revisions and event/primary digests in the
 Problem brief. To sign Requirements, for example, use the actual observed values
@@ -466,11 +472,11 @@ synchronization; changed ancestors do.
 
 Historical v1 signOff vectors, optional `decision:"confirmed"` and inline verify
 batches retain their bytes and old library reduction semantics. They are not
-converted to fabricated submissions. Once v2 events begin, new v1 signOff or
-verify records are rejected. The new CAR requires reestablishing the paired
-chain; existing immutable Check CIDs and archived CARs are never automatically
-changed. See [Events guide](../../docs/silvermoon-events.md) for exact schemas
-and examples.
+converted to fabricated submissions. Once paired events begin, new old-format
+signOff vectors or inline verify batches are rejected. The new CAR requires
+reestablishing the paired chain; existing immutable Check CIDs and archived CARs
+are never automatically changed. See
+[Events guide](../../docs/silvermoon-events.md) for exact schemas and examples.
 
 ### Git and transaction guard checks
 
@@ -511,9 +517,9 @@ cases/results, 64 evidence refs/result and 64 distinct tested subjects.
 
 ### Verification and deployment reports
 
-The last v2 verify per phase controls acceptance, never the last successful one.
-The implementation commit must exist, be an ancestor of HEAD, contain the five
-current standard revisions and differ only in this Idea's events/evidence
+The last paired verify per phase controls acceptance, never the last successful
+one. The implementation commit must exist, be an ancestor of HEAD, contain the
+five current standard revisions and differ only in this Idea's events/evidence
 metadata. Changes to other tracked files, including standards, tests, locks and
 config, require retesting. The Check does not execute those tests.
 

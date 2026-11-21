@@ -52,13 +52,14 @@ README's checkpoint authoring section for the refresh command. Every delivered
 CAR remains self-contained, including its Task overview and checkpoint files.
 
 The current [Idea Check Spec](../../docs/silvermoon-single-checker.yaml)
-implements v2 paired submit/signOff confirmations, direct predecessor revisions,
+implements paired submit/signOff confirmations, direct predecessor revisions,
 exact implementation commit verification, a cumulative append-only deployment
 report, and a thirteenth user-acceptance checkpoint. The Check never performs
 automated tests, manual E2E operations or user acceptance itself: it validates
 their recorded versions, strict structures, append-only history and
-synchronization. Old v1 events remain readable without being migrated into v2
-acceptance.
+synchronization. All events and case indexes remain version 1 while unreleased;
+strict fields distinguish the formats. Old inline events remain readable without
+being migrated into paired acceptance.
 
 See the [Events guide](../../docs/silvermoon-events.md) for all eight event
 types and current/historical field distinctions. The original

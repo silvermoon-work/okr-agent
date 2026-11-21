@@ -101,7 +101,7 @@ export function ideaCheckpoint(
           observedIdeaState(
             project,
             current,
-            { head: observed.head, primary: previous, protocol: 2 },
+            { head: observed.head, primary: previous, paired: true },
             context.outputOf(environment).userLanguage,
             context.signal,
           ),

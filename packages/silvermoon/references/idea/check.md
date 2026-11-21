@@ -1,4 +1,4 @@
-# Silvermoon lifecycle protocol v2
+# Silvermoon lifecycle protocol v1
 
 The Idea Check owns 13 ordered checkpoints: global, repository, branch,
 silvermoon-folder, idea-folder, requirements, research, technical, test-index,
@@ -9,16 +9,16 @@ does not complete an Idea.
 
 ## Paired standards
 
-Prepare all support within the five existing revision scopes. Record a v2 submit
-first, show that exact material and request to the user, and only after explicit
-acceptance append a v2 signOff referencing its ID. The chain is requirements ->
-research -> technical -> cases -> tests -> user-acceptance. Each submit binds
-its content revision and one direct predecessor revision, with null at the root.
-Replay captures the original full ancestor context: later requests with the same
-immediate revision cannot silently replace changed ancestors. A latest
-unaccepted request blocks its stage; every request needs its own acceptance. An
-unchanged predecessor content chain can retain downstream confirmations after
-the new predecessor request is accepted and synchronized.
+Prepare all support within the five existing revision scopes. Record a paired
+submit first, show that exact material and request to the user, and only after
+explicit acceptance append a paired signOff referencing its ID. The chain is
+requirements -> research -> technical -> cases -> tests -> user-acceptance. Each
+submit binds its content revision and one direct predecessor revision, with null
+at the root. Replay captures the original full ancestor context: later requests
+with the same immediate revision cannot silently replace changed ancestors. A
+latest unaccepted request blocks its stage; every request needs its own
+acceptance. An unchanged predecessor content chain can retain downstream
+confirmations after the new predecessor request is accepted and synchronized.
 
 Materials, submit and signOff must all reach primary. state.submitted contains
 latest request IDs; state.signed contains current matching signOff IDs.
@@ -29,8 +29,8 @@ grants operational authority.
 
 ## Verification and delivery
 
-Actual reproducible automated implementation tests must pass before recording v2
-verify with phase=implementation and rev=<exact-tested-commit>. No
+Actual reproducible automated implementation tests must pass before recording
+paired verify with phase=implementation and rev=<exact-tested-commit>. No
 implementation report or test-output copy is required. The Check validates that
 commit and its current five standard revisions, not the truth of the Agent's
 claim. Only this Idea's events/evidence metadata may change afterward without
@@ -41,7 +41,7 @@ evidence/deployment/report.jsonl. Append a start row for each round, binding the
 tested implementation, then case rows with actual steps, expected/actual results
 and pass/fail/error/blocked/ not-run. Never edit old failures. Only the latest
 round and last attempt per case count; every approved deployment case must pass.
-Record v2 verify with phase=deployment and rev=<raw-report-sha256>. Only the
+Record paired verify with phase=deployment and rev=<raw-report-sha256>. Only the
 latest deployment event must match the whole current report, and it must follow
 the latest implementation verify. A fresh implementation verification requires
 renewed deployment and delivery acceptance. Synchronize the report, necessary
@@ -62,9 +62,10 @@ newline, a 1 MiB bound and at most 4096 records. Deployment rounds have at most
 ordinary authorized commits, then reobserve check-idea after synchronization.
 
 Historical v1 events retain original bytes and pure historical reduction
-semantics. They do not satisfy this CAR's paired standards or v2 verification,
-and v1 signOff/verify cannot be appended after v2 begins. No upgrade rewrites
-immutable Idea bootstrap fields, pinned Check CIDs or historical CARs.
+semantics. They do not satisfy this CAR's paired standards or paired
+verification, and v1 signOff/verify cannot be appended after paired begins. No
+upgrade rewrites immutable Idea bootstrap fields, pinned Check CIDs or
+historical CARs.
 
 Documentation is inert, standalone direct-file ContentRef text, not an execution
 hook or authorization. The Host reads it offline with a bounded UTF-8 budget.

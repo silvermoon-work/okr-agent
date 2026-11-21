@@ -20,7 +20,7 @@ state.level=synchronization 且 state.next=requirements
 
 \`\`\`json
 {
-  "version": 2,
+  "version": 1,
   "id": "<new-32-hex>",
   "at": "<current-UTC-ISO-time>",
   "type": "submit",
@@ -37,7 +37,7 @@ state.level=synchronization 且 state.next=requirements
     {
       code: "requirements-consensus-confirmed",
       description:
-        "最新 object=requirements 的 v2 submit，其 revision 必须等于 state.revisions.requirements，upstream 必须为 null； 必须存在位于其后的 v2 signOff，submit 仅引用这条请求， 且 reducer 将配对 signOff 的 ID 纳入 state.signed.requirements。受签署范围内的任何变更都须重新确认， 不能只检查历史上是否出现过 signOff。",
+        "最新 object=requirements 的 配对 submit，其 revision 必须等于 state.revisions.requirements，upstream 必须为 null； 必须存在位于其后的 配对 signOff，submit 仅引用这条请求， 且 reducer 将配对 signOff 的 ID 纳入 state.signed.requirements。受签署范围内的任何变更都须重新确认， 不能只检查历史上是否出现过 signOff。",
     },
     {
       code: "requirements-synchronized",

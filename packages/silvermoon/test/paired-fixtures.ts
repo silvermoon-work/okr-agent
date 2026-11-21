@@ -4,20 +4,20 @@ import {
   digest,
   gates,
   idea,
-  type Event,
+  type PairedEvent,
   type Files,
   type SubmissionObject,
 } from "../src/domain.js";
-import { reportPath } from "../src/lifecycle-v2.js";
+import { reportPath } from "../src/lifecycle.js";
 import { add, files as legacyFiles, id } from "./fixtures.js";
 
 type Body<T> = T extends unknown ? Omit<T, "version" | "at" | "id"> : never;
-export function v2Event<const T extends Body<Extract<Event, { version: 2 }>>>(
+export function pairedEvent<const T extends Body<PairedEvent>>(
   value: T,
-): T & { version: 2; id: string; at: string } {
+): T & { version: 1; id: string; at: string } {
   return {
     ...value,
-    version: 2,
+    version: 1,
     id: randomBytes(16).toString("hex"),
     at: new Date().toISOString(),
   };
@@ -28,7 +28,7 @@ export function files() {
     "tests/cases.json",
     Buffer.from(
       canonical({
-        version: 2,
+        version: 1,
         cases: [
           { id: "I-01", phase: "implementation" },
           { id: "D-01", phase: "deployment" },
@@ -46,7 +46,7 @@ export function submit(
   const current = idea(source, id);
   const previous =
     object === "user-acceptance" ? "tests" : gates[gates.indexOf(object) - 1];
-  return v2Event({
+  return pairedEvent({
     type: "submit",
     object,
     revision:
@@ -61,7 +61,7 @@ export function sign(source: Files, object: SubmissionObject) {
   const request = submit(source, object);
   return add(
     add(source, request),
-    v2Event({ type: "signOff", submit: request.id }),
+    pairedEvent({ type: "signOff", submit: request.id }),
   );
 }
 export function signed(source: Files = files()) {
@@ -88,7 +88,7 @@ export function deployed(source: Files, implementation: string) {
   updated.set(reportPath, Buffer.from(report(implementation)));
   return add(
     updated,
-    v2Event({
+    pairedEvent({
       type: "verify",
       phase: "deployment",
       rev: digest(updated.get(reportPath)!),

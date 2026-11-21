@@ -16,11 +16,11 @@ state.next=tests 表示确认等待同步。只有 reducer 已进入 implementat
 ### 准备、评审和记录
 
 1. 在 \`tests/Spec.md\` 及附件中按已确认 case id 编写详细用例。实现用例说明自动化测试映射、依赖准备、明确运行入口和通过判据，保证他人可重跑；不要求实现报告。部署用例说明前置准备、操作步骤、预期结果及具体测试条件，由 Agent 主导端到端手工执行，并在固定部署报告逐项记录实际结果。必要的日志或截图要求写在对应具体用例，不强制所有用例统一附证据文件。\`tests/\` 中除独立索引 \`cases.json\` 外的全部材料共同参与本阶段签署。
-2. 观察 revisions、eventDigest 和 primary，核对当前 cases submit 及其前序链已确认并同步。先追加下列v2 submit，再向用户 review 全部详细用例。若需要改变索引，先回到 test-index 重新提交并确认。
+2. 观察 revisions、eventDigest 和 primary，核对当前 cases submit 及其前序链已确认并同步。先追加下列配对 submit，再向用户 review 全部详细用例。若需要改变索引，先回到 test-index 重新提交并确认。
 
 \`\`\`json
 {
-  "version": 2,
+  "version": 1,
   "id": "<new-32-hex>",
   "at": "<current-UTC-ISO-time>",
   "type": "submit",
@@ -37,7 +37,7 @@ state.next=tests 表示确认等待同步。只有 reducer 已进入 implementat
     {
       code: "test-cases-consensus-confirmed",
       description:
-        "最新 object=tests 的 v2 submit，其 revision 等于 state.revisions.tests，upstream 严格等于当前已确认并同步的 state.revisions.cases；其后存在仅引用该请求的 v2 signOff，整条前序内容链有效，且 reducer 将配对 signOff 的 ID 纳入 state.signed.tests。当前 Test Spec 及全部补充材料共同决定该版本。",
+        "最新 object=tests 的 配对 submit，其 revision 等于 state.revisions.tests，upstream 严格等于当前已确认并同步的 state.revisions.cases；其后存在仅引用该请求的 配对 signOff，整条前序内容链有效，且 reducer 将配对 signOff 的 ID 纳入 state.signed.tests。当前 Test Spec 及全部补充材料共同决定该版本。",
     },
     {
       code: "test-cases-synchronized",

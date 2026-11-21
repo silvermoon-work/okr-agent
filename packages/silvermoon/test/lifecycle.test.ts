@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canonical,
+  caseIndex,
   digest,
   gates,
   idea,
@@ -12,7 +13,7 @@ import {
   deploymentReport,
   pairedHistory,
   reportPath,
-} from "../src/lifecycle-v2.js";
+} from "../src/lifecycle.js";
 import {
   git,
   readProject,
@@ -42,10 +43,34 @@ import {
   sign,
   signed,
   submit,
-  v2Event,
-} from "./v2-fixtures.js";
+  pairedEvent,
+} from "./paired-fixtures.js";
 
 describe("paired submissions and precise ancestry", () => {
+  it("keeps unreleased paired events and indexes at version 1 and rejects version 2", () => {
+    const source = files();
+    const current = idea(source, id);
+    const request = submit(source, "requirements");
+    expect(request.version).toBe(1);
+    expect(caseIndex(source).version).toBe(1);
+    expect(() =>
+      parseEvents(
+        current.eventSource + canonical({ ...request, version: 2 }) + "\n",
+        current.bootstrap,
+      ),
+    ).toThrow(/Unsupported event protocol version/);
+    const unsupported = new Map(source);
+    unsupported.set(
+      "tests/cases.json",
+      Buffer.from(
+        canonical({
+          ...caseIndex(source),
+          version: 2,
+        }),
+      ),
+    );
+    expect(() => caseIndex(unsupported)).toThrow(/Invalid tests/);
+  });
   it("requires a request before explicit acceptance and synchronizes both events", () => {
     const original = idea(files(), id);
     const request = submit(original.files, "requirements");
@@ -62,7 +87,7 @@ describe("paired submissions and precise ancestry", () => {
       submitted: { requirements: request.id },
       signed: {},
     });
-    const approval = v2Event({ type: "signOff", submit: request.id });
+    const approval = pairedEvent({ type: "signOff", submit: request.id });
     expect(() => {
       validateAppend(pending, approval, state, false);
     }).toThrow(/Explicit/);
@@ -102,7 +127,7 @@ describe("paired submissions and precise ancestry", () => {
     expect(
       reduce(idea(source, id), { head, primary: idea(source, id) }).level,
     ).toBe("requirements");
-    source = add(source, v2Event({ type: "signOff", submit: pending.id }));
+    source = add(source, pairedEvent({ type: "signOff", submit: pending.id }));
     expect(
       reduce(idea(source, id), { head, primary: idea(source, id) }).level,
     ).toBe("implementation");
@@ -122,7 +147,7 @@ describe("paired submissions and precise ancestry", () => {
     const source = files();
     expect(() =>
       idea(
-        add(source, v2Event({ type: "signOff", submit: "0".repeat(32) })),
+        add(source, pairedEvent({ type: "signOff", submit: "0".repeat(32) })),
         id,
       ),
     ).toThrow(/earlier latest/);
@@ -130,14 +155,20 @@ describe("paired submissions and precise ancestry", () => {
     const second = submit(source, "requirements");
     const requests = add(add(source, first), second);
     expect(() =>
-      idea(add(requests, v2Event({ type: "signOff", submit: first.id })), id),
+      idea(
+        add(requests, pairedEvent({ type: "signOff", submit: first.id })),
+        id,
+      ),
     ).toThrow(/earlier latest/);
     const approved = add(
       requests,
-      v2Event({ type: "signOff", submit: second.id }),
+      pairedEvent({ type: "signOff", submit: second.id }),
     );
     expect(() =>
-      idea(add(approved, v2Event({ type: "signOff", submit: second.id })), id),
+      idea(
+        add(approved, pairedEvent({ type: "signOff", submit: second.id })),
+        id,
+      ),
     ).toThrow(/exactly once/);
     expect(() => idea(add(source, submit(source, "research")), id)).toThrow(
       /predecessor/,
@@ -152,9 +183,12 @@ describe("paired submissions and precise ancestry", () => {
     const newRoot = submit(chain, "requirements");
     chain = add(chain, newRoot);
     expect(() =>
-      idea(add(chain, v2Event({ type: "signOff", submit: research.id })), id),
+      idea(
+        add(chain, pairedEvent({ type: "signOff", submit: research.id })),
+        id,
+      ),
     ).toThrow(/stale predecessor/);
-    chain = add(chain, v2Event({ type: "signOff", submit: newRoot.id }));
+    chain = add(chain, pairedEvent({ type: "signOff", submit: newRoot.id }));
     chain = signed();
     chain.set("requirements/Spec.md", Buffer.from("Different root"));
     chain = sign(chain, "requirements");
@@ -168,7 +202,7 @@ describe("paired submissions and precise ancestry", () => {
     expect(reduce(legacy, { head, primary: legacy }).level).toBe(
       "implementation",
     );
-    expect(reduce(legacy, { head, primary: legacy, protocol: 2 }).level).toBe(
+    expect(reduce(legacy, { head, primary: legacy, paired: true }).level).toBe(
       "requirements",
     );
     const source = add(legacy.files, submit(legacy.files, "requirements"));
@@ -204,7 +238,7 @@ describe("phase verification and cumulative deployment reports", () => {
   it("requires synchronized tests and implementation, validates latest reports, then waits for user acceptance", () => {
     let source = signed();
     let current = idea(source, id);
-    const implementation = v2Event({
+    const implementation = pairedEvent({
       type: "verify",
       phase: "implementation",
       rev: head,
@@ -240,7 +274,7 @@ describe("phase verification and cumulative deployment reports", () => {
     const request = submit(deployedFiles, "user-acceptance");
     validateAppend(deployment, request, state, false);
     const pending = idea(add(deployedFiles, request), id);
-    const acceptance = v2Event({ type: "signOff", submit: request.id });
+    const acceptance = pairedEvent({ type: "signOff", submit: request.id });
     validateAppend(
       pending,
       acceptance,
@@ -257,7 +291,7 @@ describe("phase verification and cumulative deployment reports", () => {
     );
     const rerun = add(
       accepted.files,
-      v2Event({ type: "verify", phase: "implementation", rev: head }),
+      pairedEvent({ type: "verify", phase: "implementation", rev: head }),
     );
     expect(
       reduce(idea(rerun, id), { head, primary: idea(rerun, id) }).level,
@@ -274,7 +308,7 @@ describe("phase verification and cumulative deployment reports", () => {
     (result) => {
       let source = add(
         signed(),
-        v2Event({ type: "verify", phase: "implementation", rev: head }),
+        pairedEvent({ type: "verify", phase: "implementation", rev: head }),
       );
       source = deployed(source, head);
       const previous = idea(source, id);
@@ -293,7 +327,7 @@ describe("phase verification and cumulative deployment reports", () => {
       expect(() => idea(source, id)).toThrow(/current report bytes/);
       source = add(
         source,
-        v2Event({
+        pairedEvent({
           type: "verify",
           phase: "deployment",
           rev: digest(source.get(reportPath)!),
@@ -315,7 +349,7 @@ describe("phase verification and cumulative deployment reports", () => {
       );
       source = add(
         source,
-        v2Event({
+        pairedEvent({
           type: "verify",
           phase: "deployment",
           rev: digest(source.get(reportPath)!),
@@ -331,7 +365,7 @@ describe("phase verification and cumulative deployment reports", () => {
   it("does not reuse an earlier round, mismatched implementation or unknown cases", () => {
     const source = add(
       signed(),
-      v2Event({ type: "verify", phase: "implementation", rev: head }),
+      pairedEvent({ type: "verify", phase: "implementation", rev: head }),
     );
     for (const content of [
       canonical({ version: 1, type: "start", implementation: head }) + "\n",
@@ -346,7 +380,7 @@ describe("phase verification and cumulative deployment reports", () => {
       const verified = idea(
         add(
           candidate,
-          v2Event({
+          pairedEvent({
             type: "verify",
             phase: "deployment",
             rev: digest(content),
@@ -430,7 +464,7 @@ describe("phase verification and cumulative deployment reports", () => {
 
   it("rejects premature verification, absent deployment and acceptance of the wrong delivery", () => {
     const original = idea(files(), id);
-    const verify = v2Event({
+    const verify = pairedEvent({
       type: "verify",
       phase: "implementation",
       rev: head,
@@ -449,7 +483,7 @@ describe("phase verification and cumulative deployment reports", () => {
       idea(
         add(
           standards,
-          v2Event({
+          pairedEvent({
             type: "verify",
             phase: "deployment",
             rev: digest("missing"),
@@ -498,7 +532,7 @@ describe("phase verification and cumulative deployment reports", () => {
       const tested = await git(root, ["rev-parse", "HEAD"]);
       source = add(
         source,
-        v2Event({ type: "verify", phase: "implementation", rev: tested }),
+        pairedEvent({ type: "verify", phase: "implementation", rev: tested }),
       );
       await materialize(root, source);
       await sync(root);
@@ -546,7 +580,7 @@ describe("phase verification and cumulative deployment reports", () => {
       ).not.toContain(tested);
       const unknown = add(
         source,
-        v2Event({
+        pairedEvent({
           type: "verify",
           phase: "implementation",
           rev: "f".repeat(40),

@@ -9,6 +9,8 @@ import {
   digest,
   idea,
   ideaFacts,
+  isPairedEvent,
+  isPairedIndex,
   invariant,
   language,
   maxBytes,
@@ -24,7 +26,7 @@ import {
   type ProjectConfig,
   type State,
 } from "./domain.js";
-import { reportPath } from "./lifecycle-v2.js";
+import { reportPath } from "./lifecycle.js";
 
 const execute = promisify(execFile);
 export type Snapshot = string;
@@ -593,7 +595,7 @@ export async function validSubjects(
     ...new Set(
       current.events.flatMap((event) =>
         event.type === "verify"
-          ? event.version === 1
+          ? "batch" in event
             ? [event.batch.subject]
             : event.phase === "implementation"
               ? [event.rev]
@@ -603,14 +605,12 @@ export async function validSubjects(
     ),
   ];
   invariant(
-    subjects.length <=
-      (current.events.some((event) => event.version === 2) ? 4096 : 64),
+    subjects.length <= (current.events.some(isPairedEvent) ? 4096 : 64),
     "capacity",
     "Evidence history exceeds 64 distinct subjects.",
   );
   const paired =
-    current.events.some((event) => event.version === 2) ||
-    current.cases.version === 2;
+    current.events.some(isPairedEvent) || isPairedIndex(current.cases);
   const accepted: string[] = paired ? [] : [head];
   for (const subject of subjects) {
     if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(subject)) continue;
@@ -677,7 +677,7 @@ export async function observedIdeaState(
   context: {
     readonly head: string;
     readonly primary: Project;
-    readonly protocol?: 2;
+    readonly paired?: boolean;
   },
   preference?: string,
   signal?: AbortSignal,
@@ -691,7 +691,7 @@ export async function observedIdeaState(
       : {}),
     ...(preference ? { userLanguage: language(preference) } : {}),
     subjects: await validSubjects(project.root, current, context.head, signal),
-    ...(context.protocol ? { protocol: context.protocol } : {}),
+    ...(context.paired ? { paired: context.paired } : {}),
   });
 }
 export type LocalState =

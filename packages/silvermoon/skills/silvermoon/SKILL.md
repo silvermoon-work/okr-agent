@@ -4,7 +4,11 @@ description:
   Operate the scoped Check-backed Silvermoon consensus and evidence workflow.
 ---
 
-# Silvermoon (lifecycle protocol v2, historical v1 reading)
+# Silvermoon (lifecycle protocol version 1)
+
+Before formal release, events and case indexes stay version 1 even as their
+structure evolves. Paired and old inline formats are identified by their fields,
+not different version numbers. Never append version 2 events or indexes.
 
 Use the running scoped installation's `silvermoon`, never a project dependency
 or a legacy tool as a fallback. Do not install, globally link or replace tools
@@ -82,16 +86,16 @@ Form consensus in this exact order:
 1. Complete `requirements/` including all support.
 2. Standalone `technical/research.md` question/focus index.
 3. Complete `technical/` except that index, including supplementary design.
-4. Standalone v2 `tests/cases.json` index containing only case id and phase.
+4. Standalone paired `tests/cases.json` index containing only case id and phase.
 5. Complete `tests/` except that index, including case bodies and support.
 
 Show the exact current revision/diff and material files before asking the human.
-Append a v2 `submit` before requesting the user's decision. It records object,
-current revision and only the direct predecessor revision (null for
-requirements). Record v2 `signOff` only after explicit acceptance, referencing
-the latest exact submit ID without repeating object/revision/upstream. An event
-is not authentication or inferred permission. Read revisions from the Check,
-never guess hashes.
+Append a paired `submit` before requesting the user's decision. It records
+object, current revision and only the direct predecessor revision (null for
+requirements). Record paired `signOff` only after explicit acceptance,
+referencing the latest exact submit ID without repeating
+object/revision/upstream. An event is not authentication or inferred permission.
+Read revisions from the Check, never guess hashes.
 
 Agent submits the exact draft FIRST, then people explicitly accept that request.
 Validate, commit and synchronize the same signed bytes and both events with
@@ -115,30 +119,30 @@ Lifecycle Problem briefs include reduced state, current revisions,
 `eventDigest`, `primary` and `subject`. Reduction uses the whole valid history,
 current revisions, evidence and Git context. `level` is the first unmet domain
 phase. `state.submitted` contains latest submit IDs and `state.signed` contains
-matching signOff IDs. In v2, implementation is the tested commit and deployment
-is the report's raw-byte SHA-256; neither is an event ID. A local completed
-level is not proof of synchronization. Read each checkpoint's short description
-for its scope and its separate instructions for document preparation, review and
-exact event JSON. If the user does not explicitly approve the current materials,
-iterate the documents without recording a signOff; never submit template
-placeholders as facts.
+matching signOff IDs. In the paired format, implementation is the tested commit
+and deployment is the report's raw-byte SHA-256; neither is an event ID. A local
+completed level is not proof of synchronization. Read each checkpoint's short
+description for its scope and its separate instructions for document
+preparation, review and exact event JSON. If the user does not explicitly
+approve the current materials, iterate the documents without recording a
+signOff; never submit template placeholders as facts.
 
-Use v2 `type: "signOff"` with only its `submit` reference and no `decision`.
+Use paired `type: "signOff"` with only its `submit` reference and no `decision`.
 Historical `decision: "confirmed"` events remain readable and must not be
 rewritten; other decision values are invalid. Only a real explicit user decision
 authorizes recording a signoff.
 
 Implementation/deployment have Agent verification, followed by an independent
 user-acceptance gate. Actually execute every implementation automated case on
-the exact commit; only after all pass record v2 verify with phase and rev. Keep
-tests, dependencies and explicit commands reproducible, without an
+the exact commit; only after all pass record paired verify with phase and rev.
+Keep tests, dependencies and explicit commands reproducible, without an
 implementation report or test-output copy.
 
 For deployment, manually operate the actual delivery through every E2E case.
 Append a start row binding the implementation and then actual case attempts to
 evidence/deployment/report.jsonl. Preserve failures and old rounds; do not edit,
 truncate or format existing rows. Latest round and last attempt per case must
-all pass. Append v2 verify with phase=deployment and the whole report hash.
+all pass. Append paired verify with phase=deployment and the whole report hash.
 Unknown, blocked, not-run and incomplete results never pass.
 
 Complete implementation verification, then commit and synchronize the
@@ -153,11 +157,11 @@ explicit acceptance append its paired signOff. Synchronize both events and
 reobserve before declaring completion.
 
 Historical v1 events remain unchanged; do not fabricate missing submits or mix
-old batches into new acceptance. After v2 begins, new v1 signOff/verify events
-are invalid. Never change an existing pinned Check CID to migrate it. These
-actions require existing authorization; the Check never performs them
-automatically. Checkpoint IDs do not change historical event phases or existing
-content paths.
+old batches into new acceptance. After paired records begin, new old-format
+signOff vectors or inline verify batches are invalid. Never change an existing
+pinned Check CID to migrate it. These actions require existing authorization;
+the Check never performs them automatically. Checkpoint IDs do not change
+historical event phases or existing content paths.
 
 Publishing, production, payment and destructive actions require independent
 authorization. A lifecycle signoff never grants those rights. Preserve all

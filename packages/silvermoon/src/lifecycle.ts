@@ -6,9 +6,12 @@ import {
   digest,
   gates,
   ideaFacts,
+  isPairedEvent,
+  isPairedIndex,
   invariant,
   requiredText,
   type Event,
+  type PairedEvent,
   type Files,
   type Gate,
   type Idea,
@@ -99,12 +102,12 @@ export function deploymentReport(files: Files) {
 }
 
 type Submit = Extract<Event, { type: "submit" }>;
-type SignOff = Extract<Event, { version: 2; type: "signOff" }>;
+type SignOff = Extract<PairedEvent, { type: "signOff" }>;
 interface Request {
   readonly event: Submit;
   readonly ancestors: Partial<Revisions>;
-  readonly implementation?: Event;
-  readonly deployment?: Event;
+  readonly implementation?: Extract<PairedEvent, { type: "verify" }>;
+  readonly deployment?: Extract<PairedEvent, { type: "verify" }>;
   signOff?: SignOff;
 }
 function predecessor(object: SubmissionObject): Gate | undefined {
@@ -125,10 +128,10 @@ function revisionsOf(request: Request): Partial<Revisions> {
 export function pairedHistory(events: readonly Event[]) {
   const latest = new Map<SubmissionObject, Request>();
   const requests = new Map<string, Request>();
-  let implementation: Event | undefined;
-  let deployment: Event | undefined;
+  let implementation: Extract<PairedEvent, { type: "verify" }> | undefined;
+  let deployment: Extract<PairedEvent, { type: "verify" }> | undefined;
   for (const event of events) {
-    if (event.version !== 2) continue;
+    if (!isPairedEvent(event)) continue;
     if (event.type === "submit") {
       const parent = predecessor(event.object);
       const previous = parent ? latest.get(parent) : undefined;
@@ -161,11 +164,7 @@ export function pairedHistory(events: readonly Event[]) {
       );
       if (event.object === "user-acceptance")
         invariant(
-          implementation?.type === "verify" &&
-            implementation.version === 2 &&
-            deployment?.type === "verify" &&
-            deployment.version === 2 &&
-            deployment.rev === event.revision,
+          implementation && deployment && deployment.rev === event.revision,
           "events",
           "User acceptance must follow current implementation and deployment verification.",
         );
@@ -291,15 +290,14 @@ export function reducePaired(current: Idea, options: ReductionOptions): State {
     return undefined;
   };
   for (const gate of gates) {
-    if (gate === "cases" && current.cases.version !== 2)
+    if (gate === "cases" && !isPairedIndex(current.cases))
       return { ...state, level: gate };
     const gap = confirmation(gate, current.revisions[gate]);
     if (gap) return { ...state, ...gap };
   }
   const implementation = history.implementation;
   if (
-    implementation?.type !== "verify" ||
-    implementation.version !== 2 ||
+    !implementation ||
     !(options.subjects ?? [options.head]).includes(implementation.rev)
   )
     return { ...state, level: "implementation" };
@@ -307,8 +305,7 @@ export function reducePaired(current: Idea, options: ReductionOptions): State {
   if (!present(implementation))
     return { ...implemented, level: "implementation" };
   const deployment = history.deployment;
-  if (deployment?.type !== "verify" || deployment.version !== 2)
-    return { ...implemented, level: "deployment" };
+  if (!deployment) return { ...implemented, level: "deployment" };
   const report = deploymentReport(current.files);
   const needed = current.cases.cases.filter(
     (item) => item.phase === "deployment",
@@ -334,7 +331,7 @@ export function reducePaired(current: Idea, options: ReductionOptions): State {
 
 export function validatePairedAppend(
   current: Idea,
-  event: Extract<Event, { version: 2 }>,
+  event: PairedEvent,
   state: State,
   confirmed: boolean,
 ): void {

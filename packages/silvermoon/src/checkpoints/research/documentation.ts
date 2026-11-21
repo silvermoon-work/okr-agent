@@ -15,11 +15,11 @@ state.level=synchronization 且 state.next=research 表示调研确认等待同�
 ### 准备、评审和记录
 
 1. 编写 \`technical/research.md\`，以 Markdown 问题索引列出需要调研的问题、用户关注点、待查证事实及其影响的技术决策；这里确认的是调研范围，不用未完成的调研结论冒充答案。
-2. 核对需求的最新 submit 已确认并同步，观察当前版本、eventDigest 和 primary；先追加下列v2 submit，再向用户展示问题索引及其绑定的需求内容版本，等待明确决定。upstream 只保存当前需求 revision，不保存 submit ID。
+2. 核对需求的最新 submit 已确认并同步，观察当前版本、eventDigest 和 primary；先追加下列配对 submit，再向用户展示问题索引及其绑定的需求内容版本，等待明确决定。upstream 只保存当前需求 revision，不保存 submit ID。
 
 \`\`\`json
 {
-  "version": 2,
+  "version": 1,
   "id": "<new-32-hex>",
   "at": "<current-UTC-ISO-time>",
   "type": "submit",
@@ -36,7 +36,7 @@ state.level=synchronization 且 state.next=research 表示调研确认等待同�
     {
       code: "research-consensus-confirmed",
       description:
-        "最新 object=research 的 v2 submit，其 revision 等于 state.revisions.research，upstream 严格等于当前已确认并同步的 state.revisions.requirements；其后存在仅引用该请求的 v2 signOff，且 reducer 将配对 signOff 的 ID 纳入 state.signed.research；不以事件存在本身或旧版本确认作为通过依据。",
+        "最新 object=research 的 配对 submit，其 revision 等于 state.revisions.research，upstream 严格等于当前已确认并同步的 state.revisions.requirements；其后存在仅引用该请求的 配对 signOff，且 reducer 将配对 signOff 的 ID 纳入 state.signed.research；不以事件存在本身或旧版本确认作为通过依据。",
     },
     {
       code: "research-synchronized",

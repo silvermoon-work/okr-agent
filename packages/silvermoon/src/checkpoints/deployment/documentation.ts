@@ -32,7 +32,7 @@ export const documentation = {
 
 \`\`\`json
 {
-  "version": 2,
+  "version": 1,
   "id": "<new-32-hex>",
   "at": "<current-UTC-ISO-time>",
   "type": "verify",
@@ -48,7 +48,7 @@ export const documentation = {
     {
       code: "deployment-evidence-valid",
       description:
-        "按事件行顺序选最后一条 version=2、phase=deployment 的 verify， 且它必须位于最新 implementation verify 之后。读取固定安全普通文件 evidence/deployment/report.jsonl，要求全文件原始字节 SHA-256 等于事件 rev。 全部历史行均须满足上述严格格式；只取最新 start 至文件末尾作为本轮， start.implementation 严格等于当前 state.implementation。 本轮 case 行只能引用当前 deployment 用例，不能夹带实现或未知用例； 按 case 取本轮最后一行，必须恰好覆盖当前全部部署用例，且均为 pass。 同轮早期失败仍保留，但可由真实复测的新结果替代；不跨 start 复用旧结果，不回退某个 case 的旧成功。各行 steps、expected、actual 均须为非空实际记录，不以整体成功标记代替逐项验收。任一最终结果为 fail、error、blocked、not-run， 缺项、报告缺失、摘要不符或实现过期均阻断，不回退旧报告或旧格式成功。 有效时 state.deployment 直接等于最新事件 rev； 缺少当前交付的有效用户确认时返回 state.level=user-acceptance，而不是 completed。 报告证明的是 Agent 所记录的逐项验收结论及其版本绑定，不独立证明操作真实发生， 不代表用户验收通过，也不以部署命令返回成功或自动化测试通过替代手工 E2E。",
+        "按事件行顺序选最后一条 version=1、phase=deployment 的 verify， 且它必须位于最新 implementation verify 之后。读取固定安全普通文件 evidence/deployment/report.jsonl，要求全文件原始字节 SHA-256 等于事件 rev。 全部历史行均须满足上述严格格式；只取最新 start 至文件末尾作为本轮， start.implementation 严格等于当前 state.implementation。 本轮 case 行只能引用当前 deployment 用例，不能夹带实现或未知用例； 按 case 取本轮最后一行，必须恰好覆盖当前全部部署用例，且均为 pass。 同轮早期失败仍保留，但可由真实复测的新结果替代；不跨 start 复用旧结果，不回退某个 case 的旧成功。各行 steps、expected、actual 均须为非空实际记录，不以整体成功标记代替逐项验收。任一最终结果为 fail、error、blocked、not-run， 缺项、报告缺失、摘要不符或实现过期均阻断，不回退旧报告或旧格式成功。 有效时 state.deployment 直接等于最新事件 rev； 缺少当前交付的有效用户确认时返回 state.level=user-acceptance，而不是 completed。 报告证明的是 Agent 所记录的逐项验收结论及其版本绑定，不独立证明操作真实发生， 不代表用户验收通过，也不以部署命令返回成功或自动化测试通过替代手工 E2E。",
     },
     {
       code: "deployment-synchronized",

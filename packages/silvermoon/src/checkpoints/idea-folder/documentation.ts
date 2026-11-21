@@ -10,7 +10,7 @@ export const documentation = {
 缺失、不可信或不支持时按执行错误处理，不猜测最新版替代，也不自动恢复已放弃的
 Idea。
 
-### 事件与材料边界（v2 协议）
+### 事件与材料边界（配对 协议）
 
 事件只记录发生了什么、针对哪个对象，以及所引用材料的准确版本。
 created 保留初始身份和 Check CID；submit 保存 object、revision 和单一
@@ -19,9 +19,9 @@ setAlias、setLanguage 保留新值；resume 不增加业务正文。
 abandon.reason 只写一句简短原因，分析、讨论和用户反馈放在对应材料文件中，
 不把长篇说明、报告或证据正文塞入 events.jsonl。
 
-### 提交与确认配对（v2 协议）
+### 提交与确认配对（配对 协议）
 
-新增 version=2 的 submit，业务字段严格为 object、revision、upstream。
+新增 version=1 的 submit，业务字段严格为 object、revision、upstream。
 object 为 requirements、research、technical、cases、tests 或 user-acceptance；
 前五者的 revision 绑定对应材料范围的准确摘要，user-acceptance 绑定当前
 deployment 报告摘要，沿报告最新 start 的 implementation 追溯准确代码提交。
@@ -52,7 +52,7 @@ Agent 先准备材料、观察版本并追加 submit，再向用户展示该准�
 submit 不是批准，未收到明确接受时不能提前追加 signOff 或推进下一关。
 用户要求修改时保留旧事件，修改后重新 submit；不把旧反馈套到新请求。
 用户明确接受后，重新核对内容、前序链和当前最新 submit，再追加
-version=2 的 signOff，业务字段严格只有 submit=<本次submit事件ID>。
+version=1 的 signOff，业务字段严格只有 submit=<本次submit事件ID>。
 引用须指向本 Idea 日志中更早的最新有效 submit，且一条 submit 至多配对
 一条 signOff；孤立、重复、前向或未知引用是数据无效，旧请求迟到的信号不得
 当成新请求的确认。signOff 不携带 decision，也不证明用户身份。
@@ -60,7 +60,7 @@ version=2 的 signOff，业务字段严格只有 submit=<本次submit事件ID>�
 
 \`\`\`json
 {
-  "version": 2,
+  "version": 1,
   "id": "<new-signoff-32-hex>",
   "at": "<current-UTC-ISO-time>",
   "type": "signOff",
@@ -74,9 +74,9 @@ submit 可以先提交同步，signOff 在用户信号后另行追加同步，�
 递归 ASCII 键序、UTF-8、LF 和最终换行；写入前核对 eventDigest 和 primary，
 冲突时重新观察，不盲目复用旧输入。
 
-### 两阶段验证（v2 协议）
+### 两阶段验证（配对 协议）
 
-新 verify 使用 version=2，除通用 version、唯一 id、at 和 type 外，
+新 verify 使用 version=1，除通用 version、唯一 id、at 和 type 外，
 body 仅包含 phase、rev；不再包含 environment、report.path、batch、results、
 共识版本向量、证据清单或额外的结果标记。phase 只能是 implementation 或 deployment。
 rev 表示本阶段验收对象的准确版本，不是事件修订号：
@@ -114,7 +114,7 @@ verify.rev 绑定本次记录完毕后的文件，不再写一份重复结论。
 只能追加，不能覆盖、删除、截断或格式化旧行；重新验收也追加 start 而非清空文件。
 并发写入先复核前缀和版本，不交错写入或自动覆盖冲突。
 保存本轮记录后计算整个报告当前原始字节 rev，再追加全新 verify 事件。
-同一次v2快照中报告和最新事件必须匹配，之后一起提交、同步。
+同一次配对快照中报告和最新事件必须匹配，之后一起提交、同步。
 工作树只维护这一个累积报告文件，不为每次验证复制目录，Git 另保留提交历史。
 历史事件原始字节不变，但其 rev 不要求匹配当前报告；
 checker 仅对最新 deployment verify 校验当前报告，不能逐条用当前文件校验历史 rev。
@@ -125,15 +125,15 @@ checker 仅对最新 deployment verify 校验当前报告，不能逐条用当�
 并受 Idea 总容量限制；达到容量时明确阻断，不通过截断历史绕过。
 events.jsonl 仍独立受 1 MiB 和 4096 条限制。
 
-历史 version=1、内嵌 batch 的 verify 保留原始字节，只读兼容，不批量改写。
-历史 version=1 signOff 保留原始字节及旧语义，不伪造其缺失的 submit。
-仅后续明确支持v2 协议的 Check 可读取 version=2 的 submit、signOff 和 verify；
+历史 旧格式、内嵌 batch 的 verify 保留原始字节，只读兼容，不批量改写。
+历史 旧格式 signOff 保留原始字节及旧语义，不伪造其缺失的 submit。
+仅后续明确支持配对 协议的 Check 可读取 version=1 的 submit、signOff 和 verify；
 其余事件版本保持原约定，未知版本明确报错，不按旧结构猜测或静默降级。
 本轮不改变任何 Idea 的固定 checkCid 或历史 CAR。
-v2 协议不把旧的逐环境批次和新的按阶段验收混算。
-支持v2 协议的 Check 可只读解释旧历史，但要按新规则推进，
-必须重新执行自动化测试并记录 version=2 的 implementation verify，
-再完成固定报告和 version=2 的 deployment verify；旧批次不自动充当新格式通过证据。
+配对 协议不把旧的逐环境批次和新的按阶段验收混算。
+支持配对 协议的 Check 可只读解释旧历史，但要按新规则推进，
+必须重新执行自动化测试并记录 version=1 的 implementation verify，
+再完成固定报告和 version=1 的 deployment verify；旧批次不自动充当新格式通过证据。
 新格式开始后不得新增旧格式 signOff 或 verify，五个共识须重新按 submit/signOff
 配对建立有效链；切换前的原始历史和摘要保持不变。不自动迁移既有 Idea 或更换固定 Check。
 `,
@@ -151,12 +151,12 @@ v2 协议不把旧的逐环境批次和新的按阶段验收混算。
     {
       code: "idea-folder-deployment-report-append-only",
       description:
-        "当前 Idea 的v2 JSONL 部署报告必须保留 primary 中已有文件的原始 UTF-8 字节准确前缀，只能在末尾追加完整行，不可删除、截断、覆盖或重排。 primary 尚无报告时可新建；该约束不改写或迁移旧协议的证据文件。 后续提交检查也必须执行同一约束，不能仅在生命周期验收时检查。",
+        "当前 Idea 的配对 JSONL 部署报告必须保留 primary 中已有文件的原始 UTF-8 字节准确前缀，只能在末尾追加完整行，不可删除、截断、覆盖或重排。 primary 尚无报告时可新建；该约束不改写或迁移旧协议的证据文件。 后续提交检查也必须执行同一约束，不能仅在生命周期验收时检查。",
     },
     {
       code: "idea-folder-data-valid",
       description:
-        "Idea 必须能够唯一解析，bootstrap、事件、文件树、用例索引及固定 Check CID 绑定必须符合明确支持的协议、结构、安全与容量约束。 version=2 submit 和 signOff 必须满足上述严格字段、单链阶段及有序配对规则， 不允许孤立或重复确认，也不凭旧 v1 signOff 合成 submit。 最新 submit 未确认或内容、前序链失效是对应共识关口未通过，不是允许回退的理由。 version=2 的 verify 必须符合上述最小事件形态；implementation.rev 必须是仓库中可解析的准确完整提交 ID；最新 deployment 引用的固定报告必须存在于v2快照，路径安全、逐行结构合法且原始字节哈希准确匹配。 不得用占位符、空文件、外部路径或未声明字段替代有效报告。 旧格式事件内的证据仍按旧协议保留和校验，不自动迁移至 JSONL。 新格式历史 deployment 事件不要求匹配当前报告；是否绑定当前版本、 是否完整通过由相应阶段 Rule 判断。 缺失、格式无效或哈希不符按数据不通过报告，意外 I/O、取消、未知协议或 观察期间并发变化按执行错误传播，不能回退旧报告或静默视作成功。",
+        "Idea 必须能够唯一解析，bootstrap、事件、文件树、用例索引及固定 Check CID 绑定必须符合明确支持的协议、结构、安全与容量约束。 version=1 submit 和 signOff 必须满足上述严格字段、单链阶段及有序配对规则， 不允许孤立或重复确认，也不凭旧 v1 signOff 合成 submit。 最新 submit 未确认或内容、前序链失效是对应共识关口未通过，不是允许回退的理由。 version=1 的 verify 必须符合上述最小事件形态；implementation.rev 必须是仓库中可解析的准确完整提交 ID；最新 deployment 引用的固定报告必须存在于配对快照，路径安全、逐行结构合法且原始字节哈希准确匹配。 不得用占位符、空文件、外部路径或未声明字段替代有效报告。 旧格式事件内的证据仍按旧协议保留和校验，不自动迁移至 JSONL。 新格式历史 deployment 事件不要求匹配当前报告；是否绑定当前版本、 是否完整通过由相应阶段 Rule 判断。 缺失、格式无效或哈希不符按数据不通过报告，意外 I/O、取消、未知协议或 观察期间并发变化按执行错误传播，不能回退旧报告或静默视作成功。",
     },
     {
       code: "idea-folder-active",
@@ -171,7 +171,7 @@ v2 协议不把旧的逐环境批次和新的按阶段验收混算。
       {
         name: "state",
         description:
-          '执行期 reducer 结果：revisions 是当前内容版本，submitted 按阶段记录最新 submit 事件 ID，包括尚待用户确认的请求；signed 是与最新 submit 配对且材料和单链仍有效的 signOff 事件 ID。 缺少 submit、尚未确认或链失效均停在对应共识阶段， 确认有效但未同步则为 synchronization，next 指向该阶段。 新格式按阶段取日志中最后一条 version=2 verify： implementation 是通过版本绑定检查的 implementation.rev， deployment 是通过完整手工验收检查的 deployment.rev； 不再聚合环境或生成第二份集合摘要，也不是事件 ID。 implementation 提交快照中的五个共识版本必须等于当前有效签署版本； 该提交必须是当前 HEAD 的祖先或自身，之后只允许本 Idea 的 events.jsonl 与 evidence/ 元数据变化，其他受跟踪内容变化必须重新自动化验收。 最新部署报告须绑定同一 implementation，且对应事件位于最新 implementation verify 之后；重新声明实现验收即要求重新部署验收，不回退旧报告。 只有最新记录满足对应阶段 Rules 才提供阶段值，旧纯历史状态保留原语义， 不与新阶段值混算。level 表示首个未达成的领域阶段，不是已完成阶段；synchronization 时 next 表示等待同步的确认阶段，包括 user-acceptance。 五个内容 revision 的阶段键保持 requirements、research、technical、cases、tests； 用户验收不新增内容 revision，以当前 deployment 报告摘要及 implementation 代码提交绑定交付，submitted["user-acceptance"] 记录交付确认请求，signed["user-acceptance"] 记录有效验收事件 ID。 部署自验有效但缺少当前交付的用户确认时 level 为 user-acceptance； 确认及同步均满足后才为 completed。signed 只包含 reducer 已走到的有效签署；前序阻塞时不能据后序键缺失单独判断后序阶段。',
+          '执行期 reducer 结果：revisions 是当前内容版本，submitted 按阶段记录最新 submit 事件 ID，包括尚待用户确认的请求；signed 是与最新 submit 配对且材料和单链仍有效的 signOff 事件 ID。 缺少 submit、尚未确认或链失效均停在对应共识阶段， 确认有效但未同步则为 synchronization，next 指向该阶段。 新格式按阶段取日志中最后一条 version=1 verify： implementation 是通过版本绑定检查的 implementation.rev， deployment 是通过完整手工验收检查的 deployment.rev； 不再聚合环境或生成第二份集合摘要，也不是事件 ID。 implementation 提交快照中的五个共识版本必须等于当前有效签署版本； 该提交必须是当前 HEAD 的祖先或自身，之后只允许本 Idea 的 events.jsonl 与 evidence/ 元数据变化，其他受跟踪内容变化必须重新自动化验收。 最新部署报告须绑定同一 implementation，且对应事件位于最新 implementation verify 之后；重新声明实现验收即要求重新部署验收，不回退旧报告。 只有最新记录满足对应阶段 Rules 才提供阶段值，旧纯历史状态保留原语义， 不与新阶段值混算。level 表示首个未达成的领域阶段，不是已完成阶段；synchronization 时 next 表示等待同步的确认阶段，包括 user-acceptance。 五个内容 revision 的阶段键保持 requirements、research、technical、cases、tests； 用户验收不新增内容 revision，以当前 deployment 报告摘要及 implementation 代码提交绑定交付，submitted["user-acceptance"] 记录交付确认请求，signed["user-acceptance"] 记录有效验收事件 ID。 部署自验有效但缺少当前交付的用户确认时 level 为 user-acceptance； 确认及同步均满足后才为 completed。signed 只包含 reducer 已走到的有效签署；前序阻塞时不能据后序键缺失单独判断后序阶段。',
       },
       {
         name: "brief",

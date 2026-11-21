@@ -16,11 +16,11 @@ state.next=technical 表示技术确认等待同步。只有 reducer
 ### 准备、评审和记录
 
 1. 完成已确认问题范围内的调研，将结论和依据写入 \`technical/Spec.md\` 及附件，说明方案选择、取舍、接口与数据流、错误处理、实施计划和验证方法；单独签署的 \`technical/research.md\` 不属于本阶段正文版本。
-2. 核对当前 research submit 及其需求链已确认并同步，观察 revisions、eventDigest 和 primary；先追加下列v2 submit，再向用户 review 完整技术材料。upstream 只保存 research revision，需求上下文按提交时的有效内容链追溯，不保存 submit ID 或完整版本向量。
+2. 核对当前 research submit 及其需求链已确认并同步，观察 revisions、eventDigest 和 primary；先追加下列配对 submit，再向用户 review 完整技术材料。upstream 只保存 research revision，需求上下文按提交时的有效内容链追溯，不保存 submit ID 或完整版本向量。
 
 \`\`\`json
 {
-  "version": 2,
+  "version": 1,
   "id": "<new-32-hex>",
   "at": "<current-UTC-ISO-time>",
   "type": "submit",
@@ -37,7 +37,7 @@ state.next=technical 表示技术确认等待同步。只有 reducer
     {
       code: "technical-consensus-confirmed",
       description:
-        "最新 object=technical 的 v2 submit，其 revision 等于 state.revisions.technical，upstream 严格等于当前已确认并同步的 state.revisions.research，按 idea-folder 的回放规则核验提交时绑定的 需求 revision 仍准确；其后存在仅引用该请求的 v2 signOff，且 reducer 将配对 signOff 的 ID 纳入 state.signed.technical。当前 Technical Spec 及全部补充材料共同决定该版本。",
+        "最新 object=technical 的 配对 submit，其 revision 等于 state.revisions.technical，upstream 严格等于当前已确认并同步的 state.revisions.research，按 idea-folder 的回放规则核验提交时绑定的 需求 revision 仍准确；其后存在仅引用该请求的 配对 signOff，且 reducer 将配对 signOff 的 ID 纳入 state.signed.technical。当前 Technical Spec 及全部补充材料共同决定该版本。",
     },
     {
       code: "technical-synchronized",

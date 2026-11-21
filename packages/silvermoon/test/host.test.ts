@@ -75,11 +75,11 @@ import {
   files,
   signed,
   sign,
-  v2Event,
+  pairedEvent,
   deployed,
   report,
-} from "./v2-fixtures.js";
-import { reportPath } from "../src/lifecycle-v2.js";
+} from "./paired-fixtures.js";
+import { reportPath } from "../src/lifecycle.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -655,7 +655,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
         path,
         gate === "cases"
           ? canonical({
-              version: 2,
+              version: 1,
               cases: [
                 {
                   id: "I-01",
@@ -675,7 +675,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       const state = await observe(consensusRuleCodes[gate]);
       const current = selectIdea(await readProject(root), created.id);
       const prior = gates[gates.indexOf(gate) - 1];
-      const request = v2Event({
+      const request = pairedEvent({
         type: "submit",
         object: gate,
         revision: state.revisions[gate],
@@ -695,7 +695,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
         root,
         created.id,
         {
-          ...v2Event({ type: "signOff", submit: request.id }),
+          ...pairedEvent({ type: "signOff", submit: request.id }),
           at: new Date().toISOString(),
         },
         {
@@ -734,7 +734,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
         root,
         created.id,
         {
-          ...v2Event({
+          ...pairedEvent({
             type: "verify",
             phase,
             rev:
@@ -754,7 +754,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     }
     const delivery = await observe("user-acceptance-confirmed");
     if (!delivery.deployment) throw new Error("Expected deployment");
-    const request = v2Event({
+    const request = pairedEvent({
       type: "submit",
       object: "user-acceptance",
       revision: delivery.deployment,
@@ -770,7 +770,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     await appendEvent(
       root,
       created.id,
-      v2Event({ type: "signOff", submit: request.id }),
+      pairedEvent({ type: "signOff", submit: request.id }),
       {
         localRemote: remote,
         expectedDigest: pending.eventDigest,
@@ -829,7 +829,11 @@ describe("Ordered checkpoints and the real offline Engine", () => {
         deployed(
           add(
             signed(),
-            v2Event({ type: "verify", phase: "implementation", rev: tested }),
+            pairedEvent({
+              type: "verify",
+              phase: "implementation",
+              rev: tested,
+            }),
           ),
           tested,
         ),
@@ -1211,7 +1215,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     const tested = await git(input.target.repoRoot, ["rev-parse", "HEAD"]);
     source = add(
       source,
-      v2Event({ type: "verify", phase: "implementation", rev: tested }),
+      pairedEvent({ type: "verify", phase: "implementation", rev: tested }),
     );
     await git(input.target.repoRoot, ["remote", "set-url", "origin", remote]);
     await materialize(input.target.repoRoot, source);
@@ -1452,7 +1456,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     const tested = await git(root, ["rev-parse", "HEAD"]);
     source = add(
       source,
-      v2Event({ type: "verify", phase: "implementation", rev: tested }),
+      pairedEvent({ type: "verify", phase: "implementation", rev: tested }),
     );
     await materialize(root, source);
     await gap("repository", "repository-worktree-clean");
@@ -1674,7 +1678,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
           source = candidate;
           const last = next.events.at(-1)!;
           if (last.type === "submit" && checkpoint !== "user-acceptance") {
-            const approval = v2Event({ type: "signOff", submit: last.id });
+            const approval = pairedEvent({ type: "signOff", submit: last.id });
             validateAppend(
               next,
               approval,
@@ -1711,7 +1715,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
         "resources/references/check.md",
       );
       expect(await readDocument(store, doc.toString())).toContain(
-        "protocol v2",
+        "protocol v1",
       );
       await expect(readDocument(store, doc.toString(), 1)).rejects.toThrow(
         /budget/,
@@ -1743,7 +1747,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     const tested = await git(input.target.repoRoot, ["rev-parse", "HEAD"]);
     source = add(
       source,
-      v2Event({ type: "verify", phase: "implementation", rev: tested }),
+      pairedEvent({ type: "verify", phase: "implementation", rev: tested }),
     );
     source = sign(deployed(source, tested), "user-acceptance");
     await materialize(input.target.repoRoot, source);
@@ -1889,7 +1893,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     );
     const pinned = await observe(input, { artifacts, cid: original.cid });
     expect(pinned.checkCid).toBe(original.cid);
-    expect(pinned.documents[0]?.text).toContain("protocol v2");
+    expect(pinned.documents[0]?.text).toContain("protocol v1");
     await expect(
       observe(input, { artifacts: [newerDefault], cid: original.cid }),
     ).rejects.toThrow(/unavailable/);

@@ -164,7 +164,7 @@ hook，配置须保留原逻辑并尊重 `core.hooksPath`。`check-setup`
 `check-idea <idea>` 必须指定 Idea。
 `check-changes --staged` 走提交检查，可用于 commit hook，不要求工作区洁净、
 upstream 就绪或 Idea 完成。新 Idea 仅位于 `.silvermoon/i`，使用五个准确版本的
-配对 submit/signOff、v2 验证及最终用户验收。实现记录准确自动化测试提交，
+配对 submit/signOff、配对 验证及最终用户验收。实现记录准确自动化测试提交，
 部署记录固定 append-only
 JSONL 手工报告；详见[Events 定义](docs/silvermoon-events.md)。
 旧 v1 历史保持只读语义，不自动满足新标准；旧 `.silvermoon/ideas`
@@ -172,7 +172,7 @@ JSONL 手工报告；详见[Events 定义](docs/silvermoon-events.md)。
 不补 CID。候选构建和验证不会替换当前全局旧 CLI 或个人 skill；正式发布、安装及
 试用分别遵守各自授权，不能把本地候选视为已发布版本。
 
-项目已接入 Silvermoon v2，默认内容语言为简体中文（`zh-CN`），主分支为
+项目已接入 Silvermoon paired，默认内容语言为简体中文（`zh-CN`），主分支为
 `silvermoon-work/okr-agent` 的 `main`。
 
 使用设备级安装的 Silvermoon CLI 和个人 skill，不添加项目依赖：

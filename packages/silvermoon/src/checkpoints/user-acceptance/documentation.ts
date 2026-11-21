@@ -19,7 +19,7 @@ state.level=synchronization 且 state.next=user-acceptance 表示用户确认有
 
 \`\`\`json
 {
-  "version": 2,
+  "version": 1,
   "id": "<new-submit-32-hex>",
   "at": "<current-UTC-ISO-time>",
   "type": "submit",
@@ -39,7 +39,7 @@ state.level=synchronization 且 state.next=user-acceptance 表示用户确认有
 
 \`\`\`json
 {
-  "version": 2,
+  "version": 1,
   "id": "<new-signoff-32-hex>",
   "at": "<current-UTC-ISO-time>",
   "type": "signOff",
@@ -54,7 +54,7 @@ state.level=synchronization 且 state.next=user-acceptance 表示用户确认有
     {
       code: "user-acceptance-confirmed",
       description:
-        '所有前序检查点通过后，最新 object=user-acceptance 的 v2 submit， revision 必须严格等于当前 state.deployment，upstream 严格等于当前已确认并同步的 state.revisions.tests，且提交时绑定的整条内容链仍有效； 被引用部署报告最新 start 中的 implementation 严格等于当前 state.implementation。 其后必须存在仅引用该请求的 v2 signOff，并被 reducer 纳入 signed["user-acceptance"]。 Agent 只能在用户实际操作并明确接受该交付后追加事件； checker 验证事件和交付绑定，不声称从事件证明用户身份或实际操作发生。 缺少事件或仅有绑定旧交付的确认时本 Rule 不通过，level 为 user-acceptance； 上游共识、实现或部署失效时先返回对应前序阶段。 implementation 代码提交或 deployment 报告摘要变化均使旧用户确认失效； 仅追加本次确认事件不改变这两个阶段版本，也不要求重复部署。 反馈、拒绝、沉默和 Agent 自验不能作为通过事件。',
+        '所有前序检查点通过后，最新 object=user-acceptance 的 配对 submit， revision 必须严格等于当前 state.deployment，upstream 严格等于当前已确认并同步的 state.revisions.tests，且提交时绑定的整条内容链仍有效； 被引用部署报告最新 start 中的 implementation 严格等于当前 state.implementation。 其后必须存在仅引用该请求的 配对 signOff，并被 reducer 纳入 signed["user-acceptance"]。 Agent 只能在用户实际操作并明确接受该交付后追加事件； checker 验证事件和交付绑定，不声称从事件证明用户身份或实际操作发生。 缺少事件或仅有绑定旧交付的确认时本 Rule 不通过，level 为 user-acceptance； 上游共识、实现或部署失效时先返回对应前序阶段。 implementation 代码提交或 deployment 报告摘要变化均使旧用户确认失效； 仅追加本次确认事件不改变这两个阶段版本，也不要求重复部署。 反馈、拒绝、沉默和 Agent 自验不能作为通过事件。',
     },
     {
       code: "user-acceptance-synchronized",

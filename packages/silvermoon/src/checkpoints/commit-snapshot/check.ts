@@ -154,8 +154,8 @@ export function snapshotCheckpoint(runtime: Runtime) {
           for (const current of project.ideas.values())
             for (const event of current.events)
               if (
-                event.version === 2 &&
                 event.type === "verify" &&
+                "phase" in event &&
                 event.phase === "implementation"
               )
                 invariant(

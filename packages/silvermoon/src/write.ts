@@ -149,7 +149,7 @@ export async function createIdea(
               "# Test specification\n\nSpecify prerequisites, operations, expected outcomes and evidence for each approved case before signoff.\n",
             "tests/cases.json":
               canonical({
-                version: 2,
+                version: 1,
                 cases: [
                   {
                     id: "I-01",
@@ -263,7 +263,7 @@ export async function appendEvent(
       );
       if (event.type === "verify")
         invariant(
-          event.version === 1
+          "batch" in event
             ? event.batch.subject === observed.head
             : event.phase !== "implementation" || event.rev === observed.head,
           "evidence",

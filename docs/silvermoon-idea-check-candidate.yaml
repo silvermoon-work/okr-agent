@@ -1,4 +1,4 @@
-# Archived pre-implementation design: v2 is now implemented in src/checkpoints/.
+# Archived pre-implementation design: paired is now implemented in src/checkpoints/.
 # This preserves the original proposal wording; it is not the current runtime Spec.
 # Use silvermoon-single-checker.yaml and silvermoon-events.md for current definitions.
 $schema: urn:ipfsaw:check-bundle:1
@@ -176,7 +176,7 @@ checkpoints:
 
       ### 提交与确认配对（候选协议）
 
-      新增 version=2 的 submit，业务字段严格为 object、revision、upstream。
+      新增 version=1 的 submit，业务字段严格为 object、revision、upstream。
       object 为 requirements、research、technical、cases、tests 或 user-acceptance；
       前五者的 revision 绑定对应材料范围的准确摘要，user-acceptance 绑定当前
       deployment 报告摘要，沿报告最新 start 的 implementation 追溯准确代码提交。
@@ -207,7 +207,7 @@ checkpoints:
       submit 不是批准，未收到明确接受时不能提前追加 signOff 或推进下一关。
       用户要求修改时保留旧事件，修改后重新 submit；不把旧反馈套到新请求。
       用户明确接受后，重新核对内容、前序链和当前最新 submit，再追加
-      version=2 的 signOff，业务字段严格只有 submit=<本次submit事件ID>。
+      version=1 的 signOff，业务字段严格只有 submit=<本次submit事件ID>。
       引用须指向本 Idea 日志中更早的最新有效 submit，且一条 submit 至多配对
       一条 signOff；孤立、重复、前向或未知引用是数据无效，旧请求迟到的信号不得
       当成新请求的确认。signOff 不携带 decision，也不证明用户身份。
@@ -215,7 +215,7 @@ checkpoints:
 
       ```json
       {
-        "version": 2,
+        "version": 1,
         "id": "<new-signoff-32-hex>",
         "at": "<current-UTC-ISO-time>",
         "type": "signOff",
@@ -231,7 +231,7 @@ checkpoints:
 
       ### 两阶段验证（候选协议）
 
-      新 verify 使用 version=2，除通用 version、唯一 id、at 和 type 外，
+      新 verify 使用 version=1，除通用 version、唯一 id、at 和 type 外，
       body 仅包含 phase、rev；不再包含 environment、report.path、batch、results、
       共识版本向量、证据清单或额外的结果标记。phase 只能是 implementation 或 deployment。
       rev 表示本阶段验收对象的准确版本，不是事件修订号：
@@ -282,13 +282,13 @@ checkpoints:
 
       历史 version=1、内嵌 batch 的 verify 保留原始字节，只读兼容，不批量改写。
       历史 version=1 signOff 保留原始字节及旧语义，不伪造其缺失的 submit。
-      仅后续明确支持候选协议的 Check 可读取 version=2 的 submit、signOff 和 verify；
+      仅后续明确支持候选协议的 Check 可读取 version=1 的 submit、signOff 和 verify；
       其余事件版本保持原约定，未知版本明确报错，不按旧结构猜测或静默降级。
       本轮不改变任何 Idea 的固定 checkCid、历史 CAR 或现有运行时写入能力。
       候选协议不把旧的逐环境批次和新的按阶段验收混算。
       支持候选协议的 Check 可只读解释旧历史，但要按新规则推进，
-      必须重新执行自动化测试并记录 version=2 的 implementation verify，
-      再完成固定报告和 version=2 的 deployment verify；旧批次不自动充当新格式通过证据。
+      必须重新执行自动化测试并记录 version=1 的 implementation verify，
+      再完成固定报告和 version=1 的 deployment verify；旧批次不自动充当新格式通过证据。
       新格式开始后不得新增旧格式 signOff 或 verify，五个共识须重新按 submit/signOff
       配对建立有效链；切换前的原始历史和摘要保持不变。不自动迁移既有 Idea 或更换固定 Check。
     rules:
@@ -310,11 +310,11 @@ checkpoints:
       - code: idea-folder-data-valid
         description:
           Idea 必须能够唯一解析，bootstrap、事件、文件树、用例索引及固定 Check
-          CID 绑定必须符合明确支持的协议、结构、安全与容量约束。 version=2
+          CID 绑定必须符合明确支持的协议、结构、安全与容量约束。 version=1
           submit 和 signOff 必须满足上述严格字段、单链阶段及有序配对规则，
           不允许孤立或重复确认，也不凭旧 v1 signOff 合成 submit。 最新 submit
           未确认或内容、前序链失效是对应共识关口未通过，不是允许回退的理由。
-          version=2 的 verify 必须符合上述最小事件形态；implementation.rev
+          version=1 的 verify 必须符合上述最小事件形态；implementation.rev
           必须是仓库中可解析的准确完整提交 ID；最新 deployment
           引用的固定报告必须存在于候选快照，路径安全、逐行结构合法且原始字节哈希准确匹配。
           不得用占位符、空文件、外部路径或未声明字段替代有效报告。
@@ -344,7 +344,7 @@ checkpoints:
             是与最新 submit 配对且材料和单链仍有效的 signOff 事件 ID。 缺少
             submit、尚未确认或链失效均停在对应共识阶段， 确认有效但未同步则为
             synchronization，next 指向该阶段。 新格式按阶段取日志中最后一条
-            version=2 verify： implementation 是通过版本绑定检查的
+            version=1 verify： implementation 是通过版本绑定检查的
             implementation.rev， deployment 是通过完整手工验收检查的
             deployment.rev； 不再聚合环境或生成第二份集合摘要，也不是事件 ID。
             implementation 提交快照中的五个共识版本必须等于当前有效签署版本；
@@ -389,7 +389,7 @@ checkpoints:
 
       ```json
       {
-        "version": 2,
+        "version": 1,
         "id": "<new-32-hex>",
         "at": "<current-UTC-ISO-time>",
         "type": "submit",
@@ -404,9 +404,9 @@ checkpoints:
     rules:
       - code: requirements-consensus-confirmed
         description:
-          最新 object=requirements 的 v2 submit，其 revision 必须等于
+          最新 object=requirements 的 paired submit，其 revision 必须等于
           state.revisions.requirements，upstream 必须为 null；
-          必须存在位于其后的 v2 signOff，submit 仅引用这条请求， 且 reducer
+          必须存在位于其后的 paired signOff，submit 仅引用这条请求， 且 reducer
           将配对 signOff 的 ID 纳入
           state.signed.requirements。受签署范围内的任何变更都须重新确认，
           不能只检查历史上是否出现过 signOff。
@@ -439,7 +439,7 @@ checkpoints:
 
       ```json
       {
-        "version": 2,
+        "version": 1,
         "id": "<new-32-hex>",
         "at": "<current-UTC-ISO-time>",
         "type": "submit",
@@ -454,10 +454,10 @@ checkpoints:
     rules:
       - code: research-consensus-confirmed
         description:
-          最新 object=research 的 v2 submit，其 revision 等于
+          最新 object=research 的 paired submit，其 revision 等于
           state.revisions.research，upstream 严格等于当前已确认并同步的
-          state.revisions.requirements；其后存在仅引用该请求的 v2 signOff，且
-          reducer 将配对 signOff 的 ID 纳入
+          state.revisions.requirements；其后存在仅引用该请求的 paired
+          signOff，且 reducer 将配对 signOff 的 ID 纳入
           state.signed.research；不以事件存在本身或旧版本确认作为通过依据。
       - code: research-synchronized
         description:
@@ -488,7 +488,7 @@ checkpoints:
 
       ```json
       {
-        "version": 2,
+        "version": 1,
         "id": "<new-32-hex>",
         "at": "<current-UTC-ISO-time>",
         "type": "submit",
@@ -503,12 +503,12 @@ checkpoints:
     rules:
       - code: technical-consensus-confirmed
         description:
-          最新 object=technical 的 v2 submit，其 revision 等于
+          最新 object=technical 的 paired submit，其 revision 等于
           state.revisions.technical，upstream 严格等于当前已确认并同步的
           state.revisions.research，按 idea-folder 的回放规则核验提交时绑定的
-          需求 revision 仍准确；其后存在仅引用该请求的 v2 signOff，且 reducer
-          将配对 signOff 的 ID 纳入 state.signed.technical。当前 Technical Spec
-          及全部补充材料共同决定该版本。
+          需求 revision 仍准确；其后存在仅引用该请求的 paired signOff，且
+          reducer 将配对 signOff 的 ID 纳入 state.signed.technical。当前
+          Technical Spec 及全部补充材料共同决定该版本。
       - code: technical-synchronized
         description:
           reducer 必须确认当前准确技术内容、全部前序内容与
@@ -533,11 +533,11 @@ checkpoints:
 
       ### 准备、评审和记录
 
-      1. 在 `tests/cases.json` 编写候选协议 v2 JSON 索引。每个 case 的 id 必须唯一，使用大写字母开头的大写字母、数字或连字符；仅声明 id 和 phase，不设置通用 environment 或可选的受测对象策略。实现固定针对准确代码提交，部署固定针对已通过实现验收的交付。以下仅示意结构，不能将两个 case 当成项目的完整范围；当前运行时仍要求旧 v1 索引，不能提前写入真实 Idea。
+      1. 在 `tests/cases.json` 编写候选协议 paired JSON 索引。每个 case 的 id 必须唯一，使用大写字母开头的大写字母、数字或连字符；仅声明 id 和 phase，不设置通用 environment 或可选的受测对象策略。实现固定针对准确代码提交，部署固定针对已通过实现验收的交付。以下仅示意结构，不能将两个 case 当成项目的完整范围；当前运行时仍要求旧 v1 索引，不能提前写入真实 Idea。
 
       ```json
       {
-        "version": 2,
+        "version": 1,
         "cases": [
           {"id": "I-01", "phase": "implementation"},
           {"id": "D-01", "phase": "deployment"}
@@ -550,7 +550,7 @@ checkpoints:
 
       ```json
       {
-        "version": 2,
+        "version": 1,
         "id": "<new-32-hex>",
         "at": "<current-UTC-ISO-time>",
         "type": "submit",
@@ -565,11 +565,12 @@ checkpoints:
     rules:
       - code: test-index-consensus-confirmed
         description:
-          当前 tests/cases.json 必须使用上述严格 v2
+          当前 tests/cases.json 必须使用上述严格 paired
           索引，同时包含实现和部署用例，每项仅包含唯一 id 和合法 phase，不包含
-          environment 或 subject 字段。最新 object=cases 的 v2 submit， revision
-          等于 state.revisions.cases，upstream 严格等于当前已确认并同步的
-          state.revisions.technical；其后存在仅引用该请求的 v2 signOff，
+          environment 或 subject 字段。最新 object=cases 的 paired submit，
+          revision 等于 state.revisions.cases，upstream
+          严格等于当前已确认并同步的
+          state.revisions.technical；其后存在仅引用该请求的 paired signOff，
           整条前序链有效，且 reducer 将配对 signOff 的 ID 纳入
           state.signed.cases。
       - code: test-index-synchronized
@@ -601,7 +602,7 @@ checkpoints:
 
       ```json
       {
-        "version": 2,
+        "version": 1,
         "id": "<new-32-hex>",
         "at": "<current-UTC-ISO-time>",
         "type": "submit",
@@ -616,9 +617,9 @@ checkpoints:
     rules:
       - code: test-cases-consensus-confirmed
         description:
-          最新 object=tests 的 v2 submit，其 revision 等于
+          最新 object=tests 的 paired submit，其 revision 等于
           state.revisions.tests，upstream 严格等于当前已确认并同步的
-          state.revisions.cases；其后存在仅引用该请求的 v2
+          state.revisions.cases；其后存在仅引用该请求的 paired
           signOff，整条前序内容链有效，且 reducer 将配对 signOff 的 ID 纳入
           state.signed.tests。当前 Test Spec 及全部补充材料共同决定该版本。
       - code: test-cases-synchronized
@@ -650,7 +651,7 @@ checkpoints:
 
       ### 验证、记录和同步
 
-      本段精简协议尚未实现，不向当前运行时追加 version=2 事件。
+      本段精简协议尚未实现，不向当前运行时追加 version=1 事件。
 
       1. 按已确认需求、方案和测试用例完成实现，保存测试代码、依赖锁定和明确的运行入口；将全部需要验收的代码和五个已确认版本纳入准确受测提交。
       2. 按已有测试执行授权，在该准确提交对应的干净工作区执行全部实现用例对应的自动化测试，包括用例明确要求的平台组合。失败、错误、阻塞或未执行时不能记录通过或进入部署；修复后对新提交重新执行，不复用旧成功。即使版本相同，本次复测失败也必须停止推进，不能以旧事件覆盖实际失败。
@@ -658,7 +659,7 @@ checkpoints:
 
       ```json
       {
-        "version": 2,
+        "version": 1,
         "id": "<new-32-hex>",
         "at": "<current-UTC-ISO-time>",
         "type": "verify",
@@ -673,7 +674,7 @@ checkpoints:
       - code: implementation-evidence-valid
         description:
           五个准确版本的共识及各自 primary 同步满足后，按日志顺序取最后一条
-          version=2、phase=implementation 的 verify。其 rev 必须是 HEAD
+          version=1、phase=implementation 的 verify。其 rev 必须是 HEAD
           的祖先或自身，且其快照中的五个共识版本等于当前有效签署版本。 按
           idea-folder 定义比较受测提交与当前快照，除本 Idea 的 events.jsonl 和
           evidence/
@@ -715,7 +716,7 @@ checkpoints:
 
       ### 验证、记录和同步
 
-      本段报告引用格式尚未实现，不向当前运行时追加 version=2 事件。
+      本段报告引用格式尚未实现，不向当前运行时追加 version=1 事件。
 
       1. 仅在实现 checkpoint 已通过后，按已有部署授权部署准确的已验收实现。这里的部署可为本地服务、CLI 或其他实际交付物，不强制 production、staging 等环境模型。
       2. 核对当前 revisions、eventDigest、primary 和 state.implementation，确认实际交付对应这一准确实现提交。Agent 按全部部署用例主导执行端到端手工测试，实际操作交付入口并观察结果，不能仅重跑自动化测试或确认部署命令成功。
@@ -730,7 +731,7 @@ checkpoints:
 
       ```json
       {
-        "version": 2,
+        "version": 1,
         "id": "<new-32-hex>",
         "at": "<current-UTC-ISO-time>",
         "type": "verify",
@@ -744,7 +745,7 @@ checkpoints:
     rules:
       - code: deployment-evidence-valid
         description:
-          按事件行顺序选最后一条 version=2、phase=deployment 的 verify，
+          按事件行顺序选最后一条 version=1、phase=deployment 的 verify，
           且它必须位于最新 implementation verify 之后。读取固定安全普通文件
           evidence/deployment/report.jsonl，要求全文件原始字节 SHA-256 等于事件
           rev。 全部历史行均须满足上述严格格式；只取最新 start
@@ -798,7 +799,7 @@ checkpoints:
 
       ```json
       {
-        "version": 2,
+        "version": 1,
         "id": "<new-submit-32-hex>",
         "at": "<current-UTC-ISO-time>",
         "type": "submit",
@@ -818,7 +819,7 @@ checkpoints:
 
       ```json
       {
-        "version": 2,
+        "version": 1,
         "id": "<new-signoff-32-hex>",
         "at": "<current-UTC-ISO-time>",
         "type": "signOff",
@@ -831,12 +832,12 @@ checkpoints:
     rules:
       - code: user-acceptance-confirmed
         description:
-          所有前序检查点通过后，最新 object=user-acceptance 的 v2 submit，
+          所有前序检查点通过后，最新 object=user-acceptance 的 paired submit，
           revision 必须严格等于当前 state.deployment，upstream
           严格等于当前已确认并同步的
           state.revisions.tests，且提交时绑定的整条内容链仍有效；
           被引用部署报告最新 start 中的 implementation 严格等于当前
-          state.implementation。 其后必须存在仅引用该请求的 v2 signOff，并被
+          state.implementation。 其后必须存在仅引用该请求的 paired signOff，并被
           reducer 纳入 signed["user-acceptance"]。 Agent
           只能在用户实际操作并明确接受该交付后追加事件； checker
           验证事件和交付绑定，不声称从事件证明用户身份或实际操作发生。
