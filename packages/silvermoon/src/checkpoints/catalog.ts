@@ -13,6 +13,7 @@ import { documentation as deployment } from "./deployment/documentation.js";
 import { documentation as preCommit } from "./pre-commit/documentation.js";
 import { documentation as commitSnapshot } from "./commit-snapshot/documentation.js";
 import { documentation as commitHistory } from "./commit-history/documentation.js";
+import { documentation as userAcceptance } from "./user-acceptance/documentation.js";
 export const prerequisiteDocumentation = [
   global,
   repository,
@@ -41,5 +42,6 @@ export const ideaDocumentation = [
   testCases,
   implementation,
   deployment,
+  userAcceptance,
 ] as const;
 export const commitDocumentation = [commitSnapshot, commitHistory] as const;

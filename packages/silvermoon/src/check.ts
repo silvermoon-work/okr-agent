@@ -9,6 +9,7 @@ import { ideaCheckpoint } from "./checkpoints/idea-folder/check.js";
 import { consensusCheckpoint } from "./checkpoints/consensus.js";
 import { implementationCheckpoint } from "./checkpoints/implementation/check.js";
 import { deploymentCheckpoint } from "./checkpoints/deployment/check.js";
+import { userAcceptanceCheckpoint } from "./checkpoints/user-acceptance/check.js";
 import type { CheckExecution } from "./checkpoints/shared.js";
 
 export { environmentCheckpoint } from "./checkpoints/global/check.js";
@@ -39,11 +40,13 @@ export function silvermoonCheckpoints(
     branch,
     layout,
   );
+  const deployment = deploymentCheckpoint(execution, observation, branch);
   return [
     ...prerequisites,
     observation,
     ...gates.map((gate) => consensusCheckpoint(gate, observation)),
     implementationCheckpoint(execution, observation, branch),
-    deploymentCheckpoint(execution, observation, branch),
+    deployment,
+    userAcceptanceCheckpoint(execution, observation, branch, deployment),
   ] as const;
 }

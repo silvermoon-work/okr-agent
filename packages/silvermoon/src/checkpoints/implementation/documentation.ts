@@ -3,69 +3,54 @@ import type { CheckpointDocumentation } from "@silvermoon-work/check-task-sdk";
 export const documentation = {
   id: "implementation",
   title: "实现验收已通过并同步",
-  description: "检查实现验收证据完整有效，且实现、证据和验证事件已同步。",
+  description:
+    "检查准确实现版本已完成可重现自动化测试，且实现、测试和验证事件已同步。",
   instructions: `### 判断当前状态
 
 你需要读取 idea-folder 输出的 state：state.level=implementation
-表示尚无完整有效的实现验证结果；只有 reducer 生成 state.implementation
-摘要并进入 deployment 或 completed，才表明实现证据已达成，仍须通过独立的同步 Rule。
-缺少证据时完成实现，依据已确认用例在所有必需实现环境完成验证，保存真实通过证据，并用
-verify events 记录绑定准确实现版本的结果。随后将实现、证据和 events
-提交并同步至项目配置的 primary（例如 origin/main），全部满足下列 Rules
-后才能进入部署。缺失、失败或失效时按既有授权重新验证并记录；本 Check
-只核验事实，不自动执行实现、测试、提交或推送，也不保证日志陈述本身真实。
+表示尚无当前版本的有效自动化验收记录。通过后 state.implementation
+就是实际通过测试的完整 Git 提交 ID，不是报告摘要或逐环境集合。
+完成实现和已确认用例对应的自动化测试，实际执行全部测试并确认通过，
+再记录准确提交并同步至 primary，才能进入部署。
+不要求 implementation report，也不要求持久化测试输出；
+但不能把“可重现”当作本次无需执行。
+本 Check 只核验事实与版本绑定，不自动执行项目代码、提交或推送，
+不声称仅从事件证明测试真实发生。
 
 ### 验证、记录和同步
 
-1. 按已确认需求和技术方案完成实现，针对准确的受测提交，在索引要求的每个实现环境执行该环境全部实现用例。依照测试说明把真实、非空证据保存到当前 Idea 的 \`evidence/implementation/\`。
-2. 验证结果由 Agent 如实记录，不增加人类结果 sign off。失败或错误也保留真实记录，修复后重新验证；不能将失败写成 pass，或跳过新失败而选旧成功。
-3. 用 \`silvermoon check-idea <idea> --json\` 核对当前 revisions、digest 和可用 primary tip。每个实现环境准备一个独立 verify 批次，覆盖该环境的全部 case；下例仅展示一个结果项，实际必须展开完整集合。
+1. 按已确认需求、方案和测试用例完成实现，保存测试代码、依赖锁定和明确的运行入口；将全部需要验收的代码和五个已确认版本纳入准确受测提交。
+2. 按已有测试执行授权，在该准确提交对应的干净工作区执行全部实现用例对应的自动化测试，包括用例明确要求的平台组合。失败、错误、阻塞或未执行时不能记录通过或进入部署；修复后对新提交重新执行，不复用旧成功。即使版本相同，本次复测失败也必须停止推进，不能以旧事件覆盖实际失败。
+3. 全部通过后重新核对 revisions、eventDigest、primary 和受测代码；确认没有执行期间的并发变化，再准备下列事件。rev 是实际通过测试的提交，不是追加事件后的新 HEAD；不增加人类结果 signOff、实现报告、日志哈希或第二个 revision。
 
 \`\`\`json
 {
-  "version": 1,
+  "version": 2,
   "id": "<new-32-hex>",
   "at": "<current-UTC-ISO-time>",
   "type": "verify",
-  "batch": {
-    "id": "<unique-batch-id>",
-    "phase": "implementation",
-    "revisions": {
-      "requirements": "<state.revisions.requirements>",
-      "research": "<state.revisions.research>",
-      "technical": "<state.revisions.technical>",
-      "cases": "<state.revisions.cases>",
-      "tests": "<state.revisions.tests>"
-    },
-    "subject": "<exact-tested-commit-SHA>",
-    "environment": "<required-implementation-environment>",
-    "results": [
-      {"case": "<actual-case-id>", "result": "pass", "evidence": [
-        {"path": "evidence/implementation/<actual-file>", "digest": "<sha256-of-raw-evidence-bytes>"}
-      ]}
-    ]
-  }
+  "phase": "implementation",
+  "rev": "<exact-tested-commit-SHA>"
 }
 \`\`\`
 
-4. 替换所有占位符：事件 id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间，batch id 使用唯一的字母数字开头标识（允许点、下划线、连字符，最长 64 字符）。证据 digest 为原始文件字节的 \`sha256:<64位小写十六进制>\`。subject 必须是真正受测的提交，不拿追加事件后的 HEAD 冒充；失败时 result 如实为 fail 或 error。
-5. 直接编辑该 Idea 的 \`events.jsonl\` 追加事实，保留原始字节前缀；每条新事件递归按 ASCII 键序序列化为单行 JSON，使用 UTF-8、LF 和最终换行，再运行 \`silvermoon check-changes --worktree --audience agent\` 检查。每次写入前核对最新文件字节与版本，冲突时重新观察，不盲目复用旧输入。
-6. 按已有授权将实现、证据及 events 提交并同步至配置的 primary，再运行 \`silvermoon check-idea <idea> --audience agent\`。只有 evidence-valid 和 synchronized 两条 Rules 都通过，才能推进部署；\`state.implementation\` 存在不等于已同步。
+4. 追加事件时保留原始字节前缀，使用全新 id、当前规范 UTC ISO 时间、递归 ASCII 键序、UTF-8、LF 和最终换行。先运行 worktree 的 check-changes，再暂存并运行 staged 检查。
+5. 按已有授权提交并同步实现、自动化测试和事件，再运行 check-idea；仅增加本 Idea events.jsonl 或 evidence/ 不要求重新测试代码，其他受跟踪内容变化必须重新自动化验收。只有以下全部 Rules 通过才能部署，state.implementation 存在不等于已同步。
 `,
   rules: [
     {
       code: "implementation-evidence-valid",
       description:
-        "五个准确版本的共识及各自 primary 同步满足后，reducer 从 type=verify、 batch.phase=implementation 的 events 中，按每个必需实现环境选最后一个批次。 各批次必须完整覆盖该环境的全部实现用例并通过，绑定当前五个 revision、 准确受测提交，且证据路径及内容哈希有效。全部批次有效后才生成 state.implementation，其值是有效批次集合摘要，不是某条 verify 事件 ID。 新失败、错误或不完整批次使同环境旧成功批次失效；后续提交只增加本 Idea 事件／证据时不使受测代码过期，其他受跟踪内容变化必须重新验证；Check 只核验事实绑定，不执行 LLM 或项目测试，也不保证日志陈述真实。",
+        "五个准确版本的共识及各自 primary 同步满足后，按日志顺序取最后一条 version=2、phase=implementation 的 verify。其 rev 必须是 HEAD 的祖先或自身，且其快照中的五个共识版本等于当前有效签署版本。 按 idea-folder 定义比较受测提交与当前快照，除本 Idea 的 events.jsonl 和 evidence/ 外，其他受跟踪内容必须相同；不能只比较最终业务源码而忽略测试、 锁文件或配置。Agent 必须已实际执行该提交对应的全部自动化用例并确认通过， 测试实现及明确入口可重现，不要求实现报告或测试输出副本。 checker 校验提交、材料和事件绑定，不自动运行目标代码，也不独立证明实际执行； 缺少、失效或无法确认本次通过事实时不得推进，不回退旧事件。 有效时 state.implementation 直接等于该 rev。",
     },
     {
       code: "implementation-synchronized",
       description:
-        "被验证的实现版本、实现证据及对应 verify events 必须已提交并同步至本次观察的 primary。工作区必须无改动，HEAD 必须等于本次观察的 primary tip；不能以本地 events、手写状态或 push 命令成功替代同步事实。",
+        "被验证的实现提交、自动化测试和对应 verify 事件 必须已提交并同步至本次观察的 primary。工作区必须无改动，HEAD 必须等于本次观察的 primary tip；不能以本地 events、手写状态或 push 命令成功替代同步事实。",
     },
   ],
   output: {
     description:
-      "成功不新增数据，pass output 为 undefined；部署检查承接实现验收已通过且结果已同步的事实，继续使用 idea-folder 中当前有效实现批次集合的摘要，不接受外部声明的成功结果。",
+      "成功不新增数据，pass output 为 undefined；部署检查承接实现验收已通过且结果已同步的事实，继续使用 idea-folder 中当前有效实现提交，不接受额外传入的成功标记。",
   },
 } as const satisfies CheckpointDocumentation;

@@ -63,18 +63,23 @@ import type {
 type Request = { target: TargetValue; runtime: Runtime; operation: Operation };
 import {
   add,
-  batch,
   cid,
   event,
-  files,
   id,
   materialize,
   repository,
   scratch,
-  signed,
-  sign,
   sync,
 } from "./fixtures.js";
+import {
+  files,
+  signed,
+  sign,
+  v2Event,
+  deployed,
+  report,
+} from "./v2-fixtures.js";
+import { reportPath } from "../src/lifecycle-v2.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -639,7 +644,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       expect(facts.contentLanguage).toBe("en-US");
       return facts;
     };
-    for (const [index, gate] of gates.entries()) {
+    for (const gate of gates) {
       const path =
         gate === "research"
           ? "technical/research.md"
@@ -650,19 +655,15 @@ describe("Ordered checkpoints and the real offline Engine", () => {
         path,
         gate === "cases"
           ? canonical({
-              version: 1,
+              version: 2,
               cases: [
                 {
                   id: "I-01",
                   phase: "implementation",
-                  environment: "local",
-                  subject: "git-head",
                 },
                 {
                   id: "D-01",
                   phase: "deployment",
-                  environment: "deployment",
-                  subject: "implementation",
                 },
               ],
             })
@@ -672,26 +673,35 @@ describe("Ordered checkpoints and the real offline Engine", () => {
         await put("technical/details.md", "Signed support must be covered.\n");
       await sync(root);
       const state = await observe(consensusRuleCodes[gate]);
+      const current = selectIdea(await readProject(root), created.id);
+      const prior = gates[gates.indexOf(gate) - 1];
+      const request = v2Event({
+        type: "submit",
+        object: gate,
+        revision: state.revisions[gate],
+        upstream: prior ? state.revisions[prior] : null,
+      });
+      await appendEvent(root, created.id, request, {
+        localRemote: remote,
+        expectedDigest: state.eventDigest,
+        expectedPrimary: state.primary,
+      });
+      await sync(root);
+      const pending = await observe(consensusRuleCodes[gate]);
+      expect(current.events.some((event) => event.id === request.id)).toBe(
+        false,
+      );
       await appendEvent(
         root,
         created.id,
         {
-          ...event({
-            type: "signOff",
-            object: gate,
-            revision: state.revisions[gate],
-            upstream: Object.fromEntries(
-              gates
-                .slice(0, index)
-                .map((prior) => [prior, state.revisions[prior]]),
-            ),
-          }),
+          ...v2Event({ type: "signOff", submit: request.id }),
           at: new Date().toISOString(),
         },
         {
           localRemote: remote,
-          expectedDigest: state.eventDigest,
-          expectedPrimary: state.primary,
+          expectedDigest: pending.eventDigest,
+          expectedPrimary: pending.primary,
           confirmed: true,
         },
       );
@@ -715,34 +725,22 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       await sync(root);
     }
     for (const phase of ["implementation", "deployment"] as const) {
-      const path = `evidence/${phase}/local.txt`;
-      const content = `Local Git checkpoint evidence for ${phase}.\n`;
-      await put(path, content);
-      await sync(root);
       const state = await observe(`${phase}-evidence-valid`);
+      if (phase === "deployment") {
+        if (!state.implementation) throw new Error("Expected implementation");
+        await put(reportPath, report(state.implementation));
+      }
       await appendEvent(
         root,
         created.id,
         {
-          ...event({
+          ...v2Event({
             type: "verify",
-            batch: {
-              id: `local-${phase}`,
-              phase,
-              revisions: state.revisions,
-              subject: state.subject,
-              environment: phase === "implementation" ? "local" : "deployment",
-              results: [
-                {
-                  case: phase === "implementation" ? "I-01" : "D-01",
-                  result: "pass",
-                  evidence: [{ path, digest: digest(content) }],
-                },
-              ],
-              ...(phase === "deployment"
-                ? { implementation: state.implementation }
-                : {}),
-            },
+            phase,
+            rev:
+              phase === "implementation"
+                ? state.subject
+                : digest(await readFile(join(created.path, reportPath))),
           }),
           at: new Date().toISOString(),
         },
@@ -754,6 +752,33 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       );
       await sync(root);
     }
+    const delivery = await observe("user-acceptance-confirmed");
+    if (!delivery.deployment) throw new Error("Expected deployment");
+    const request = v2Event({
+      type: "submit",
+      object: "user-acceptance",
+      revision: delivery.deployment,
+      upstream: delivery.revisions.tests,
+    });
+    await appendEvent(root, created.id, request, {
+      localRemote: remote,
+      expectedDigest: delivery.eventDigest,
+      expectedPrimary: delivery.primary,
+    });
+    await sync(root);
+    const pending = await observe("user-acceptance-confirmed");
+    await appendEvent(
+      root,
+      created.id,
+      v2Event({ type: "signOff", submit: request.id }),
+      {
+        localRemote: remote,
+        expectedDigest: pending.eventDigest,
+        expectedPrimary: pending.primary,
+        confirmed: true,
+      },
+    );
+    await sync(root);
     expect(await run(created.id)).toMatchObject({ pass: true });
     const project = await readProject(root);
     expect(
@@ -793,6 +818,72 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       },
     ]);
     expect(result.nodes.at(-1)?.checkpoint).toBe("requirements");
+  });
+
+  it.each(["implementation", "deployment", "user-acceptance"] as const)(
+    "attributes a verified but unsynchronized %s phase to its synchronization rule",
+    async (phase) => {
+      const { target: input } = await target();
+      const tested = "a".repeat(40);
+      const source = sign(
+        deployed(
+          add(
+            signed(),
+            v2Event({ type: "verify", phase: "implementation", rev: tested }),
+          ),
+          tested,
+        ),
+        "user-acceptance",
+      );
+      const current = idea(source, id);
+      const state = reduce(current, { primary: current, head: tested });
+      vi.spyOn(repositoryReads, "observedIdeaState").mockResolvedValueOnce({
+        ...state,
+        level: phase === "user-acceptance" ? "synchronization" : phase,
+        ...(phase === "user-acceptance" ? { next: phase } : {}),
+      });
+      expect(await graph(input)).toMatchObject({
+        pass: false,
+        problems: [{ checkpoint: phase, code: `${phase}-synchronized` }],
+      });
+    },
+  );
+
+  it("reports invalid commit evidence as Idea data but propagates unexpected observation faults", async () => {
+    const { target: input } = await target();
+    vi.spyOn(repositoryReads, "observedIdeaState").mockRejectedValueOnce(
+      new SilvermoonError("evidence", "Missing tested snapshot"),
+    );
+    expect(await graph(input)).toMatchObject({
+      problems: [
+        { code: "idea-folder-data-valid", brief: "Missing tested snapshot" },
+      ],
+    });
+    const missingCommit = Object.assign(new Error("Unknown tested commit"), {
+      code: 128,
+    });
+    vi.spyOn(repositoryReads, "observedIdeaState").mockRejectedValueOnce(
+      missingCommit,
+    );
+    expect(await graph(input)).toMatchObject({
+      problems: [{ code: "idea-folder-data-valid" }],
+    });
+    const fault = Object.assign(new Error("Unexpected storage fault"), {
+      code: "EIO",
+    });
+    vi.spyOn(repositoryReads, "observedIdeaState").mockRejectedValueOnce(fault);
+    await expect(graph(input)).rejects.toBe(fault);
+    vi.spyOn(repositoryReads, "verifyIdeaHistory").mockImplementationOnce(
+      () => {
+        throw new SilvermoonError(
+          "report-history",
+          "Report bytes were rewritten",
+        );
+      },
+    );
+    expect(await graph(input)).toMatchObject({
+      problems: [{ code: "idea-folder-deployment-report-append-only" }],
+    });
   });
 
   it("requires implementation evidence after every exact consensus is synchronized", async () => {
@@ -1113,12 +1204,14 @@ describe("Ordered checkpoints and the real offline Engine", () => {
 
   it("requires deployment drafts to be committed before reusing the tested-ancestor facts", async () => {
     const { target: input, remote } = await target();
-    const tested = await git(input.target.repoRoot, ["rev-parse", "HEAD"]);
     let source = signed();
-    const current = idea(source, id);
+    await git(input.target.repoRoot, ["remote", "set-url", "origin", remote]);
+    await materialize(input.target.repoRoot, source);
+    await sync(input.target.repoRoot);
+    const tested = await git(input.target.repoRoot, ["rev-parse", "HEAD"]);
     source = add(
       source,
-      event({ type: "verify", batch: { ...batch(current), subject: tested } }),
+      v2Event({ type: "verify", phase: "implementation", rev: tested }),
     );
     await git(input.target.repoRoot, ["remote", "set-url", "origin", remote]);
     await materialize(input.target.repoRoot, source);
@@ -1166,7 +1259,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       implementation: string;
     };
     expect(brief).toHaveProperty("level", "deployment");
-    expect(brief.implementation).toMatch(/^sha256:/);
+    expect(brief.implementation).toBe(tested);
   });
   it("uses actual entry/PATH/personal link/config facts and never a supplied ready boolean", async () => {
     const current = await device();
@@ -1357,13 +1450,9 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     }
     await gap("implementation", "implementation-evidence-valid");
     const tested = await git(root, ["rev-parse", "HEAD"]);
-    let current = idea(source, id);
     source = add(
       source,
-      event({
-        type: "verify",
-        batch: { ...batch(current), subject: tested },
-      }),
+      v2Event({ type: "verify", phase: "implementation", rev: tested }),
     );
     await materialize(root, source);
     await gap("repository", "repository-worktree-clean");
@@ -1375,7 +1464,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
       "deployment",
       "deployment-evidence-valid",
     );
-    current = idea(source, id);
+    const current = idea(source, id);
     const implementation = reduce(current, {
       primary: current,
       head: tested,
@@ -1385,21 +1474,15 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     expect(pendingDeployment.result.problems?.[0]?.brief).toContain(
       implementation,
     );
-    source = add(
-      source,
-      event({
-        type: "verify",
-        batch: {
-          ...batch(current, "deployment", implementation),
-          subject: await git(root, ["rev-parse", "HEAD"]),
-        },
-      }),
-    );
+    source = deployed(source, implementation);
     await materialize(root, source);
     await gap("repository", "repository-worktree-clean");
     await git(root, ["add", "--all"]);
     await git(root, ["commit", "-m", "Record deployment verification"]);
     await gap("branch", "branch-primary-synchronized");
+    await publish();
+    await gap("user-acceptance", "user-acceptance-confirmed");
+    source = sign(source, "user-acceptance");
     await publish();
     const completed = await observe(input, {
       cid: artifact.cid,
@@ -1520,7 +1603,8 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     const tested = "a".repeat(40);
     let source = files();
     try {
-      for (const [index, checkpoint] of checkpointIds.slice(5).entries()) {
+      for (const checkpoint of checkpointIds.slice(5)) {
+        const index = checkpointIds.indexOf(checkpoint);
         const document = await store.resolveContent(
           (await import("multiformats/cid")).CID.parse(artifact.cid),
           `resources/references/checkpoints/${checkpoint}.md`,
@@ -1528,21 +1612,20 @@ describe("Ordered checkpoints and the real offline Engine", () => {
         const markdown = await readDocument(store, document.toString());
         expect(markdown).toContain("## Description");
         expect(markdown).toContain("## Agent instructions");
+        if (checkpoint === "deployment")
+          source.set(reportPath, Buffer.from(report(tested)));
         const current = idea(source, id);
         const state = reduce(current, { primary: current, head: tested });
-        const phase =
-          checkpoint === "deployment" ? "deployment" : "implementation";
         const replacements: Record<string, string> = {
           "new-32-hex": String(index + 1).padStart(32, "0"),
+          "new-submit-32-hex": String(index + 1).padStart(32, "0"),
+          "new-signoff-32-hex": String(index + 30).padStart(32, "0"),
           "current-UTC-ISO-time": new Date().toISOString(),
-          "unique-batch-id": `${checkpoint}-verification`,
           "exact-tested-commit-SHA": tested,
-          "required-implementation-environment": "local",
-          "required-deployment-environment": "staging",
-          "actual-case-id": phase === "implementation" ? "I-01" : "D-01",
-          "actual-file": "run.txt",
-          "sha256-of-raw-evidence-bytes": digest(
-            current.files.get(`evidence/${phase}/run.txt`)!,
+          "sha256-of-raw-report-bytes": digest(source.get(reportPath) ?? ""),
+          "current-user-acceptance-submit-id": String(index + 1).padStart(
+            32,
+            "0",
           ),
           ...Object.fromEntries(
             gates.map((gate) => [
@@ -1553,6 +1636,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
           ...(state.implementation
             ? { "state.implementation": state.implementation }
             : {}),
+          ...(state.deployment ? { "state.deployment": state.deployment } : {}),
         };
         let appended = 0;
         for (const match of markdown.matchAll(/```json\n([\s\S]*?)\n```/g)) {
@@ -1574,22 +1658,41 @@ describe("Ordered checkpoints and the real offline Engine", () => {
             expect(() => idea(indexed, id)).not.toThrow();
             continue;
           }
+          const before = idea(source, id);
           const candidate = new Map(source);
           candidate.set(
             "events.jsonl",
-            Buffer.from(current.eventSource + canonical(payload) + "\n"),
+            Buffer.from(before.eventSource + canonical(payload) + "\n"),
           );
           const next = idea(candidate, id);
-          validateAppend(current, next.events.at(-1)!, state, true);
+          validateAppend(
+            before,
+            next.events.at(-1)!,
+            reduce(before, { primary: before, head: tested }),
+            true,
+          );
           source = candidate;
+          const last = next.events.at(-1)!;
+          if (last.type === "submit" && checkpoint !== "user-acceptance") {
+            const approval = v2Event({ type: "signOff", submit: last.id });
+            validateAppend(
+              next,
+              approval,
+              reduce(next, { primary: next, head: tested }),
+              true,
+            );
+            source = add(source, approval);
+          }
           appended++;
         }
-        expect(appended, checkpoint).toBe(1);
+        expect(appended, checkpoint).toBe(
+          checkpoint === "user-acceptance" ? 2 : 1,
+        );
       }
       const current = idea(source, id);
       const completed = reduce(current, { primary: current, head: tested });
       expect(completed.level).toBe("completed");
-      expect(completed.implementation).toMatch(/^sha256:/);
+      expect(completed.implementation).toBe(tested);
       expect(completed.deployment).toMatch(/^sha256:/);
     } finally {
       await store.close();
@@ -1608,7 +1711,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
         "resources/references/check.md",
       );
       expect(await readDocument(store, doc.toString())).toContain(
-        "protocol v1",
+        "protocol v2",
       );
       await expect(readDocument(store, doc.toString(), 1)).rejects.toThrow(
         /budget/,
@@ -1633,23 +1736,16 @@ describe("Ordered checkpoints and the real offline Engine", () => {
   it("can finish the real shared graph with synchronized current evidence, while any signed detail edit rolls back", async () => {
     const { target: input, remote } = await target();
     let source = signed();
+    const current = idea(source, id);
+    await git(input.target.repoRoot, ["remote", "set-url", "origin", remote]);
+    await materialize(input.target.repoRoot, source);
+    await sync(input.target.repoRoot);
     const tested = await git(input.target.repoRoot, ["rev-parse", "HEAD"]);
-    let current = idea(source, id);
-    const implementation = { ...batch(current), subject: tested };
-    source = add(source, event({ type: "verify", batch: implementation }));
-    current = idea(source, id);
-    const state = reduce(current, { primary: current, head: tested });
     source = add(
       source,
-      event({
-        type: "verify",
-        batch: {
-          ...batch(current, "deployment", state.implementation),
-          subject: tested,
-        },
-      }),
+      v2Event({ type: "verify", phase: "implementation", rev: tested }),
     );
-    await git(input.target.repoRoot, ["remote", "set-url", "origin", remote]);
+    source = sign(deployed(source, tested), "user-acceptance");
     await materialize(input.target.repoRoot, source);
     await sync(input.target.repoRoot);
     await git(input.target.repoRoot, [
@@ -1793,7 +1889,7 @@ describe("Ordered checkpoints and the real offline Engine", () => {
     );
     const pinned = await observe(input, { artifacts, cid: original.cid });
     expect(pinned.checkCid).toBe(original.cid);
-    expect(pinned.documents[0]?.text).toContain("protocol v1");
+    expect(pinned.documents[0]?.text).toContain("protocol v2");
     await expect(
       observe(input, { artifacts: [newerDefault], cid: original.cid }),
     ).rejects.toThrow(/unavailable/);

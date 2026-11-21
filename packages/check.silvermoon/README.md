@@ -51,47 +51,16 @@ does not copy definitions into this author workspace. The four
 README's checkpoint authoring section for the refresh command. Every delivered
 CAR remains self-contained, including its Task overview and checkpoint files.
 
-The
-[Idea Check design candidate](../../docs/silvermoon-idea-check-candidate.yaml)
-adds user hands-on acceptance after deployment and Agent verification. It
-separates Agent `submit` from user-triggered `signOff`: each version-2 submit
-contains `object`, `revision` and one `upstream` content revision (`null` for
-requirements), and its version-2 signoff contains only the referenced `submit`
-ID. The chain is requirements → research → technical → cases → tests →
-user-acceptance. Each predecessor must already be confirmed and synchronized; a
-new submission requires its own explicit user signal, but merely changing a
-predecessor's submit ID does not invalidate downstream submissions when its
-content revision and full dependency context are unchanged. Any ancestor content
-change invalidates dependent submissions and confirmations transitively. Replay
-derives each submission's original content chain from the then-confirmed
-predecessor; a later submission with the same revision but different ancestors
-cannot silently replace that context. User acceptance submits the current
-deployment report revision, with the tested implementation bound inside that
-report. Materials and both events must reach primary before passing the
-corresponding gate. It also proposes small version-2 `verify` events containing
-only `phase` and one `rev` beyond the common event fields, with no generic
-environment parameter. Implementation runs reproducible automated tests and
-records the exact passing commit, without a report. Deployment requires
-Agent-led manual E2E tests and one append-only
-`evidence/deployment/report.jsonl` under the Idea root. Each round appends a
-`start` record binding the implementation, then one `case` record per manual
-attempt with steps, expected and actual outcomes, and result. Retries append
-records rather than editing failures; the last result per case in the latest
-round must cover all deployment cases and pass. No overall result is duplicated.
-The event records the entire file's raw-byte SHA-256. The fixed report preserves
-its existing byte prefix; neither lifecycle nor commit checks may allow
-rewriting it. Only the latest deployment event must match the current full
-report; new appended records invalidate an old verification until a matching
-event is added. Candidate case indexes use version 2 with only `id` and `phase`
-per case. Historical version-1 inline batches remain unchanged and readable, but
-do not substitute for the new automated and manual acceptance steps. This is a
-Spec-only proposal, not the generated runtime preview: the simplified
-verification protocol and case index, paired submission/signoff events, reducer
-state and thirteenth checkpoint are not implemented or included in any CAR. Keep
-it separate from `generate-specs` until the runtime change is authorized and
-implemented.
+The current [Idea Check Spec](../../docs/silvermoon-single-checker.yaml)
+implements v2 paired submit/signOff confirmations, direct predecessor revisions,
+exact implementation commit verification, a cumulative append-only deployment
+report, and a thirteenth user-acceptance checkpoint. The Check never performs
+automated tests, manual E2E operations or user acceptance itself: it validates
+their recorded versions, strict structures, append-only history and
+synchronization. Old v1 events remain readable without being migrated into v2
+acceptance.
 
-See the [Events guide](../../docs/silvermoon-events.md) for the seven current
-event types and candidate eighth type `submit`, field meanings, JSON/JSONL
-examples, and the distinction between current inline verification batches and
-the candidate simplified verification protocol.
+See the [Events guide](../../docs/silvermoon-events.md) for all eight event
+types and current/historical field distinctions. The original
+[design candidate](../../docs/silvermoon-idea-check-candidate.yaml) is archived
+design history, not the generated runtime Spec.

@@ -24,6 +24,7 @@ import {
   type ProjectConfig,
   type State,
 } from "./domain.js";
+import { reportPath } from "./lifecycle-v2.js";
 
 const execute = promisify(execFile);
 export type Snapshot = string;
@@ -546,6 +547,16 @@ export function verifyIdeaHistory(
     "history",
     "Primary Idea identity/history must be preserved as an exact append-only prefix.",
   );
+  const before = previous.files.get(reportPath);
+  const after = current.files.get(reportPath);
+  invariant(
+    !before ||
+      (after &&
+        after.byteLength >= before.byteLength &&
+        Buffer.from(after.subarray(0, before.byteLength)).equals(before)),
+    "report-history",
+    "Deployment report must preserve its exact existing byte prefix.",
+  );
 }
 export async function primary(
   project: Project,
@@ -581,18 +592,35 @@ export async function validSubjects(
   const subjects = [
     ...new Set(
       current.events.flatMap((event) =>
-        event.type === "verify" ? [event.batch.subject] : [],
+        event.type === "verify"
+          ? event.version === 1
+            ? [event.batch.subject]
+            : event.phase === "implementation"
+              ? [event.rev]
+              : []
+          : [],
       ),
     ),
   ];
   invariant(
-    subjects.length <= 64,
+    subjects.length <=
+      (current.events.some((event) => event.version === 2) ? 4096 : 64),
     "capacity",
     "Evidence history exceeds 64 distinct subjects.",
   );
-  const accepted: string[] = [head];
+  const paired =
+    current.events.some((event) => event.version === 2) ||
+    current.cases.version === 2;
+  const accepted: string[] = paired ? [] : [head];
   for (const subject of subjects) {
     if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(subject)) continue;
+    if (paired) {
+      invariant(
+        (await git(root, ["cat-file", "-t", subject], signal)) === "commit",
+        "evidence",
+        "Implementation rev must identify an existing exact commit.",
+      );
+    }
     try {
       await git(root, ["merge-base", "--is-ancestor", subject, head], signal);
       const diff = await git(
@@ -604,14 +632,41 @@ export async function validSubjects(
           head,
           "--",
           ".",
-          `:(exclude).silvermoon/i/${current.bootstrap.id}/**`,
+          ...(paired
+            ? [
+                `:(exclude).silvermoon/i/${current.bootstrap.id}/events.jsonl`,
+                `:(exclude).silvermoon/i/${current.bootstrap.id}/evidence/**`,
+              ]
+            : [`:(exclude).silvermoon/i/${current.bootstrap.id}/**`]),
         ],
         signal,
       );
-      if (!diff) accepted.push(subject);
+      if (!diff) {
+        if (paired) {
+          const snapshot = await readIdeaProject(
+            root,
+            current.bootstrap.id,
+            subject,
+            signal,
+          );
+          const previous = snapshot.ideas.get(current.bootstrap.id);
+          if (
+            !previous ||
+            canonical(previous.revisions) !== canonical(current.revisions)
+          )
+            continue;
+        }
+        accepted.push(subject);
+      }
     } catch (error) {
       signal?.throwIfAborted();
       if (error instanceof SilvermoonError) throw error;
+      if (!(
+        error instanceof Error &&
+        "code" in error &&
+        [1, 128].includes(Number(error.code))
+      ))
+        throw error;
     }
   }
   return accepted;
@@ -619,7 +674,11 @@ export async function validSubjects(
 export async function observedIdeaState(
   project: Project,
   current: Idea,
-  context: { readonly head: string; readonly primary: Project },
+  context: {
+    readonly head: string;
+    readonly primary: Project;
+    readonly protocol?: 2;
+  },
   preference?: string,
   signal?: AbortSignal,
 ): Promise<State> {
@@ -632,6 +691,7 @@ export async function observedIdeaState(
       : {}),
     ...(preference ? { userLanguage: language(preference) } : {}),
     subjects: await validSubjects(project.root, current, context.head, signal),
+    ...(context.protocol ? { protocol: context.protocol } : {}),
   });
 }
 export type LocalState =
@@ -864,6 +924,7 @@ export function draftChanges(
     synchronization: ["requirements/", "technical/", "tests/"],
     implementation: ["evidence/implementation/"],
     deployment: ["evidence/implementation/", "evidence/deployment/"],
+    "user-acceptance": ["evidence/deployment/"],
     completed: ["evidence/implementation/", "evidence/deployment/"],
     abandoned: [],
   };

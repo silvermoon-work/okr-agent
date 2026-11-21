@@ -16,35 +16,33 @@ state.level=synchronization 且 state.next=requirements
 ### 准备、评审和记录
 
 1. 编写 \`requirements/Spec.md\`，用 Markdown 说明问题、目标、范围与非目标、场景和验收标准；全部 \`requirements/\` 附件也属于签署范围。目录提纲用于帮助 review，不是新增机器可验证的正文模板。
-2. 向用户展示当前完整材料及变更，明确请求对这个准确版本的确认。用户未同意时继续迭代文档和 review，不记录 \`signOff\`，也不删除已有事件。
-3. 用户明确同意后，用 \`silvermoon check-idea <idea> --json\` 读取生命周期 Problem brief 中的 \`revisions\`、\`eventDigest\` 和 \`primary\`。如果材料与用户刚确认的版本不同，重新 review；primary 不可用时先恢复观察能力。
-4. 准备下面的 JSON。\`type=signOff\` 本身表示真实确认，新事件不再写 \`decision\`；历史事件中的 \`decision=confirmed\` 只按兼容协议读取，不能为简化格式改写旧事件。所有 \`<...>\` 都必须替换为真实值：\`id\` 是全新 32 位小写十六进制，\`at\` 是当前规范 UTC ISO 时间，revision 来自当前回放，不能猜测哈希。
+2. 通过当前运行时观察当前 revisions、eventDigest 和 primary，按 idea-folder 的配对规则先追加下列 submit，再向用户展示该提交对应的完整材料和变更，请求明确决定。全部占位符必须替换为真实值。
 
 \`\`\`json
 {
-  "version": 1,
+  "version": 2,
   "id": "<new-32-hex>",
   "at": "<current-UTC-ISO-time>",
-  "type": "signOff",
+  "type": "submit",
   "object": "requirements",
   "revision": "<state.revisions.requirements>",
-  "upstream": {}
+  "upstream": null
 }
 \`\`\`
 
-5. 直接编辑该 Idea 的 \`events.jsonl\` 追加事实，保留原始字节前缀；每条新事件递归按 ASCII 键序序列化为单行 JSON，使用 UTF-8、LF 和最终换行，再运行 \`silvermoon check-changes --worktree --audience agent\` 检查。事件只能记录已有真实人类决定，不是用户授权或身份认证。
-6. 遇到版本、digest 或 primary 冲突时重新观察并核对用户决定，不盲目重试。按已有授权提交并同步内容和事件，再运行 \`silvermoon check-idea <idea> --audience agent\`，以对应 Rules 通过为准；本地库存状态不证明网络新鲜度。
+3. 用户未明确接受时等待或迭代，不写 signOff；材料变化后以新 id 重新 submit。用户接受后重新核对当前内容和最新请求，按共享模板追加仅引用该 submit ID 的 signOff，不重复 revision 或 upstream。
+4. 按已有授权执行 worktree、staged 的 check-changes，提交并同步材料和配对事件，再运行 check-idea。冲突时重新观察、核对用户决定，不盲目复用旧确认。
 `,
   rules: [
     {
       code: "requirements-consensus-confirmed",
       description:
-        "完整事件历史中必须存在 type=signOff、object=requirements 的事件，其 revision 等于 state.revisions.requirements，upstream 为空， 且 reducer 将该事件 ID 纳入 state.signed.requirements。受签署范围内的任何变更都须重新确认， 不能只检查历史上是否出现过 signOff。",
+        "最新 object=requirements 的 v2 submit，其 revision 必须等于 state.revisions.requirements，upstream 必须为 null； 必须存在位于其后的 v2 signOff，submit 仅引用这条请求， 且 reducer 将配对 signOff 的 ID 纳入 state.signed.requirements。受签署范围内的任何变更都须重新确认， 不能只检查历史上是否出现过 signOff。",
     },
     {
       code: "requirements-synchronized",
       description:
-        "reducer 必须确认当前准确需求内容和 state.signed.requirements 指向的同一 signOff 事件均存在于本次观察的 primary；若 state.level=synchronization 且 state.next=requirements，本 Rule 不通过。",
+        "reducer 必须确认当前准确需求内容和 state.signed.requirements 指向的同一 signOff 及其 submit 均存在于本次观察的 primary；若 state.level=synchronization 且 state.next=requirements，本 Rule 不通过。",
     },
   ],
   output: {

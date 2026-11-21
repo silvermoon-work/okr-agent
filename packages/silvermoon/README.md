@@ -26,19 +26,20 @@ Check, writer and replay is the only lifecycle implementation. The Host renders
 
 The [Idea checkpoint design](../../docs/silvermoon-single-checker.yaml) uses
 Check Bundle Spec v1.0 for ipfsaw preview. The built-in Check executes the same
-12 ordered checkpoints: `global`, `repository`, `branch`, `silvermoon-folder`,
+13 ordered checkpoints: `global`, `repository`, `branch`, `silvermoon-folder`,
 `idea-folder`, `requirements`, `research`, `technical`, `test-index`,
-`test-cases`, `implementation` and `deployment`. The first states are
-“全局 Silvermoon 已正确配置”, “仓库在可继续推进的状态”, “分支在可继续推进状态”,
-“Silvermoon 数据目录有效” and “Idea 数据有效”. The five consensus states are
-“需求／调研／技术／用例索引／测试共识已确认并同步”, followed by
-“实现验收已通过并同步” and “部署验收已通过并同步”. Each checkpoint owns coded
-rules and one complete document. The first failing checkpoint stops execution;
-no tree or child expansion is returned. Lifecycle Problem briefs include the
-reduced current `level` and optional `next` together with revision facts.
-Successful outputs are shared only within the current execution through
-`outputOf`. Repository advancement requires every change committed and HEAD
-synchronized with primary; Idea draft/event exceptions are no longer accepted.
+`test-cases`, `implementation`, `deployment` and `user-acceptance`. The first
+states are “全局 Silvermoon 已正确配置”, “仓库在可继续推进的状态”,
+“分支在可继续推进状态”, “Silvermoon 数据目录有效” and “Idea 数据有效”. The five
+consensus states are “需求／调研／技术／用例索引／测试共识已确认并同步”,
+followed by “实现验收已通过并同步”, “部署与 Agent 自验已通过并同步” and
+“用户体验验收已确认并同步”. Each checkpoint owns coded rules and one complete
+document. The first failing checkpoint stops execution; no tree or child
+expansion is returned. Lifecycle Problem briefs include the reduced current
+`level` and optional `next` together with revision facts. Successful outputs are
+shared only within the current execution through `outputOf`. Repository
+advancement requires every change committed and HEAD synchronized with primary;
+Idea draft/event exceptions are no longer accepted.
 
 Checkpoint IDs name their subject, while titles name the attained state. Every
 Rule ID begins with its owning checkpoint ID and is unique within its Task.
@@ -46,15 +47,17 @@ Checkpoint naming does not rename existing files or historical event/reducer
 phases: `research` matches its event/state key directly, while `test-index` and
 `test-cases` inspect the existing `cases` and `tests` phases respectively.
 
-Implementation and deployment each require actual verification evidence,
-matching `verify` events and synchronization to the configured primary (for
-example `origin/main`). Implementation code, evidence and events must be
-committed and synchronized before deployment can pass its prerequisites.
-Deployment verifies that accepted implementation, records its own evidence and
-events, then synchronizes them before the Task can pass. Each phase rechecks a
-clean worktree and HEAD against the observed primary tip; a local event or a
-successful push command is not sufficient. There is no separate completion
-checkpoint; reducer inconsistency remains an explicit execution error.
+Implementation requires actual reproducible automated tests and a v2 `verify`
+binding the exact passing commit, without an implementation report. Deployment
+requires Agent-led manual E2E cases recorded in the fixed append-only
+`evidence/deployment/report.jsonl`, with a v2 `verify` binding its raw-byte
+hash. Both phases synchronize their materials and events to primary before
+continuing. The user then operates the delivery and explicitly accepts its exact
+submitted report revision; that paired confirmation must also synchronize. Each
+phase rechecks a clean worktree and HEAD against the observed primary tip; a
+local event or a successful push command is not sufficient. There is no separate
+completion checkpoint; reducer inconsistency remains an explicit execution
+error.
 
 The [commit Check Task](../../docs/silvermoon-commit-check.yaml) independently
 attains “候选快照有效” then “候选修改符合约束”, validating the candidate and its
@@ -128,13 +131,17 @@ errors rather than invalid-data reports.
 valid event history with current revisions, evidence, tested subjects and
 observed primary facts. `level` in a lifecycle Problem brief is the first unmet
 domain phase, not a phase already passed; `signed` holds matching signoff event
-IDs, while `implementation` and `deployment` are accepted batch collection
-digests. Earlier readiness failures return their own diagnostics rather than
-fabricating a reduced state. A passing Idea Check establishes completion. Each
-consensus instruction contains its actual signOff JSON shape and exact upstream
-vector; verification instructions contain phase-specific verify templates.
-Placeholders must be replaced with current observed facts, and a event never
-substitutes for the user's real approval.
+IDs and `submitted` holds the latest request IDs. In v2, `implementation` is the
+tested Git commit and `deployment` is the fixed report hash; pure v1 library
+reduction retains historical batch collection digests. The new Idea CAR requires
+v2 paired standards and never treats v1 evidence as new acceptance. Earlier
+readiness failures return their own diagnostics rather than fabricating a
+reduced state. A passing Idea Check establishes completion. Each consensus
+instruction contains its submit JSON and direct predecessor revision;
+idea-folder documents the shared signOff reference template, and verification
+instructions contain phase-specific verify templates. Placeholders must be
+replaced with current observed facts, and a event never substitutes for the
+user's real approval.
 
 Repository acceptance covers the Git root, attached branch and clean worktree;
 branch acceptance covers project configuration, primary existence, upstream and
@@ -362,7 +369,7 @@ arbitrary `GIT_*`, `NODE_OPTIONS` and the full host environment are not
 forwarded. Engine Worker isolation and Git's
 noninteractive/hook/external-protocol protections remain.
 
-## Minimum viable protocol (version 1)
+## Lifecycle protocol (v2 with historical v1 reading)
 
 Only new `.silvermoon/i/<id>` is read. `.silvermoon/ideas` is untouched archival
 data, never scanned or validated. `.silvermoon/guidance` is not consumed. There
@@ -380,8 +387,8 @@ technical/research.md             independently signed question index
 technical/Spec.md                 all technical/ except research.md is signed
 tests/cases.json                  independently signed machine-readable index
 tests/Spec.md                     all tests/ except cases.json is signed
-evidence/implementation/*         unsigned, phase-specific evidence
-evidence/deployment/*
+evidence/deployment/report.jsonl  fixed cumulative manual E2E report
+evidence/deployment/*             optional case-required attachments
 ```
 
 All trees include every support file, including plans and refinements. Revision
@@ -400,66 +407,70 @@ Example test index:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "cases": [
     {
       "id": "I-01",
-      "phase": "implementation",
-      "environment": "local",
-      "subject": "git-head"
+      "phase": "implementation"
     },
     {
       "id": "D-01",
-      "phase": "deployment",
-      "environment": "staging",
-      "subject": "implementation"
+      "phase": "deployment"
     }
   ]
 }
 ```
 
-Both phases are mandatory. One batch covers all cases in its phase for one exact
-environment. Every required environment must have a current passing batch; a new
-failed retry invalidates an earlier passing batch for that environment. The
+Both phases are mandatory. The v2 index contains only `id` and `phase`; actual
+test conditions and platform requirements belong in the detailed cases. The
 index specifies scope, while Test Spec describes prerequisites, operations,
 expectations and required proof. Nonempty files are structural checks, not
 semantic approval.
 
 ### Events and revisions
 
-Every event has `version:1`, a unique 32-lowercase-Hex request `id`, and
-canonical ISO `at`. JSON object keys are recursively ASCII-sorted. Supported
-types:
+Every event has a supported `version`, a unique 32-lowercase-Hex request `id`,
+and canonical ISO `at`. JSON object keys are recursively ASCII-sorted. Supported
+types (identity, alias, language, abandonment and resume remain version 1):
 
 - `created`: `idea`, `checkCid`, optional canonical `language`; first/only.
 - `setAlias`: lowercase portable `alias` or `null`; unique in the new inventory.
 - `setLanguage`: canonical `language` or `null` to return to inherited content.
 - `abandon`: nonempty `reason`; `resume`: explicit reversal. No intervening
   lifecycle facts while abandoned.
-- `signOff`: `object` = `requirements|research|technical|cases|tests`,
-  `revision` and `upstream`; the event type itself records explicit
-  confirmation. New writes omit `decision`. Readers retain compatibility with
-  historical `decision:"confirmed"` without stripping it or rewriting event
-  bytes; other decision values remain invalid. New writes with that legacy field
-  fail explicitly rather than silently normalizing the input. The upstream map
-  contains **exactly all preceding gate revisions** in that order. Recorded
-  upstream decisions must already exist. Record only the exact current gate
-  after a real explicit human decision; an event is not authentication.
-- `verify`: a unique `batch` described below; Agent verification is not another
-  human signoff.
+- v2 `submit`: `object`, exact `revision` and one direct predecessor `upstream`
+  revision (`null` for requirements). Objects are the five standards plus
+  `user-acceptance`, whose revision is the current deployment report hash.
+- v2 `signOff`: only `submit`, referencing an earlier latest request exactly
+  once, after actual explicit acceptance. No `decision`, revision or vector is
+  repeated.
+- v2 `verify`: only `phase` and `rev`; implementation uses an exact passing Git
+  commit, deployment uses the fixed report's raw-byte SHA-256.
 
 The Check returns current full revisions and event/primary digests in the
 Problem brief. To sign Requirements, for example, use the actual observed values
-in an event with `type:"signOff"`, `object:"requirements"` and `upstream:{}`.
-Never compute approval from prose, silence or Git.
+to append `submit` for requirements with `upstream:null`, then obtain a real
+user decision and append `signOff` referencing that request. Never compute
+approval from prose, silence or Git.
 
-Humans review and sign the exact **draft first**. Until matching bytes AND that
-event are committed/synchronized to primary, the state is `synchronization`, not
-the next gate. Any signed supplement change rolls back to its gate and
-invalidates dependent vectors. Even implementation/deployment plan “minor
-refinements” require re-signoff. Independent indexes stay stable while bodies
-are filled. All five signoffs are required; there are no waivers or human
-implementation/deployment result gates.
+Agent submits the exact draft first, then humans review and explicitly accept
+that request. Until matching bytes AND both events are committed/synchronized to
+primary, the state is `synchronization`, not the next gate. Any signed
+supplement change rolls back to its gate and invalidates dependent vectors. Even
+implementation/deployment plan “minor refinements” require re-signoff.
+Independent indexes stay stable while bodies are filled. All five paired
+standards and the final paired user acceptance are required; there are no
+waivers. A new predecessor request with the same content and full ancestor
+context does not invalidate downstream requests after its own acceptance and
+synchronization; changed ancestors do.
+
+Historical v1 signOff vectors, optional `decision:"confirmed"` and inline verify
+batches retain their bytes and old library reduction semantics. They are not
+converted to fabricated submissions. Once v2 events begin, new v1 signOff or
+verify records are rejected. The new CAR requires reestablishing the paired
+chain; existing immutable Check CIDs and archived CARs are never automatically
+changed. See [Events guide](../../docs/silvermoon-events.md) for exact schemas
+and examples.
 
 ### Git and transaction guard checks
 
@@ -498,21 +509,25 @@ Links, redirected roots, nonregular files, unsafe paths and conflicts fail.
 Capacity: 2048 files / 16 MiB per snapshot; 1 MiB / 4096 events per Idea; 512
 cases/results, 64 evidence refs/result and 64 distinct tested subjects.
 
-### Evidence batches
+### Verification and deployment reports
 
-A `verify` event's `batch` has `id`, `phase`, all five `revisions`, exact Git
-commit `subject`, exact `environment`, and one `results` entry per required
-phase/environment case:
-`{case:"I-01",result:"pass|fail|error",evidence:[{path:"evidence/implementation/run.txt",digest:"sha256:…"}]}`.
-Deployment additionally requires `implementation` = SHA256 of canonical JSON of
-the current implementation batches ordered by environment. Only fully passing,
-current, nonempty, hash-matching batches across every required environment
-satisfy a phase; failures may be retained as facts but never completion. New
-batches bind current HEAD. Later commits that only add this Idea's
-evidence/events do not stale tested code; any other tracked change since the
-subject does. A new implementation batch invalidates deployment bound to the old
-one. Final events/evidence must themselves be clean and synchronized for
-terminal Pass.
+The last v2 verify per phase controls acceptance, never the last successful one.
+The implementation commit must exist, be an ancestor of HEAD, contain the five
+current standard revisions and differ only in this Idea's events/evidence
+metadata. Changes to other tracked files, including standards, tests, locks and
+config, require retesting. The Check does not execute those tests.
+
+The deployment report starts each round with
+`{"version":1,"type":"start","implementation":"<tested-commit>"}` and appends
+`case` rows containing `case`, nonempty `steps`, `expected`, `actual` and
+`result` (`pass|fail|error|blocked|not-run`). Optional start `context` records
+real conditions. Only the latest round and latest attempt per case count; every
+deployment case must pass. A fresh implementation verify invalidates previous
+deployment verification and user acceptance even at the same commit. The entire
+report is limited to 1 MiB/4096 rows and each round to 512 cases. Both lifecycle
+and commit checks protect its exact byte prefix. Only the latest deployment
+verify must match the current whole-file digest; appending without a matching
+verify invalidates it rather than reusing old success.
 
 Proof remains a traceable Agent claim: this mechanical Check does not execute an
 LLM, prove logs truthful or grant operational permission. Keep secrets out;

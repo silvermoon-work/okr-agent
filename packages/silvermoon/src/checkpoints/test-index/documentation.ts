@@ -14,50 +14,46 @@ state.next=cases 表示索引确认等待同步。只有 reducer
 
 ### 准备、评审和记录
 
-1. 在 \`tests/cases.json\` 编写协议 v1 JSON 索引。每个 case 的 id 必须唯一，使用大写字母开头的大写字母、数字或连字符；同时列出真实需要的实现和部署环境。以下仅示意结构，不能将示例环境或两个 case 当成项目的完整范围。
+1. 在 \`tests/cases.json\` 编写v2 协议 v2 JSON 索引。每个 case 的 id 必须唯一，使用大写字母开头的大写字母、数字或连字符；仅声明 id 和 phase，不设置通用 environment 或可选的受测对象策略。实现固定针对准确代码提交，部署固定针对已通过实现验收的交付。以下仅示意结构，不能将两个 case 当成项目的完整范围。
 
 \`\`\`json
 {
-  "version": 1,
+  "version": 2,
   "cases": [
-    {"id": "I-01", "phase": "implementation", "environment": "local", "subject": "git-head"},
-    {"id": "D-01", "phase": "deployment", "environment": "staging", "subject": "implementation"}
+    {"id": "I-01", "phase": "implementation"},
+    {"id": "D-01", "phase": "deployment"}
   ]
 }
 \`\`\`
 
-2. 与用户 review 用例范围、phase、environment、subject 及绑定的前序版本。未明确同意就迭代索引，不写 \`signOff\`。详细操作正文留到 test-cases，但不能遗漏索引应声明的用例。
-3. 明确同意后，用 \`silvermoon check-idea <idea> --json\` 核对当前 revisions、digest 和可用 primary tip。替换下列全部占位符，id 为全新 32 位小写十六进制，at 为当前规范 UTC ISO 时间。
+2. 与用户 review 用例范围、阶段分工及绑定的前序版本：implementation 为可重现自动化测试，deployment 为 Agent 主导的 E2E 手工验收。平台、地址等确有必要的条件写在具体用例中，不增加通用参数。未明确同意就迭代索引，不写 \`signOff\`。详细操作正文留到 test-cases，但不能遗漏索引应声明的用例。
+3. 不等待用户先同意才提交。先观察 revisions、eventDigest 和 primary，核对当前 technical submit 及其前序链已确认同步，追加下列v2 submit，再请用户确认该准确用例索引。
 
 \`\`\`json
 {
-  "version": 1,
+  "version": 2,
   "id": "<new-32-hex>",
   "at": "<current-UTC-ISO-time>",
-  "type": "signOff",
+  "type": "submit",
   "object": "cases",
   "revision": "<state.revisions.cases>",
-  "upstream": {
-    "requirements": "<state.revisions.requirements>",
-    "research": "<state.revisions.research>",
-    "technical": "<state.revisions.technical>"
-  }
+  "upstream": "<state.revisions.technical>"
 }
 \`\`\`
 
-4. 直接编辑该 Idea 的 \`events.jsonl\` 追加事实，保留原始字节前缀；每条新事件递归按 ASCII 键序序列化为单行 JSON，使用 UTF-8、LF 和最终换行，再运行 \`silvermoon check-changes --worktree --audience agent\` 检查。冲突时重新观察和核对 review。
-5. 按已有授权提交并同步索引与事件，再运行 \`silvermoon check-idea <idea> --audience agent\` 确认对应 Rules 已通过。
+4. 等待明确接受，索引或前序链变更后重新 submit。接受后复核最新请求，再按共享模板追加仅引用该 submit ID 的 signOff；不重复任何前序摘要。
+5. 按共享规则检查 worktree、staged，按已有授权提交并同步索引及配对事件，再运行 check-idea 确认对应 Rules 已通过。
 `,
   rules: [
     {
       code: "test-index-consensus-confirmed",
       description:
-        "当前 tests/cases.json 必须同时包含实现和部署用例，明确阶段、环境与受测对象。完整事件历史中必须存在 object=cases 的 signOff，其 revision 等于 state.revisions.cases，upstream 恰好绑定当前 requirements、research、technical 版本，且 reducer 将该事件 ID 纳入 state.signed.cases。",
+        "当前 tests/cases.json 必须使用上述严格 v2 索引，同时包含实现和部署用例，每项仅包含唯一 id 和合法 phase，不包含 environment 或 subject 字段。最新 object=cases 的 v2 submit， revision 等于 state.revisions.cases，upstream 严格等于当前已确认并同步的 state.revisions.technical；其后存在仅引用该请求的 v2 signOff， 整条前序链有效，且 reducer 将配对 signOff 的 ID 纳入 state.signed.cases。",
     },
     {
       code: "test-index-synchronized",
       description:
-        "reducer 必须确认当前准确用例索引、全部前序内容与 state.signed.cases 指向的同一 signOff 事件均存在于本次观察的 primary；若 state.level=synchronization 且 state.next=cases，本 Rule 不通过。",
+        "reducer 必须确认当前准确用例索引、全部前序内容与 state.signed.cases 指向的同一 signOff、其 submit 及前序提交链均存在于本次观察的 primary；若 state.level=synchronization 且 state.next=cases，本 Rule 不通过。",
     },
   ],
   output: {

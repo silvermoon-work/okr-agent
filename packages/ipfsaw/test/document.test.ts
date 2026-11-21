@@ -68,6 +68,7 @@ describe("bounded, JSON-compatible document input", () => {
       "test-cases",
       "implementation",
       "deployment",
+      "user-acceptance",
     ]);
     expect(checkpoints[0]!.rules.map(({ code }) => code)).toEqual([
       "global-runtime-ready",
@@ -131,6 +132,7 @@ describe("bounded, JSON-compatible document input", () => {
       ),
     ).toEqual([
       "commit-snapshot-valid",
+      "commit-history-deployment-report-append-only",
       "commit-history-idea-identity-immutable",
       "commit-history-event-history-append-only",
     ]);

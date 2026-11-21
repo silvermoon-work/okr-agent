@@ -28,9 +28,16 @@ export function deploymentCheckpoint(
     > => {
       const { state, brief } = context.outputOf(observation);
       if (state.level === "deployment")
-        return failure("deployment-evidence-valid", brief);
+        return failure(
+          state.deployment
+            ? "deployment-synchronized"
+            : "deployment-evidence-valid",
+          brief,
+        );
       invariant(
-        state.level === "completed",
+        ["user-acceptance", "completed"].includes(state.level) ||
+          (state.level === "synchronization" &&
+            state.next === "user-acceptance"),
         "internal",
         "Prior checkpoints did not establish completed lifecycle facts.",
       );

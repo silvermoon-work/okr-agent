@@ -10,6 +10,7 @@ import {
   vectorAt,
   type Batch,
   type Event,
+  type LegacyEvent,
   type Files,
   type Gate,
   type Idea,
@@ -21,9 +22,9 @@ export const cid =
 export const id = "2026111716097a2f";
 export const date = "2026-11-17T16:09:22.408Z";
 export const head = "a".repeat(40);
-export function event<const T extends Omit<Event, "id" | "at" | "version">>(
-  value: T,
-): T & { id: string; at: string; version: 1 } {
+export function event<
+  const T extends Omit<LegacyEvent, "id" | "at" | "version">,
+>(value: T): T & { id: string; at: string; version: 1 } {
   return {
     ...value,
     id: randomBytes(16).toString("hex"),

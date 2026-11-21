@@ -4,7 +4,7 @@ description:
   Operate the scoped Check-backed Silvermoon consensus and evidence workflow.
 ---
 
-# Silvermoon (Check protocol v1)
+# Silvermoon (lifecycle protocol v2, historical v1 reading)
 
 Use the running scoped installation's `silvermoon`, never a project dependency
 or a legacy tool as a fallback. Do not install, globally link or replace tools
@@ -29,9 +29,9 @@ copy.
   install software, link skills or create an Idea.
 - Use `check-idea <idea>` for the Idea Check Task: global → repository → branch
   → silvermoon-folder → idea-folder → requirements → research → technical →
-  test-index → test-cases → implementation → deployment. The selector is
-  required; use `list-ideas` to discover one, never guess it. Identity/history
-  protection is scoped to the selected Idea.
+  test-index → test-cases → implementation → deployment → user-acceptance. The
+  selector is required; use `list-ideas` to discover one, never guess it.
+  Identity/history protection is scoped to the selected Idea.
 - `list-ideas` queries only `.silvermoon/i`, without fetch or hygiene gates. The
   archived `.silvermoon/ideas` is outside this protocol. Do not migrate,
   retrofit CIDs or consume old guidance.
@@ -82,24 +82,27 @@ Form consensus in this exact order:
 1. Complete `requirements/` including all support.
 2. Standalone `technical/research.md` question/focus index.
 3. Complete `technical/` except that index, including supplementary design.
-4. Standalone `tests/cases.json` case/environment/phase index.
+4. Standalone v2 `tests/cases.json` index containing only case id and phase.
 5. Complete `tests/` except that index, including case bodies and support.
 
 Show the exact current revision/diff and material files before asking the human.
-Record `signOff` only after an explicit exact decision. An event is not
-authentication or inferred permission. Five revision vectors come from the
-current Check; never guess hashes.
+Append a v2 `submit` before requesting the user's decision. It records object,
+current revision and only the direct predecessor revision (null for
+requirements). Record v2 `signOff` only after explicit acceptance, referencing
+the latest exact submit ID without repeating object/revision/upstream. An event
+is not authentication or inferred permission. Read revisions from the Check,
+never guess hashes.
 
-People sign the exact draft FIRST. Then validate, commit and synchronize the
-same signed bytes and event with ordinary authorized Git tools. Reobserve before
-the next gate. Do not reuse the legacy synchronize-before-review order. Editing
-ANY signed support detail, including an implementation plan, requires renewed
+Agent submits the exact draft FIRST, then people explicitly accept that request.
+Validate, commit and synchronize the same signed bytes and both events with
+ordinary authorized Git tools. Reobserve before the next gate. Editing ANY
+signed support detail, including an implementation plan, requires renewed
 signoff and dependent decisions. No minor-change exception exists. Independent
 index bytes retain their revision when only bodies are filled.
 
 ## Facts and evidence
 
-Use `check-idea <idea>` for lifecycle observation. Append explicit protocol-v1
+Use `check-idea <idea>` for lifecycle observation. Append supported protocol
 facts by editing `events.jsonl` directly: retain the old raw bytes as an exact
 prefix, use canonical JSON (recursively sorted keys), UTF-8, LF and a final
 newline. Recheck current bytes and revisions before recording a real decision;
@@ -111,36 +114,50 @@ with `check-idea <idea>`. No append/replay command or confirmation flag exists.
 Lifecycle Problem briefs include reduced state, current revisions,
 `eventDigest`, `primary` and `subject`. Reduction uses the whole valid history,
 current revisions, evidence and Git context. `level` is the first unmet domain
-phase. `state.signed` contains matching signoff event IDs;
-implementation/deployment fields are valid batch collection digests, not event
-IDs. A local completed level is not proof of synchronization. Read each
-checkpoint's short description for its scope and its separate instructions for
-document preparation, review and exact event JSON. If the user does not
-explicitly approve the current materials, iterate the documents without
-recording a signOff; never submit template placeholders as facts.
+phase. `state.submitted` contains latest submit IDs and `state.signed` contains
+matching signOff IDs. In v2, implementation is the tested commit and deployment
+is the report's raw-byte SHA-256; neither is an event ID. A local completed
+level is not proof of synchronization. Read each checkpoint's short description
+for its scope and its separate instructions for document preparation, review and
+exact event JSON. If the user does not explicitly approve the current materials,
+iterate the documents without recording a signOff; never submit template
+placeholders as facts.
 
-Use `type: "signOff"` without `decision` when recording a new confirmation.
+Use v2 `type: "signOff"` with only its `submit` reference and no `decision`.
 Historical `decision: "confirmed"` events remain readable and must not be
 rewritten; other decision values are invalid. Only a real explicit user decision
 authorizes recording a signoff.
 
-Implementation/deployment have Agent verification, not human result gates. Store
-nonempty evidence separately by phase and append unique `verify` batches
-covering every approved phase case with current revisions, exact subject,
-environment and evidence digests. Deployment additionally binds the applicable
-implementation batch. Preserve failed/stale batches. A completed flag, time,
-checked task, test exit alone or Agent opinion is not sufficient proof.
+Implementation/deployment have Agent verification, followed by an independent
+user-acceptance gate. Actually execute every implementation automated case on
+the exact commit; only after all pass record v2 verify with phase and rev. Keep
+tests, dependencies and explicit commands reproducible, without an
+implementation report or test-output copy.
 
-Complete implementation verification, record its evidence and verify events,
-then commit and synchronize the implementation, evidence and events to the
-configured primary before proceeding to deployment. Deploy that verified and
-synchronized implementation, verify the deployment and record its evidence and
-verify events, then commit and synchronize them before declaring completion.
-Both checkpoints require evidence and synchronization; a local event or a push
-command's success alone is insufficient. There is no separate completion
-checkpoint. These actions require existing authorization; the Check never
-performs them automatically. Checkpoint IDs do not change historical event
-phases or existing content paths.
+For deployment, manually operate the actual delivery through every E2E case.
+Append a start row binding the implementation and then actual case attempts to
+evidence/deployment/report.jsonl. Preserve failures and old rounds; do not edit,
+truncate or format existing rows. Latest round and last attempt per case must
+all pass. Append v2 verify with phase=deployment and the whole report hash.
+Unknown, blocked, not-run and incomplete results never pass.
+
+Complete implementation verification, then commit and synchronize the
+implementation, tests and verify event to the configured primary before
+proceeding to deployment. Deploy that verified and synchronized implementation,
+verify the deployment and record its report and verify event, then commit and
+synchronize them before user acceptance. Both checkpoints require evidence and
+synchronization; a local event or a push command's success alone is
+insufficient. Submit the exact deployment report revision for user-acceptance,
+provide the corresponding delivery for the user to operate, and only after
+explicit acceptance append its paired signOff. Synchronize both events and
+reobserve before declaring completion.
+
+Historical v1 events remain unchanged; do not fabricate missing submits or mix
+old batches into new acceptance. After v2 begins, new v1 signOff/verify events
+are invalid. Never change an existing pinned Check CID to migrate it. These
+actions require existing authorization; the Check never performs them
+automatically. Checkpoint IDs do not change historical event phases or existing
+content paths.
 
 Publishing, production, payment and destructive actions require independent
 authorization. A lifecycle signoff never grants those rights. Preserve all

@@ -73,13 +73,17 @@ export function ideaCheckpoint(
         context.signal.throwIfAborted();
         if (error instanceof SilvermoonError) {
           if (
-            ["git-context", "concurrent-edit", "internal"].includes(error.code)
+            ["git-context", "concurrent-edit", "internal", "protocol"].includes(
+              error.code,
+            )
           )
             throw error;
           if (error.code === "identity")
             return failure("idea-folder-identity-immutable", error);
           if (error.code === "history")
             return failure("idea-folder-event-history-append-only", error);
+          if (error.code === "report-history")
+            return failure("idea-folder-deployment-report-append-only", error);
           return failure("idea-folder-data-valid", error);
         }
         if (error instanceof SyntaxError || error instanceof TypeError)
@@ -91,15 +95,28 @@ export function ideaCheckpoint(
         "check-identity",
         "The executing Check CID does not match the Idea's immutable bootstrap.",
       );
-      const state = await inGit(target, () =>
-        observedIdeaState(
-          project,
-          current,
-          { head: observed.head, primary: previous },
-          context.outputOf(environment).userLanguage,
-          context.signal,
-        ),
-      );
+      let state;
+      try {
+        state = await inGit(target, () =>
+          observedIdeaState(
+            project,
+            current,
+            { head: observed.head, primary: previous, protocol: 2 },
+            context.outputOf(environment).userLanguage,
+            context.signal,
+          ),
+        );
+      } catch (error) {
+        context.signal.throwIfAborted();
+        if (
+          error instanceof SilvermoonError &&
+          ["evidence", "layout", "events", "cases"].includes(error.code)
+        )
+          return failure("idea-folder-data-valid", error);
+        if (error instanceof Error && "code" in error && error.code === 128)
+          return failure("idea-folder-data-valid", error);
+        throw error;
+      }
       if (state.level === "abandoned")
         return failure(
           "idea-folder-active",

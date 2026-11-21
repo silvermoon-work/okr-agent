@@ -23,6 +23,7 @@ export function historyCheckpoint(
         undefined,
         | "commit-history-idea-identity-immutable"
         | "commit-history-event-history-append-only"
+        | "commit-history-deployment-report-append-only"
       >
     > => {
       await Promise.resolve();
@@ -30,6 +31,7 @@ export function historyCheckpoint(
       const problems: RuleFailure<
         | "commit-history-idea-identity-immutable"
         | "commit-history-event-history-append-only"
+        | "commit-history-deployment-report-append-only"
       >[] = [];
       for (const [id, before] of previous?.ideas ?? []) {
         if (!current.ideas.has(id) && target.allowDelete?.includes(id))
@@ -38,13 +40,15 @@ export function historyCheckpoint(
           verifyIdeaHistory(current.ideas.get(id), before);
         } catch (error) {
           if (!(error instanceof SilvermoonError)) throw error;
-          if (error.code !== "identity" && error.code !== "history")
+          if (!["identity", "history", "report-history"].includes(error.code))
             throw error;
           problems.push({
             code:
               error.code === "identity"
                 ? "commit-history-idea-identity-immutable"
-                : "commit-history-event-history-append-only",
+                : error.code === "report-history"
+                  ? "commit-history-deployment-report-append-only"
+                  : "commit-history-event-history-append-only",
             brief: `${id}: ${error.message}`,
           });
         }

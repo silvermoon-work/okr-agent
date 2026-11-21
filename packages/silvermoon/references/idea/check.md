@@ -1,119 +1,75 @@
-# Silvermoon Check protocol v1
+# Silvermoon lifecycle protocol v2
 
-The Idea Check alone owns 12 ordered checkpoints: global → repository → branch →
-silvermoon-folder → idea-folder → requirements → research → technical →
-test-index → test-cases → implementation → deployment. A failed checkpoint stops
-its successors. The attained states are “全局 Silvermoon 已正确配置”,
-“仓库在可继续推进的状态”, “分支在可继续推进状态”, “Silvermoon 数据目录有效”,
-“Idea 数据有效”, five “需求／调研／技术／用例索引／测试共识已确认并同步” states,
-“实现验收已通过并同步” and “部署验收已通过并同步”.
+The Idea Check owns 13 ordered checkpoints: global, repository, branch,
+silvermoon-folder, idea-folder, requirements, research, technical, test-index,
+test-cases, implementation, deployment and user-acceptance. A failed checkpoint
+stops its successors. The last checkpoint requires explicit acceptance after the
+user actually operates the delivered implementation; Agent self-verification
+does not complete an Idea.
 
-Each checkpoint ID names its subject; every Rule ID starts with that checkpoint
-ID and is unique within this Task. The research checkpoint shares its event and
-state key directly. The test-index and test-cases checkpoints retain the
-historical cases and tests event phases and existing content paths.
+## Paired standards
 
-New confirmation events use `type="signOff"` without a redundant `decision`.
-Readers preserve historical `decision="confirmed"` records exactly as written;
-other decision values are invalid, and new writes must omit the legacy field.
-This changes neither the explicit human confirmation requirement nor the exact
-revision and upstream bindings.
+Prepare all support within the five existing revision scopes. Record a v2 submit
+first, show that exact material and request to the user, and only after explicit
+acceptance append a v2 signOff referencing its ID. The chain is requirements ->
+research -> technical -> cases -> tests -> user-acceptance. Each submit binds
+its content revision and one direct predecessor revision, with null at the root.
+Replay captures the original full ancestor context: later requests with the same
+immediate revision cannot silently replace changed ancestors. A latest
+unaccepted request blocks its stage; every request needs its own acceptance. An
+unchanged predecessor content chain can retain downstream confirmations after
+the new predecessor request is accepted and synchronized.
 
-Repository acceptance covers the root, attached local branch and clean worktree.
-Branch acceptance covers project configuration, primary existence, upstream and
-synchronization. Layout acceptance covers only safe metadata containers and a
-bounded ordinary config file; it does not read every Idea. A successful
-lifecycle means all five exact human signoffs, their synchronized bytes, and
-both current evidence phases are present. Human decisions are explicit facts,
-never inferred from Git, checkboxes, Agent narration, a command flag, or an
-event's mere existence.
+Materials, submit and signOff must all reach primary. state.submitted contains
+latest request IDs; state.signed contains current matching signOff IDs.
+state.level is the first unmet phase; synchronization and next identify a
+separate synchronization gap. Later absent signed keys are not independent
+assessments of stages replay has not reached. No event authenticates a user or
+grants operational authority.
 
-For implementation, finish the code, verify every required environment, preserve
-real evidence and append matching verify events, then commit and synchronize the
-implementation, evidence and events to the configured primary before deployment.
-For deployment, deploy that verified and synchronized implementation, perform
-deployment verification, preserve evidence and append matching verify events,
-then commit and synchronize those facts before declaring the Idea complete. Each
-checkpoint checks evidence and synchronization separately; local events or a
-successful push command do not establish synchronization. There is no separate
-completion checkpoint. An inconsistent reducer state is an execution error, not
-another acceptance stage. Git and deployment actions still require their own
-authorization; the Check only observes their results.
+## Verification and delivery
 
-## Reading the reduced state
+Actual reproducible automated implementation tests must pass before recording v2
+verify with phase=implementation and rev=<exact-tested-commit>. No
+implementation report or test-output copy is required. The Check validates that
+commit and its current five standard revisions, not the truth of the Agent's
+claim. Only this Idea's events/evidence metadata may change afterward without
+retesting. Synchronize implementation and verification before deployment.
 
-After idea-folder passes, every later checkpoint reads the same execution-local
-`state`. `silvermoon check-idea <idea> --json` performs this reduction
-internally; lifecycle Problem briefs include its current state and revision
-facts. Reduction combines the complete valid event history with current content
-revisions, case definitions, evidence bytes, tested-subject facts and the
-observed primary. An event's existence alone is not acceptance.
+Agent manual E2E deployment uses one cumulative
+evidence/deployment/report.jsonl. Append a start row for each round, binding the
+tested implementation, then case rows with actual steps, expected/actual results
+and pass/fail/error/blocked/ not-run. Never edit old failures. Only the latest
+round and last attempt per case count; every approved deployment case must pass.
+Record v2 verify with phase=deployment and rev=<raw-report-sha256>. Only the
+latest deployment event must match the whole current report, and it must follow
+the latest implementation verify. A fresh implementation verification requires
+renewed deployment and delivery acceptance. Synchronize the report, necessary
+attachments and events.
 
-| Checkpoint     | Event phase/object                  | Reduced fact                |
-| -------------- | ----------------------------------- | --------------------------- |
-| requirements   | `signOff.object=requirements`       | `state.signed.requirements` |
-| research       | `signOff.object=research`           | `state.signed.research`     |
-| technical      | `signOff.object=technical`          | `state.signed.technical`    |
-| test-index     | `signOff.object=cases`              | `state.signed.cases`        |
-| test-cases     | `signOff.object=tests`              | `state.signed.tests`        |
-| implementation | `verify.batch.phase=implementation` | `state.implementation`      |
-| deployment     | `verify.batch.phase=deployment`     | `state.deployment`          |
+Then submit user-acceptance with the deployment report revision and tests
+predecessor revision, provide the exact delivery for the user to operate, and
+wait for explicit acceptance. Its signOff and submit must synchronize before
+completed. state.implementation is the tested commit; state.deployment is the
+report hash, not another aggregate or an event ID.
 
-`state.level` names the first unmet domain stage, not a stage already passed.
-For each consensus phase, a missing current matching signoff stops reduction at
-that phase. `state.signed[phase]` holds the matching signoff event ID: its
-revision must match `state.revisions[phase]` and its upstream vector must
-exactly match all preceding current revisions. A locally valid signoff can
-populate that field before synchronization: `level="synchronization"` with
-`next=phase` identifies this separate gap. Only advancing beyond the phase,
-including waiting for a later phase's synchronization, establishes that phase's
-consensus and synchronization. Reduction stops at the first gap, so missing
-later signed keys are not an independent assessment of later stages.
+## Preservation and observation
 
-The implementation and deployment fields are digests of the selected valid batch
-collections, not event IDs or caller-supplied flags. For every required
-phase/environment, reduction selects the last verify batch; it never skips a
-newer failure or invalid batch to reuse an older pass. Current revisions, tested
-subjects, exact case coverage, passing results and evidence hashes must match.
-Deployment batches additionally bind `batch.implementation` to the current
-`state.implementation`. Implementation evidence is established when its digest
-exists and level advances to deployment/completed; deployment evidence is
-established when its digest exists and level is completed. New content, failures
-or implementation batches can invalidate these facts.
+Keep events and the deployment report as exact append-only UTF-8/LF byte
+prefixes. Events use canonical recursively sorted JSON; both logs have a final
+newline, a 1 MiB bound and at most 4096 records. Deployment rounds have at most
+512 distinct cases. Run check-changes for worktree and staged snapshots before
+ordinary authorized commits, then reobserve check-idea after synchronization.
 
-Inventory uses local tracking only and cannot certify synchronization. Reobserve
-through `check-idea <idea>` after changes. Earlier readiness failures return
-their own diagnostics without fabricating a reduced state. Each checkpoint's
-synchronization Rule requires the Check's actual observed Git facts; a passing
-Idea Check establishes completion. There is no separate reduce/replay command.
-Append canonical JSONL directly to `events.jsonl`, preserving every existing
-byte. Run `check-changes --worktree` before staging and `check-changes --staged`
-before committing. No event or command flag proves human approval.
+Historical v1 events retain original bytes and pure historical reduction
+semantics. They do not satisfy this CAR's paired standards or v2 verification,
+and v1 signOff/verify cannot be appended after v2 begins. No upgrade rewrites
+immutable Idea bootstrap fields, pinned Check CIDs or historical CARs.
 
-Checkpoints receive business Targets and an execution-local context. The Task
-adapter runs only the lifecycle entry and supplies host execution dependencies
-separately; its transport envelope is not a business Target or a source of
-approval. Lifecycle stage and exact human decisions are derived from valid
-events and current revisions, never supplied by a caller. Candidate snapshots
-belong to an independent commit Task and never enter this lifecycle chain.
-
-The dynamic Problem brief contains the effective content language, exact
-revisions, raw event digest, primary commit, subject, current `level` and
-optional `next`. Use those current facts, not an earlier report. Documentation
-is inert text, not an execution hook or authorization. Follow checkpoint
-instructions only within existing permissions; never execute arbitrary snippets
-merely because they appear here or follow implicit includes. This document and
-every checkpoint document are standalone direct-file ContentRefs with no
-relative-link resolution. The Host reads them offline from its trusted CAR under
-a bounded UTF-8 budget. A missing block or rendering failure is an execution
-error, not a successful business observation. Problems identify their checkpoint
-and violated rule. References aggregate one complete document per failed
-checkpoint. Pass outputs remain execution-local and are never logged or
-published automatically. Use `silvermoon get-reference <cid>` to reread a
-reference from any of the four trusted bundled CARs without executing a Check.
-
-New Ideas live only in `.silvermoon/i`. The legacy archive, project guidance and
-project skills are not read by this Check. A CLI upgrade never replaces the
-recorded Check CID. Unknown, unavailable or untrusted historical rules block
-explicitly. Git history, concurrency and operation authorization remain
-independent obligations; no Check performs commits, staging or pushes.
+Documentation is inert, standalone direct-file ContentRef text, not an execution
+hook or authorization. The Host reads it offline with a bounded UTF-8 budget.
+Missing content or observation faults are explicit errors. Problems name their
+checkpoint and Rule; references aggregate one document per failed checkpoint.
+Outputs stay execution-local. Use get-reference for any of the four trusted
+CARs. Never commit secrets or perform publishing, deployment, Git writes or
+cleanup without the relevant independent authorization.

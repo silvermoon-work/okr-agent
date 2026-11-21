@@ -28,9 +28,16 @@ export function implementationCheckpoint(
     > => {
       const { state, brief } = context.outputOf(observation);
       if (state.level === "implementation")
-        return failure("implementation-evidence-valid", brief);
+        return failure(
+          state.implementation
+            ? "implementation-synchronized"
+            : "implementation-evidence-valid",
+          brief,
+        );
       invariant(
-        state.level === "deployment" || state.level === "completed",
+        ["deployment", "user-acceptance", "completed"].includes(state.level) ||
+          (state.level === "synchronization" &&
+            state.next === "user-acceptance"),
         "internal",
         "Prior checkpoints did not establish implementation lifecycle facts.",
       );

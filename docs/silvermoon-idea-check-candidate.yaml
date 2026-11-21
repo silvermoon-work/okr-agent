@@ -1,6 +1,6 @@
-# Design candidate: paired submissions, simplified verification and user acceptance are not implemented.
-# Based on silvermoon-single-checker.yaml; the generated runtime preview stays unchanged.
-# Integrate into src/checkpoints/ and src/specifications.ts only after implementation is authorized.
+# Archived pre-implementation design: v2 is now implemented in src/checkpoints/.
+# This preserves the original proposal wording; it is not the current runtime Spec.
+# Use silvermoon-single-checker.yaml and silvermoon-events.md for current definitions.
 $schema: urn:ipfsaw:check-bundle:1
 specVersion: "1.0"
 name: Silvermoon · Idea 推进检查

@@ -151,6 +151,22 @@ export function snapshotCheckpoint(runtime: Runtime) {
             context.signal,
             ids,
           );
+          for (const current of project.ideas.values())
+            for (const event of current.events)
+              if (
+                event.version === 2 &&
+                event.type === "verify" &&
+                event.phase === "implementation"
+              )
+                invariant(
+                  (await git(
+                    target.repoRoot,
+                    ["cat-file", "-t", event.rev],
+                    context.signal,
+                  )) === "commit",
+                  "evidence",
+                  "Implementation verification must reference an existing exact commit.",
+                );
           for (const id of target.allowDelete ?? [])
             invariant(
               previous?.ideas.has(id) && !project.ideas.has(id),
@@ -164,7 +180,9 @@ export function snapshotCheckpoint(runtime: Runtime) {
         context.signal.throwIfAborted();
         if (
           error instanceof SilvermoonError &&
-          ["git-context", "concurrent-edit", "internal"].includes(error.code)
+          ["git-context", "concurrent-edit", "internal", "protocol"].includes(
+            error.code,
+          )
         )
           throw error;
         const code =
