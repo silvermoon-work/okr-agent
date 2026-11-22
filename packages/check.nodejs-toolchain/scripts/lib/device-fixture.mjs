@@ -99,8 +99,8 @@ export async function deviceFixture(owned) {
       await writeFile(
         target,
         `#!/usr/bin/env node\nconst responses=${JSON.stringify(values)};process.stdout.write(responses[process.argv.slice(2).join(" ")]);\n`,
-        { mode: 0o755 },
       );
+      await chmod(target, 0o755);
       await symlink(target, join(tools, name));
     }
   }
