@@ -67,9 +67,9 @@ await writeFile(
     {
       version: 1,
       openBrowser: false,
-      renderers: {
-        "urn:ipfsaw:check-bundle:1": check.cid,
-        "urn:ipfsaw:note:1": note.cid,
+      aliases: {
+        check: { cid: check.cid },
+        note: { cid: note.cid },
       },
     },
     null,
@@ -86,5 +86,5 @@ await json("note.json", {
   title: "An independent renderer",
 });
 console.log(
-  `Controlled local demo: ${directory}\nCheck: ${check.cid}\nNote: ${note.cid}\nSet TASK_CONTENT_CONFIG to ${join(directory, "task-content.json")}; use dist/bin.js .ipfsaw-demo/check.json --data-dir .ipfsaw-demo/state --no-open`,
+  `Controlled local demo: ${directory}\nCheck: ${check.cid}\nNote: ${note.cid}\nSet TASK_CONTENT_CONFIG to ${join(directory, "task-content.json")}; use dist/bin.js view check .ipfsaw-demo/check.json --data-dir .ipfsaw-demo/state --no-open`,
 );

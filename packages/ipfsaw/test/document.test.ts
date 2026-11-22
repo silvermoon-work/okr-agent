@@ -9,6 +9,7 @@ import {
   InputError,
   limits,
   parseDocument,
+  parseTaskDocument,
   readDocument,
   schemaUri,
 } from "../src/document.js";
@@ -225,6 +226,44 @@ describe("bounded, JSON-compatible document input", () => {
       await expect(
         readDocument(join(fixture.directory, "folder.yaml")),
       ).rejects.toThrow("Cannot read");
+    } finally {
+      await fixture.cleanup();
+    }
+  });
+  it("passes JSONL as ordered records without schema annotations and reports bad lines without leaking content", async () => {
+    const fixture = await fixtureDirectory();
+    const path = join(fixture.directory, "events.JSONL");
+    try {
+      await writeFile(path, '{"type":"created"}\r\n{"type":"submit"}\r\n');
+      expect((await readDocument(path, true)).document).toEqual({
+        records: [{ type: "created" }, { type: "submit" }],
+      });
+      expect(parseTaskDocument(bytes('{"id":1}\n{"id":2}'), ".jsonl")).toEqual({
+        records: [{ id: 1 }, { id: 2 }],
+      });
+      expect(parseTaskDocument(bytes(""), ".jsonl")).toEqual({ records: [] });
+      for (const source of [
+        '{"id":1}\n\n{"id":2}\n',
+        '{"id":1}\n{"private-token":\n',
+      ]) {
+        expect(() => parseTaskDocument(bytes(source), ".jsonl")).toThrow(
+          "line 2",
+        );
+        try {
+          parseTaskDocument(bytes(source), ".jsonl");
+        } catch (error) {
+          expect(String(error)).not.toContain("private-token");
+        }
+      }
+      expect(() => parseTaskDocument(bytes("1e999\n"), ".jsonl")).toThrow(
+        "finite",
+      );
+      expect(() =>
+        parseTaskDocument(
+          bytes(`"${"x".repeat(limits.document)}"\n`),
+          ".jsonl",
+        ),
+      ).toThrow("1 MiB");
     } finally {
       await fixture.cleanup();
     }
