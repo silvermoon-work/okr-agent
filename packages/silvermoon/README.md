@@ -13,6 +13,10 @@ authorization; building or publishing does not switch an existing device. CLI
 readiness tests use a controlled legacy PATH command so a linked development
 installation does not change their expected prerequisites.
 
+The build sets the generated CLI entry's executable permissions after producing
+the CARs, so rebuilding a linked checkout preserves command usability and Turbo
+caches the executable entry. This does not create or replace a global link.
+
 `0.1.0-rc.1` repairs the published `0.1.0-rc.0` candidate's legacy primary URL
 compatibility and missing Git execution context in the Check Worker. The new
 version is not published merely by building/testing, and does not replace a

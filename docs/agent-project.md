@@ -66,6 +66,12 @@
   not restore copied command/delivery libraries in every member. The installed
   published gate replaces the copied publisher, its predicates/delivery parser,
   root release wrappers and publisher-only root dependencies.
+- Silvermoon's existing build script explicitly restores its generated CLI
+  entry's executable permissions after CAR generation. This is a user-approved
+  scoped fix, not a new package-wide build convention. Shared package build
+  orchestration and bin-permission handling remain a deferred follow-up; do not
+  introduce a generic build wrapper or copy the fix across packages in this
+  task.
 - Root `check` directly chains pnpm commands with `&&` and stops at the first
   failure: format-check, build, typecheck, whole-repository lint, package
   test-coverage, then npm package lint. Root configuration TypeScript is checked
