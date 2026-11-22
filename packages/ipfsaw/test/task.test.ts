@@ -11,54 +11,53 @@ import { ContentRefSchema } from "@silvermoon-work/task-protocol";
 import { parseTaskDocument } from "../src/document.js";
 import { loadBrowserTask, TaskInvocation } from "../src/task.js";
 import { startPreview } from "../src/preview.js";
-import { fixtureDirectory, rendererFixture } from "./helpers.js";
-
-export async function taskFixture(
-  script = "export default async (parameters) => parameters.text;",
-  result: unknown = { type: "string" },
-  runtime: { type: "browser" } | { type: "node"; minVersion: string } = {
-    type: "browser",
-  },
-) {
-  const tree = await buildTaskBundle(
-    memoryTree(
-      new Map([
-        ["main.js", Buffer.from(script)],
-        ["note.txt", Buffer.from("actual bundled resource")],
-      ]),
-    ),
-    {
-      name: "browser acceptance",
-      runtime,
-      source: {
-        entry: "main.js",
-        mode: "explicit",
-        contract: {
-          parameters: {
-            type: "object",
-            properties: { text: { type: "string" } },
-            required: ["text"],
-            additionalProperties: false,
-          },
-          result,
-          message: false,
-        },
-      },
-      include: [{ from: "note.txt", to: "resources/" }],
-    },
-  );
-  const encoded = await encodeTaskBundleCar(tree);
-  try {
-    return {
-      cid: encoded.cid,
-      car: new Uint8Array(await new Response(encoded.stream).arrayBuffer()),
-    };
-  } finally {
-    await encoded.close();
-  }
-}
+import { fixtureDirectory, rendererFixture, taskFixture } from "./helpers.js";
 
 describe("real standard browser Task", () => {
+  it("validates the JSONL records envelope against the selected Viewer's real input contract", async () => {
+    const fixture = await taskFixture(
+      "export default async (parameters) => parameters.records.length;",
+      { type: "integer" },
+      { type: "browser" },
+      {
+        type: "object",
+        properties: {
+          records: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { id: { type: "integer" } },
+              required: ["id"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["records"],
+        additionalProperties: false,
+      },
+    );
+    const shared = IpfsStore.fromClient({
+      block: { get: () => Promise.reject(new Error("offline")) },
+    });
+    const task = await loadBrowserTask(shared, { car: fixture.car });
+    try {
+      const parsed = parseTaskDocument(
+        Buffer.from('{"id":2}\n{"id":1}\n'),
+        ".jsonl",
+      );
+      expect(task.parameters(parsed).data).toEqual({
+        records: [{ id: 2 }, { id: 1 }],
+      });
+      expect(() =>
+        task.parameters(
+          parseTaskDocument(Buffer.from('{"id":"wrong"}\n'), ".jsonl"),
+        ),
+      ).toThrow();
+    } finally {
+      await task.close();
+      await shared.close();
+    }
+  });
   it("parses raw document values without imposing the legacy schema selector", () => {
     expect(parseTaskDocument(Buffer.from("text: hello"), ".yaml")).toEqual({
       text: "hello",
@@ -399,8 +398,7 @@ describe("real standard browser Task", () => {
     const preview = await startPreview({
       path,
       store: shared,
-      configuration: { version: 1, renderers: {} },
-      task: { car: fixture.car },
+      viewer: { car: fixture.car },
       signal: abort.signal,
       diagnostic: (message) => {
         logs.push(message);

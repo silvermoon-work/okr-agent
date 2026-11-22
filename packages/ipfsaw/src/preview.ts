@@ -4,13 +4,13 @@ import { createServer } from "node:http";
 import type { ServerResponse } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import type { IpfsStore } from "@silvermoon-work/ipfs-store";
-import type { Configuration } from "./configuration.js";
-import { assetPath, loadRenderer, mime } from "./bundle.js";
+import { assetPath, mime } from "./bundle.js";
 import type { RendererBundle } from "./bundle.js";
 import { DocumentError, limits, readDocument, record } from "./document.js";
 import { frameClient, hostClient } from "./browser.js";
-import { loadBrowserTask, TaskInvocation } from "./task.js";
+import { TaskInvocation } from "./task.js";
 import type { TaskSource } from "./task.js";
+import { loadViewer } from "./viewer.js";
 import { isTaskBundlePath, TaskError } from "@silvermoon-work/task-protocol";
 import { taskHostClient } from "./task-browser.js";
 import { previewNavigation } from "./navigation.js";
@@ -36,12 +36,11 @@ export type PreviewState =
 
 export interface PreviewOptions {
   path: string;
-  configuration: Configuration;
   store: IpfsStore;
   signal: AbortSignal;
   diagnostic(message: string): void;
   pollMs?: number;
-  task?: TaskSource;
+  viewer: TaskSource;
   onNoClients?: () => void;
 }
 
@@ -74,12 +73,11 @@ export async function startPreview(options: PreviewOptions): Promise<{
       })
       .finally(() => cleanups.delete(cleanup));
   };
-  const task = options.task
-    ? await loadBrowserTask(options.store, options.task, signal)
-    : undefined;
+  const viewer = await loadViewer(options.store, options.viewer, signal);
+  const task = viewer.type === "task" ? viewer.bundle : undefined;
+  const bundle = viewer.type === "renderer" ? viewer.bundle : undefined;
   let revision = 0;
   let state: PreviewState = { type: "loading", revision };
-  let bundle: RendererBundle | undefined;
   let fingerprint = "";
   let observedFile = "";
   let closing: Promise<void> | undefined;
@@ -120,7 +118,7 @@ export async function startPreview(options: PreviewOptions): Promise<{
       // Failed revisions retry on a real save/change, never by polling the same content repeatedly.
       if (!initial && identity === observedFile) return;
       observedFile = identity;
-      const parsed = await readDocument(options.path, !!task);
+      const parsed = await readDocument(options.path, true);
       const nextFingerprint = JSON.stringify(parsed.document);
       if (
         !initial &&
@@ -152,18 +150,9 @@ export async function startPreview(options: PreviewOptions): Promise<{
         );
         return;
       }
-      const cid = options.configuration.renderers[parsed.schema];
-      if (!cid)
-        throw new DocumentError(
-          "No renderer binding for this schema. Use ipfsaw registry add <schema-uri> <cid> with the selected --data-dir, then restart preview.",
-        );
-      if (bundle?.cid !== cid) {
-        bundle = undefined;
-        bundle = await loadRenderer(options.store, cid, signal);
-      }
       signal.throwIfAborted();
       if (
-        JSON.stringify((await readDocument(options.path)).document) !==
+        JSON.stringify((await readDocument(options.path, true)).document) !==
         nextFingerprint
       ) {
         fingerprint = "";
@@ -176,9 +165,9 @@ export async function startPreview(options: PreviewOptions): Promise<{
         type: "document",
         revision: current,
         document: parsed.document,
-        schema: parsed.schema,
-        cid: bundle.cid,
-        manifest: bundle.manifest,
+        schema: "",
+        cid: bundle!.cid,
+        manifest: bundle!.manifest,
       });
       options.diagnostic(`Document revision ${String(current)} loaded.`);
     } catch (error) {

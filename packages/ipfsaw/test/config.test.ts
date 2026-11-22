@@ -6,6 +6,8 @@ import {
   dataDirectory,
   readConfiguration,
   rootCid,
+  aliasName,
+  viewerLocation,
   writeConfiguration,
 } from "../src/configuration.js";
 import { fixtureDirectory, rendererFixture } from "./helpers.js";
@@ -52,15 +54,15 @@ describe("versioned local configuration", () => {
     try {
       expect(await readConfiguration(path)).toEqual({
         version: 1,
-        renderers: {},
+        aliases: {},
       });
       await writeConfiguration(path, {
         version: 1,
         openBrowser: false,
-        renderers: { "urn:test:1": renderer.cid },
+        aliases: { test: { cid: renderer.cid } },
       });
       const config = await readConfiguration(path);
-      config.renderers["urn:test:2"] = renderer.cid;
+      config.aliases.second = { cid: renderer.cid };
       await writeConfiguration(path, config);
       expect((await readConfiguration(path)).openBrowser).toBe(false);
       expect(await readdir(join(fixture.directory, "nested"))).toEqual([
@@ -69,12 +71,15 @@ describe("versioned local configuration", () => {
       for (const value of [
         "{",
         "null",
-        '{"version":2,"renderers":{}}',
-        '{"version":1,"renderers":[]}',
-        '{"version":1,"renderers":{},"openBrowser":1}',
-        '{"version":1,"renderers":{},"ipfs":{}}',
-        '{"version":1,"renderers":{"bad":"bad"}}',
-        '{"version":1,"renderers":{"urn:x":3}}',
+        '{"version":2,"aliases":{}}',
+        '{"version":1,"aliases":[]}',
+        '{"version":1,"aliases":{},"openBrowser":1}',
+        '{"version":1,"aliases":{},"ipfs":{}}',
+        '{"version":1,"aliases":{"bad":{"cid":"bad"}}}',
+        '{"version":1,"aliases":{"urn:x":3}}',
+        '{"version":1,"renderers":{}}',
+        '{"version":1,"aliases":{"local":{"car":"not-a-path"}}}',
+        '{"version":1,"aliases":{"local":{"car":"file.car","cid":"bad"}}}',
       ]) {
         await writeFile(path, value);
         await expect(readConfiguration(path)).rejects.toThrow("Invalid ipfsaw");
@@ -85,7 +90,7 @@ describe("versioned local configuration", () => {
       await expect(
         writeConfiguration(path, {
           version: 1,
-          renderers: { "urn:huge": "x".repeat(1024 * 1024) },
+          aliases: { huge: { car: "x".repeat(1024 * 1024) } },
         }),
       ).rejects.toThrow("1 MiB");
     } finally {
@@ -96,7 +101,7 @@ describe("versioned local configuration", () => {
   it("leaves old files intact and removes temporary files after write/replace/cancellation failure", async () => {
     const fixture = await fixtureDirectory();
     const path = join(fixture.directory, "config.json");
-    const config = { version: 1 as const, renderers: {} };
+    const config = { version: 1 as const, aliases: {} };
     try {
       await writeFile(path, "preserve");
       const abort = new AbortController();
@@ -114,6 +119,43 @@ describe("versioned local configuration", () => {
       ]);
       await expect(readConfiguration(target)).rejects.toThrow("Cannot read");
     } finally {
+      await fixture.cleanup();
+    }
+  });
+  it("distinguishes immutable CIDs, explicit CAR paths and exact aliases without filesystem guessing", async () => {
+    const fixture = await fixtureDirectory();
+    const renderer = await rendererFixture();
+    try {
+      expect(viewerLocation(renderer.cid)).toEqual({ cid: renderer.cid });
+      expect(viewerLocation("viewer.CAR", fixture.directory)).toEqual({
+        car: join(fixture.directory, "viewer.CAR"),
+      });
+      expect(viewerLocation("./viewer", fixture.directory)).toEqual({
+        car: join(fixture.directory, "viewer"),
+      });
+      expect(viewerLocation("events")).toBeUndefined();
+      expect(aliasName("events_v1")).toBe("events_v1");
+      for (const name of [
+        "",
+        "urn:test:1",
+        "../viewer",
+        "viewer.car",
+        renderer.cid,
+      ])
+        expect(() => aliasName(name)).toThrow();
+      for (const selector of [" ", "nul\0path"])
+        expect(() => viewerLocation(selector)).toThrow();
+      await writeConfiguration(configPath(fixture.directory), {
+        version: 1,
+        aliases: { local: { car: "./viewer.car" } },
+      });
+      expect(
+        (await readConfiguration(configPath(fixture.directory))).aliases.local,
+      ).toEqual({
+        car: join(fixture.directory, "viewer.car"),
+      });
+    } finally {
+      await renderer.store.close();
       await fixture.cleanup();
     }
   });

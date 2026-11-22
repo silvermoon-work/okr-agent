@@ -124,28 +124,32 @@ Schema 合法不等于语义前置条件成立。无需发布、后端或远程�
 
 ```powershell
 pnpm exec turbo run build --filter=@silvermoon-work/ipfsaw
-node packages\ipfsaw\dist\bin.js run --car packages\ipfsaw\dist\check-task.car --document packages\ipfsaw\dist\check-task.json --no-open
+node packages\ipfsaw\dist\bin.js view packages\ipfsaw\dist\check-task.car packages\ipfsaw\dist\check-task.json --no-open
 ```
 
 使用前按 [ipfsaw 文档](packages/ipfsaw/README.md#标准-browser-taskrc2)
-选择受控内容配置和 app 目录。`--cid` 可选择同一准确 Bundle；
+选择受控内容配置和 app 目录。第一个位置参数也可指定同一准确 Bundle 的 CID 或 Viewer 别名；
 HTTP
 listening 不表示 Task 已启动。浏览器调用显式 ESM 默认导出，返回后应用继续存活；
 保存内容会替换页面、重置应用内存状态；Check viewer 通过 URL
 fragment 恢复所选节点，
-并支持浏览器前进／后退。原根位置参数、registry 和旧 renderer ABI 保留独立，
-已发布 `0.1.0-rc.0` / `0.1.0-rc.1` 不会因此获得新 `run` 命令。
+并支持浏览器前进／后退。当前源码移除根文件入口、`run` 和 `$schema` 自动匹配，
+统一用 `view <cid|car-path|alias> <document>` 与 `alias add/list/remove`；
+已发布 `0.1.0-rc.0` / `0.1.0-rc.1` 不会因此获得新命令。
 本地预览 URL 不含访问凭据，可复制到本机其他浏览器直接打开；
 仍限制 loopback Host/Origin、同源文档/RPC 与隔离 iframe。
 正常显示时没有常驻宿主栏，Check viewer 填满窗口。
 关闭最后一个预览页面后，CLI 在 3 秒重连窗口结束时回收服务并退出；刷新和多标签不会立即误退出。
 
-[`@silvermoon-work/ipfsaw`](packages/ipfsaw/README.md) 提供通用 YAML/JSON
-文件入口、Schema→不可变 renderer CID registry、共享 Task IPFS Store 与隔离
+[`@silvermoon-work/ipfsaw`](packages/ipfsaw/README.md) 提供通用 YAML/JSON/JSONL
+文件查看、Viewer 别名、共享 Task IPFS Store 与隔离
 浏览器宿主。Check viewer 提供真正自包含的首个 browser renderer，
-旧无 `$schema` 的直接 React 使用保持兼容；CLI 文档使用
-`$schema: urn:ipfsaw:check-bundle:1`。受控本地 CAR 首次运行与命令见包文档；
-旧路径不执行 Check / Task；新路径只执行启动 browser Task，不执行 Check checker。
+旧无 `$schema` 的直接 React 使用保持兼容；CLI 不再根据文档 `$schema`
+选择 Viewer，
+显式选择兼容现有 Renderer 和标准 browser Task，JSONL 按 `{records:[...]}` 传入。
+受控本地 CAR 首次运行与命令见包文档；
+Renderer 路径不执行 Check / Task；标准 Task 路径只执行启动 browser
+Task，不执行 Check checker。
 不改原 4173 mock 宿主，也不代表 npm alias 已发布。
 
 ## Silvermoon
