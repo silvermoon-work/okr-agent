@@ -35,18 +35,31 @@ interface Options {
   json?: boolean;
 }
 export function renderReport(report: Report): string {
+  if (report.result.pass) return "pass\n";
+  const problems = report.result.problems ?? [];
+  const failedRules = [...new Set(problems.map((problem) => problem.code))];
+  const references = new Set(
+    report.result.references.map((reference) => reference.documentation),
+  );
   const lines = [
     "# Silvermoon",
     `Check: ${report.checkCid}`,
-    report.result.pass ? "Result: pass" : "Result: gaps remain",
-    ...(report.result.problems ?? []).flatMap((problem) => [
+    `Failed rules: ${failedRules.join(", ")}`,
+    ...problems.flatMap((problem) => [
       `\n## ${problem.code}`,
+      `Checkpoint: ${problem.checkpoint}`,
       problem.brief,
     ]),
-    ...report.documents.flatMap((document) => [
-      `\n## Documentation (${document.cid})`,
-      document.text,
-    ]),
+    ...report.documents
+      .filter((document) => references.has(document.cid))
+      .flatMap((document) => [
+        `\n## Documentation (${document.cid})`,
+        `Checkpoints: ${report.result.references
+          .filter((reference) => reference.documentation === document.cid)
+          .map((reference) => reference.checkpoint)
+          .join(", ")}`,
+        document.text,
+      ]),
   ];
   return lines.join("\n") + "\n";
 }
