@@ -167,9 +167,9 @@ upstream 就绪或 Idea 完成。新 Idea 仅位于 `.silvermoon/i`，使用五�
 配对 submit/signOff、配对 验证及最终用户验收。实现记录准确自动化测试提交，
 部署记录固定 append-only
 JSONL 手工报告；详见[Events 定义](docs/silvermoon-events.md)。
-旧 v1 历史保持只读语义，不自动满足新标准；旧 `.silvermoon/ideas`
-仅留档，不迁移、
-不补 CID。候选构建和验证不会替换当前全局旧 CLI 或个人 skill；正式发布、安装及
+旧版 `.silvermoon/ideas` 已从工作树移除，文档与验收记录仅保留在 Git 历史中，
+不迁移、不补 CID，也不自动满足新标准。
+候选构建和验证不会替换当前全局旧 CLI 或个人 skill；正式发布、安装及
 试用分别遵守各自授权，不能把本地候选视为已发布版本。
 
 项目已接入 Silvermoon paired，默认内容语言为简体中文（`zh-CN`），主分支为
@@ -192,6 +192,9 @@ silvermoon check-changes --worktree --audience agent
 `get-reference <cid>` 与
 `list-ideas`；事件直接编辑文件后检查，不再提供事件写入命令。
 `check-changes` 默认检查工作区，提交前使用 `--staged` 检查实际索引。
+可读 Check 输出通过时仅显示 `pass`，不通过时列出失败 Rule、所属 Checkpoint
+及对应文档中的规则含义与修复指引，不附带 Task 内部参数 Schema；
+`--json` 和 `get-reference` 保留完整文档。
 
 ## Preset 来源
 

@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { delimiter, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runCli } from "../src/cli.js";
+import { renderReport, runCli } from "../src/cli.js";
 import * as device from "../src/device.js";
 import * as repositoryModule from "../src/repository.js";
 import { bundledArtifact } from "../src/host.js";
@@ -66,6 +66,98 @@ async function controlledHome() {
   return home;
 }
 describe("CLI retained commands, presentation and explicit errors", () => {
+  it("renders only pass without successful report documentation", () => {
+    expect(
+      renderReport({
+        schema: "silvermoon/v2",
+        checkCid: "check",
+        target: { userHome: "/home/user" },
+        result: {
+          pass: true,
+          documentation: "task-document",
+          references: [],
+        },
+        documents: [
+          {
+            cid: "task-document",
+            text: "# Task\n\n## Checked parameters\n\nInternal schema.\n",
+          },
+        ],
+      }),
+    ).toBe("pass\n");
+  });
+  it("renders failure guidance without Task-level parameter documentation", () => {
+    const output = renderReport({
+      schema: "silvermoon/v2",
+      checkCid: "check",
+      target: { userHome: "/home/user" },
+      result: {
+        pass: false,
+        documentation: "task-document",
+        references: [
+          { checkpoint: "global", documentation: "checkpoint-document" },
+        ],
+        problems: [
+          {
+            checkpoint: "global",
+            code: "global-skill-linked",
+            brief: "Link the canonical personal skill.",
+          },
+          {
+            checkpoint: "global",
+            code: "global-configuration-valid",
+            brief: "Use a supported configuration version.",
+          },
+          {
+            checkpoint: "global",
+            code: "global-skill-linked",
+            brief: "The personal registration points to a stale installation.",
+          },
+        ],
+      },
+      documents: [
+        {
+          cid: "task-document",
+          text: "# Task\n\n## Checked parameters\n\nInternal schema.\n",
+        },
+        {
+          cid: "checkpoint-document",
+          text: [
+            "# Device readiness",
+            "## Rules",
+            "global-skill-linked: The personal skill must link to this installation.",
+            "global-configuration-valid: The configuration version must be supported.",
+            "## Instructions",
+            "Repair the skill link.",
+          ].join("\n"),
+        },
+      ],
+    });
+    expect(output).toContain(
+      "Failed rules: global-skill-linked, global-configuration-valid\n",
+    );
+    expect(output).not.toContain("gaps remain");
+    expect(output).toContain("## global-skill-linked");
+    expect(output).toContain("## global-configuration-valid");
+    expect(output).toContain("Checkpoint: global");
+    expect(output).toContain("Link the canonical personal skill.");
+    expect(output).toContain(
+      "The personal registration points to a stale installation.",
+    );
+    expect(output).toContain(
+      "## Documentation (checkpoint-document)\nCheckpoints: global",
+    );
+    expect(output).toContain(
+      "global-skill-linked: The personal skill must link to this installation.",
+    );
+    expect(output).toContain(
+      "global-configuration-valid: The configuration version must be supported.",
+    );
+    expect(output).toContain("Repair the skill link.");
+    expect(output).not.toContain("task-document");
+    expect(output).not.toContain("Checked parameters");
+    expect(output).not.toContain("Internal schema");
+  });
   it("uses actual nonfresh tracking context for list/replay, including ancestor evidence and unavailable primary", async () => {
     await controlledHome();
     const { root, remote } = await repository();
@@ -304,7 +396,10 @@ describe("CLI retained commands, presentation and explicit errors", () => {
       );
       expect(current.exit).toBe(0);
       expect(current.stdout).toContain("## global-runtime-ready");
+      expect(current.stdout).toContain("Checkpoint: global");
       expect(current.stdout).toContain("Documentation");
+      expect(current.stdout).toContain("PATH 可发现的首个 silvermoon 命令");
+      expect(current.stdout).not.toContain("Checked parameters");
     }
     const structured = await cli(["check-idea", id, "--json"], root);
     expect(structured.exit).toBe(0);
@@ -318,10 +413,11 @@ describe("CLI retained commands, presentation and explicit errors", () => {
     const snapshot = await cli(["check-changes", "--worktree", "--json"], root);
     expect(snapshot.exit).toBe(0);
     expect(snapshot.json()).toMatchObject({ result: { pass: true } });
-    expect(
-      (await cli(["check-changes", "--staged", "--audience", "agent"], root))
-        .exit,
-    ).toBe(0);
+    expect(snapshot.stdout).toContain("## Checked parameters");
+    for (const audience of ["human", "agent"])
+      expect(
+        await cli(["check-changes", "--staged", "--audience", audience], root),
+      ).toMatchObject({ exit: 0, stdout: "pass\n", stderr: "" });
     const head = await repositoryModule.git(root, ["rev-parse", "HEAD"]);
     expect(
       (await cli(["check-changes", "--commit", head, "--json"], root)).exit,

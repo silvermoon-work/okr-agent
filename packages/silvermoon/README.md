@@ -196,12 +196,18 @@ Unavailable CIDs fail explicitly. Text output is the original UTF-8 content;
 different document for an unavailable historical CID.
 
 `--root <directory>` selects a Git root; audience is `human|agent`. JSON and
-audience are exclusive. Both readable audiences render the same report; there is
-no interactive TUI. Observation `--language`, old `reference`, and `migrate` are
-intentionally unsupported (usage error), never aliases for new semantics.
-Creation `--language` remains a content-language override. `list-ideas` also
-supports inclusive RFC3339 `--created-after` / `--created-before`, repeatable
-state filters, and `--all`; default hides abandoned/completed Ideas.
+audience are exclusive. Both readable audiences emit only `pass` when a Check
+passes. Reports with gaps begin with `Failed rules: <codes>`, listing each
+failed Rule once, then identify each problem's owning checkpoint and label the
+corresponding checkpoint documents. Those documents retain their Rule
+descriptions and repair instructions, without the Task overview or its internal
+parameter schema. `--json` and `get-reference` retain the complete original
+documents. There is no interactive TUI. Observation `--language`, old
+`reference`, and `migrate` are intentionally unsupported (usage error), never
+aliases for new semantics. Creation `--language` remains a content-language
+override. `list-ideas` also supports inclusive RFC3339 `--created-after` /
+`--created-before`, repeatable state filters, and `--all`; default hides
+abandoned/completed Ideas.
 
 Exit codes: `0` successful command/observation (including normal lifecycle
 gaps), `1` invalid snapshot or execution/data/concurrency/cancellation fault,
