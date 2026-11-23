@@ -11,7 +11,7 @@ allowBuilds:
 
 catalog:
   "@ipld/dag-cbor": 10.0.2
-  "@ipld/car": 5.4.6
+  "@ipld/car": 5.4.9
   ipfs-unixfs-importer: 17.1.1
   multiformats: 14.0.5
   react: 19.3.1
