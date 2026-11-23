@@ -12,6 +12,9 @@ catalogs:
     '@ipld/car':
       specifier: 5.4.6
       version: 5.4.6
+    '@ipld/dag-cbor':
+      specifier: 10.0.2
+      version: 10.0.2
     '@silvermoon-work/ipfs-payload':
       specifier: 0.1.0
       version: 0.1.0
@@ -371,6 +374,28 @@ importers:
       ipfs-unixfs-exporter:
         specifier: 'catalog:'
         version: 16.2.3
+
+  packages/content-bundle:
+    dependencies:
+      '@ipld/dag-cbor':
+        specifier: 'catalog:'
+        version: 10.0.2
+      '@silvermoon-work/ipfs-store':
+        specifier: 'catalog:'
+        version: 0.1.0(supports-color@10.2.2)
+      ajv:
+        specifier: 'catalog:'
+        version: 8.20.0
+      multiformats:
+        specifier: 'catalog:'
+        version: 14.0.5
+      yaml:
+        specifier: 'catalog:'
+        version: 2.9.1
+    devDependencies:
+      ipfs-unixfs-importer:
+        specifier: 'catalog:'
+        version: 17.1.1(supports-color@10.2.2)
 
   packages/core: {}
 
