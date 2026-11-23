@@ -120,6 +120,13 @@ Schema 合法不等于语义前置条件成立。无需发布、后端或远程�
 
 ### 本地文件持续预览与 Browser Task（ipfsaw RC.2）
 
+新的公共
+[`@silvermoon-work/content-bundle`](packages/content-bundle/README.md)
+以 UnixFS 目录根 CID 打开不可变数据快照，使用 `.bundle.yaml` 描述入口，
+以 DAG-CBOR Schema CID 校验入口和 content refs，并提供只读文件流。
+当前 `0.1.0-rc.0` 已登记为 npm 发布候选，等待准确 main 提交的成功 CI 和 Trusted
+Publishing；未改变下述 ipfsaw CLI 或 Renderer ABI。
+
 `0.1.0-rc.2` 发布候选新增标准 browser Task 路径：
 
 ```powershell
@@ -387,10 +394,11 @@ example [the SDK declaration](packages/check-task-sdk/deliverable.yaml).
 Single-package repositories place it beside the root `package.json`; workspace
 members declare it in their own directories, without inheritance. Only `npm`
 declarations are publisher/publint candidates. The current npm deliveries are
-`check-task-sdk`, `check-task-builder`, `ipfsaw` and `devtool-publish-gate`;
-preset core stays private and is not registered. `task-bundle` classifies the
-existing private Check authors' local Bundle/CAR deliverables without defining
-IPFS/Pinboard distribution. Open types and migration rules are documented in
+`check-task-sdk`, `check-task-builder`, `ipfsaw`, `content-bundle` and
+`devtool-publish-gate`; preset core stays private and is not registered.
+`task-bundle` classifies the existing private Check authors' local Bundle/CAR
+deliverables without defining IPFS/Pinboard distribution. Open types and
+migration rules are documented in
 [explicit deliverables](packages/check.typescript-project/src-legacy/references/deliverables.md).
 Cloudflare intent does not certify platform configuration or deployment.
 
