@@ -13,25 +13,29 @@ rc.3 已通过旧框架和固定的 rc.1 门禁发布；现已移除根清单和
 统一采用包内声明与完整名称 tag。rc.4 仅递增版本、更新接入说明，
 运行时代码与 rc.3 相同，已验证安装 rc.3 门禁的真实发布流程。
 `0.1.0` 正式版沿用相同运行时代码，由固定的 rc.3 门禁检查后发布到 `latest`。
-每次发版都须确认准确版本和 SHA，并取得对应 main-push CI 成绩。
+每次发版都须核验并记录准确版本和 SHA，并取得对应 main-push CI 成绩。
+已前置授权“完成后发新 RC”的任务可直接发布该任务范围内的包，无需二次确认；
+正式版须取得针对准确包、版本和提交的明确确认，RC 授权不涵盖正式版。
 组织内开发工具包使用 `@silvermoon-work/devtool.<name>` 命名。
 
 ## Check Task 作者入口
 
-- [`@silvermoon-work/check-task-sdk`](packages/check-task-sdk/README.md)：TypeBox 输入/问题码契约、命名 Checker 与有界并发检查图、v2 结果及来源文档。
+- [`@silvermoon-work/check-task-sdk`](packages/check-task-sdk/README.md)：TypeBox 输入契约、有序 Checkpoints、Rule 定义与类型化成功输出、按检查点聚合的参考文档。
 - [`@silvermoon-work/check-task-builder`](packages/check-task-builder/README.md)：
   `check-task-builder init/build`，一次构建交付标准 Task Bundle/CAR。
 
-历史发布基于 Task SDK/Protocol 0.2.0 RC；本工作树对接 Protocol/Engine
-`0.2.1-rc.1`、Builder/Builder CLI `0.2.1-rc.0`、Node-only SDK `0.2.0` 与 IPFS
-Store/Payload `0.1.0`。不复制运行时或编译器，不自动升级历史 npm/CAR。先运行
+历史发布基于 Task SDK/Protocol 0.2.0 RC；本工作树对接
+Protocol `0.2.1-rc.1`、Engine `0.2.2-rc.0`、Builder/Builder CLI
+`0.2.1-rc.0`、Node-only SDK `0.2.0` 与 IPFS Store/Payload
+`0.1.0`。不复制运行时或编译器，不自动升级历史 npm/CAR。先运行
 `check-task-builder init text-check`，编辑逻辑、契约与
 `references/`，再运行生成项目中的 `pnpm build`。
 
-当前源码迁移为 `runCheck(contract,{registry,root})` 和 `check-report/v2`；
-Bundle 适配仅支持调用方拥有的执行端口，原始 Worker invokeTask 不提供单次
-取消或 output envelope，不能冒充该端口。历史已发布 npm/CAR 不自动升级，
-新候选需重建并以准确 tarball/CID 验证，详见 SDK 迁移说明。
+当前源码使用 `runCheck(contract,{checkpoints})`，检查点按顺序执行，
+失败即停止；前置成功输出只在本次执行内经 `context.outputOf()` 共享。
+问题报告规则码、brief 和 checkpoint，文档通过 references 聚合，不在每个问题内重复。
+历史图 API 仅保留在显式 legacy 入口供归档回归使用。历史已发布 npm/CAR 不自动升级，
+新候选须重建并验证准确 CID，详见 SDK 迁移说明。
 
 - [`@silvermoon-work/check.nodejs-toolchain`](packages/check.nodejs-toolchain/README.md)：私有 Node.js 工具链 Check 作者项目，仅交付标准 CAR/CID，不发布 npm。显式执行上下文、CAR-only 消费方式与真实平台证据边界见包文档。
 
@@ -96,12 +100,14 @@ Engine snapshot 现在直接暴露 `result` payload，不再套 `output.result`�
 ### Check Bundle 定义工作台（本地 mock）
 
 [`@silvermoon-work/check-bundle-viewer`](packages/check-bundle-viewer/README.md)
-提供版本化声明式 Spec 校验与可嵌入 React 的折叠脉络 / 契约详情。
-私有宿主含当前 TypeScript Check 的真实身份分流子图，以及更丰富的项目定义 mock。
-桌面为紧凑单行脉络树与独立滚动详情；移动端使用模态导航侧栏。
+提供版本化声明式 Spec v1 校验与可嵌入 React 的有序检查点列表 / 规则详情。
+私有宿主含当前 TypeScript Check 的真实检查点，以及更丰富的项目定义 mock。
+定义为 Check Task → Checkpoint → Rule，不再维护根节点、父子边或 DAG。
+侧栏可拖动调宽、长标题单行省略；
+按钮保留完整可访问名称与 title，选中后详情显示完整标题。
+详情独立滚动，移动端使用模态导航侧栏。
 说明支持安全 Markdown，Parameters 从 Schema 的直接字段生成列表，
-Problems 使用表格，Parents 从 children 逐边反向推导。
-定义图采用 DAG：允许共享引用，禁止循环。
+Rules 使用 code / description 表格；只展示定义，不执行检查点。
 
 ```sh
 pnpm --filter @silvermoon-work/check-bundle-viewer build
@@ -114,27 +120,43 @@ Schema 合法不等于语义前置条件成立。无需发布、后端或远程�
 
 ### 本地文件持续预览与 Browser Task（ipfsaw RC.2）
 
+新的公共
+[`@silvermoon-work/content-bundle`](packages/content-bundle/README.md)
+以 UnixFS 目录根 CID 打开不可变数据快照，使用 `.bundle.yaml` 描述入口，
+以 DAG-CBOR Schema CID 校验入口和 content refs，并提供只读文件流。
+当前 `0.1.0-rc.0` 已登记为 npm 发布候选，等待准确 main 提交的成功 CI 和 Trusted
+Publishing；未改变下述 ipfsaw CLI 或 Renderer ABI。
+
 `0.1.0-rc.2` 发布候选新增标准 browser Task 路径：
 
 ```powershell
 pnpm exec turbo run build --filter=@silvermoon-work/ipfsaw
-node packages\ipfsaw\dist\bin.js run --car packages\ipfsaw\dist\check-task.car --document packages\ipfsaw\dist\check-task.json --no-open
+node packages\ipfsaw\dist\bin.js view packages\ipfsaw\dist\check-task.car packages\ipfsaw\dist\check-task.json --no-open
 ```
 
 使用前按 [ipfsaw 文档](packages/ipfsaw/README.md#标准-browser-taskrc2)
-选择受控内容配置和 app 目录。`--cid` 可选择同一准确 Bundle；
+选择受控内容配置和 app 目录。第一个位置参数也可指定同一准确 Bundle 的 CID 或 Viewer 别名；
 HTTP
 listening 不表示 Task 已启动。浏览器调用显式 ESM 默认导出，返回后应用继续存活；
-保存内容会替换页面、重置应用/router 状态。原根位置参数、registry 和旧 renderer
-ABI 保留独立，
-已发布 `0.1.0-rc.0` / `0.1.0-rc.1` 不会因此获得新 `run` 命令。
+保存内容会替换页面、重置应用内存状态；Check viewer 通过 URL
+fragment 恢复所选节点，
+并支持浏览器前进／后退。当前源码移除根文件入口、`run` 和 `$schema` 自动匹配，
+统一用 `view <cid|car-path|alias> <document>` 与 `alias add/list/remove`；
+已发布 `0.1.0-rc.0` / `0.1.0-rc.1` 不会因此获得新命令。
+本地预览 URL 不含访问凭据，可复制到本机其他浏览器直接打开；
+仍限制 loopback Host/Origin、同源文档/RPC 与隔离 iframe。
+正常显示时没有常驻宿主栏，Check viewer 填满窗口。
+关闭最后一个预览页面后，CLI 在 3 秒重连窗口结束时回收服务并退出；刷新和多标签不会立即误退出。
 
-[`@silvermoon-work/ipfsaw`](packages/ipfsaw/README.md) 提供通用 YAML/JSON
-文件入口、Schema→不可变 renderer CID registry、共享 Task IPFS Store 与隔离
+[`@silvermoon-work/ipfsaw`](packages/ipfsaw/README.md) 提供通用 YAML/JSON/JSONL
+文件查看、Viewer 别名、共享 Task IPFS Store 与隔离
 浏览器宿主。Check viewer 提供真正自包含的首个 browser renderer，
-旧无 `$schema` 的直接 React 使用保持兼容；CLI 文档使用
-`$schema: urn:ipfsaw:check-bundle:1`。受控本地 CAR 首次运行与命令见包文档；
-旧路径不执行 Check / Task；新路径只执行启动 browser Task，不执行 Check checker。
+旧无 `$schema` 的直接 React 使用保持兼容；CLI 不再根据文档 `$schema`
+选择 Viewer，
+显式选择兼容现有 Renderer 和标准 browser Task，JSONL 按 `{records:[...]}` 传入。
+受控本地 CAR 首次运行与命令见包文档；
+Renderer 路径不执行 Check / Task；标准 Task 路径只执行启动 browser
+Task，不执行 Check checker。
 不改原 4173 mock 宿主，也不代表 npm alias 已发布。
 
 ## Silvermoon
@@ -142,23 +164,58 @@ ABI 保留独立，
 新版候选 [`@silvermoon-work/silvermoon`](packages/silvermoon/README.md)
 提供基于 Task Engine / Checker 的 CLI；私有
 [`@silvermoon-work/check.silvermoon`](packages/check.silvermoon/README.md)
-交付对应 CAR。新 Idea 仅位于 `.silvermoon/i`，使用五个准确版本的
-sign off、Events 和实现/部署 Evidence；旧 `.silvermoon/ideas` 仅留档，不迁移、
-不补 CID。候选构建和验证不会替换当前全局旧 CLI 或个人 skill；正式发布、安装及
+分别交付设备就绪、项目就绪、Idea 推进与提交合法性四个独立的 Check Task/CAR。
+`create-idea`
+在写入前与 `check-project`
+共用[项目就绪检查](docs/silvermoon-project-check.yaml)，
+复用 Idea Task 的前四个检查点，并独立检查有效 pre-commit hook 会以失败阻断方式
+运行 `silvermoon check-changes --staged --audience agent`；检查不自动安装或执行
+hook，配置须保留原逻辑并尊重 `core.hooksPath`。`check-setup`
+独立执行[设备就绪检查](docs/silvermoon-setup-check.yaml)，不要求 Git 项目。
+`check-idea <idea>` 必须指定 Idea。
+`check-changes --staged` 走提交检查，可用于 commit hook，不要求工作区洁净、
+upstream 就绪或 Idea 完成。新 Idea 仅位于 `.silvermoon/i`，使用五个准确版本的
+配对 submit/signOff、配对 验证及最终用户验收。实现记录准确自动化测试提交，
+部署记录固定 append-only
+JSONL 手工报告；详见[Events 设计](docs/silvermoon-events.md)。
+继续 review 使用[最新 Idea Check 设计 Spec](docs/silvermoon-idea-check-design.yaml)；
+[生成的运行时 Spec](docs/silvermoon-single-checker.yaml)与原设计候选保持各自原语义。
+本轮 Events review 提议取消事件 id/version、按 object + revision 确认，
+相同内容及依赖的 submit 幂等归并；文档包含统一 JSON Schema 和 TypeScript 类型。
+目标模型另以 eventSchemaCid 固定数据契约，按 RFC 8785 → SHA-256 → CIDv1
+生成 Schema 身份；Checker 执行身份单独记录，不混同于事件格式。
+当前运行时仍要求 id 和 `version: 1`，并以 submit ID 配对确认；
+created 仍以 checkCid 固定 Check Bundle；目标模型示例仅供设计讨论，
+尚不能写入现有日志。
+旧 v1 历史保持只读语义，不自动满足新标准。
+旧版 `.silvermoon/ideas` 已从工作树移除，文档与验收记录仅保留在 Git 历史中，
+不迁移、不补 CID，也不自动满足新标准。
+候选构建和验证不会替换当前全局旧 CLI 或个人 skill；正式发布、安装及
 试用分别遵守各自授权，不能把本地候选视为已发布版本。
 
-项目已接入 Silvermoon v2，默认内容语言为简体中文（`zh-CN`），主分支为
+项目已接入 Silvermoon paired，默认内容语言为简体中文（`zh-CN`），主分支为
 `silvermoon-work/okr-agent` 的 `main`。
 
 使用设备级安装的 Silvermoon CLI 和个人 skill，不添加项目依赖：
 
 ```sh
-silvermoon whats-next --audience agent --language zh-CN
-silvermoon check --worktree --audience agent --language zh-CN
+silvermoon check-setup --audience agent
+silvermoon check-project --audience agent
+silvermoon list-ideas --json
+silvermoon check-idea <idea> --audience agent
+silvermoon check-changes --worktree --audience agent
 ```
 
 按报告的下一步操作推进；只有明确需要创建新想法时才运行
-`silvermoon create-idea --audience agent --language zh-CN`。
+`silvermoon create-idea --audience agent --language zh-CN`，创建前会检查设备与仓库前提。
+新版提供
+`check-setup`、`check-project`、`create-idea`、`check-idea`、`check-changes`、
+`get-reference <cid>` 与
+`list-ideas`；事件直接编辑文件后检查，不再提供事件写入命令。
+`check-changes` 默认检查工作区，提交前使用 `--staged` 检查实际索引。
+可读 Check 输出通过时仅显示 `pass`，不通过时列出失败 Rule、所属 Checkpoint
+及对应文档中的规则含义与修复指引，不附带 Task 内部参数 Schema；
+`--json` 和 `get-reference` 保留完整文档。
 
 ## Preset 来源
 
@@ -227,6 +284,10 @@ verified.
   `127.0.0.1:4173` with strict port selection. Custom scripts remain for builds
   with artifact-generation logic and integration harnesses. Publishing uses a
   pinned registry gate and standard pnpm lifecycle commands.
+- The viewer runs TypeScript compilation before its artifact-generation script
+  in a fail-fast command chain. Toolchain `native-test` calls Vitest directly
+  with a member configuration that reuses the shared test settings and enables
+  installed-tool tests. Neither action needs a root pnpm subprocess wrapper.
 
 Add a dependency from the repository root:
 
@@ -333,10 +394,11 @@ example [the SDK declaration](packages/check-task-sdk/deliverable.yaml).
 Single-package repositories place it beside the root `package.json`; workspace
 members declare it in their own directories, without inheritance. Only `npm`
 declarations are publisher/publint candidates. The current npm deliveries are
-`check-task-sdk`, `check-task-builder`, `ipfsaw` and `devtool-publish-gate`;
-preset core stays private and is not registered. `task-bundle` classifies the
-existing private Check authors' local Bundle/CAR deliverables without defining
-IPFS/Pinboard distribution. Open types and migration rules are documented in
+`check-task-sdk`, `check-task-builder`, `ipfsaw`, `content-bundle` and
+`devtool-publish-gate`; preset core stays private and is not registered.
+`task-bundle` classifies the existing private Check authors' local Bundle/CAR
+deliverables without defining IPFS/Pinboard distribution. Open types and
+migration rules are documented in
 [explicit deliverables](packages/check.typescript-project/src-legacy/references/deliverables.md).
 Cloudflare intent does not certify platform configuration or deployment.
 
@@ -366,6 +428,16 @@ Cloudflare intent does not certify platform configuration or deployment.
    is checked by the previously published version.
 
 ### Release a version
+
+Authorization is channel-specific: an advance instruction to publish a new RC
+after a task authorizes selecting and recording that package's next valid RC
+version and exact eligible commit, without a second confirmation. It does not
+authorize unrelated packages or dependency releases. Stable releases require
+explicit user confirmation of the exact package, stable version and commit; RC
+permission does not authorize publishing to `latest`. Do not repeat an already
+supplied confirmation for the same stable package/version/commit. All release
+checks below still apply to both channels. See
+[project release guidance](docs/agent-project.md#publishing).
 
 The bootstrap transition published rc.3 through the installed rc.1 gate. The
 root now pins published `0.1.0`, the legacy root declaration is removed, and the

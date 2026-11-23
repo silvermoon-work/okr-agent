@@ -21,6 +21,14 @@
       "types": "./dist/contracts.d.ts",
       "import": "./dist/contracts.js"
     },
+    "./legacy": {
+      "types": "./dist/legacy.d.ts",
+      "import": "./dist/legacy.js"
+    },
+    "./legacy-contracts": {
+      "types": "./dist/legacy-contracts.d.ts",
+      "import": "./dist/legacy-contracts.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

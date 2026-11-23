@@ -19,25 +19,42 @@
   two-release transition: rc.3 was published with installed rc.1 and the legacy
   framework; the root now pins 0.1.0, removes the legacy declaration and uses
   name@version tags. The rc.4 validation release keeps rc.3 runtime source
-  unchanged and verifies the installed rc.3 gate. Exact version/SHA
-  authorization and successful main-push CI are required before each tag push.
-  Never use candidate source as its own gate. Keep publication authorization
-  separate from Trusted Publisher setup.
+  unchanged and verifies the installed rc.3 gate. Resolve and record the exact
+  version/SHA, apply the channel-specific authorization below and require
+  successful main-push CI before each tag push. Never use candidate source as
+  its own gate. Keep publication authorization separate from Trusted Publisher
+  setup.
 - Keep workspace build, test, test-coverage, lint-package and typecheck
   responsibilities aligned with `turbo.json`. Turbo reads workspace membership
   and dependency order; do not duplicate that graph in a custom scheduler. Run
   whole-repository ESLint and Prettier once from the root.
+
+## Check Task modeling
+
+- Use the repository
+  [check-task-spec skill](../.agent/skills/check-task-spec/SKILL.md) when
+  authoring or reviewing Check Task specs. It defines the three-layer model,
+  field audiences and the later code/reference mapping.
+- Prefer prefixing each Rule code with its owning Checkpoint ID and a hyphen,
+  for example `installation-tool-present` or `tool-turbo-version-valid`. Keep
+  codes phrased as positive conditions. This is an authoring convention, not an
+  additional SDK/Spec validation requirement.
 
 ## Engineering simplification and Check policy boundary
 
 - This consuming repository deliberately uses direct package commands rather
   than the old fixed `node scripts/<same-name>.mjs` interface. The user
   explicitly approved this engineering experiment, including the lifecycle gate
-  replacing the copied publisher. The unchanged standard `AGENTS.md` and
-  TypeScript Check assets still describe the older interface and publisher: this
-  is an open policy conflict, not a claim that the Check Idea has been accepted
-  or that this repository passes that Check. Do not copy the repository changes
-  into Check author code, tests, references or assets to conceal the conflict.
+  replacing the copied publisher. The remaining standard rules in `AGENTS.md`
+  and TypeScript Check assets still describe the older interface and publisher:
+  this is an open policy conflict, not a claim that the Check Idea has been
+  accepted or that this repository passes that Check. Do not copy the repository
+  changes into Check author code, tests, references or assets to conceal the
+  conflict.
+- The user explicitly authorized removing the obsolete exact-tarball delivery
+  bullet from root `AGENTS.md`. Preserve that deletion rather than restoring it
+  from the older standard. The installed gate and native pnpm publishing remain
+  the approved flow; this does not authorize changing Check standard assets.
 - Simple member commands call standard tools directly, including short fail-fast
   command chains. SDK and ipfsaw builds use rimraf then tsc to remove stale
   modules; ipfsaw then runs its functional browser-runtime and Task/CAR build
@@ -49,6 +66,17 @@
   not restore copied command/delivery libraries in every member. The installed
   published gate replaces the copied publisher, its predicates/delivery parser,
   root release wrappers and publisher-only root dependencies.
+- There is no root pnpm subprocess helper. The viewer compiles with a direct
+  `tsc && node scripts/build.mjs` chain before generating its artifacts.
+  Toolchain `native-test` invokes Vitest directly with a member configuration
+  that reuses the shared configuration and explicitly enables native tests.
+  Default test and coverage commands remain isolated from installed tools.
+- Silvermoon's existing build script explicitly restores its generated CLI
+  entry's executable permissions after CAR generation. This is a user-approved
+  scoped fix, not a new package-wide build convention. Shared package build
+  orchestration and bin-permission handling remain a deferred follow-up; do not
+  introduce a generic build wrapper or copy the fix across packages in this
+  task.
 - Root `check` directly chains pnpm commands with `&&` and stops at the first
   failure: format-check, build, typecheck, whole-repository lint, package
   test-coverage, then npm package lint. Root configuration TypeScript is checked
@@ -102,17 +130,43 @@
 - Use the device-level Silvermoon CLI and personal skill registration, not a
   project dependency or repository-local Silvermoon skill.
 - Project content defaults to Simplified Chinese (`zh-CN`).
-- Start with `silvermoon whats-next --audience agent --language zh-CN` and
-  follow its reported next action.
-- Validate metadata with
-  `silvermoon check --worktree --audience agent --language zh-CN` before staging
-  and `silvermoon check --staged --audience agent --language zh-CN` before
+- For onboarding, use `silvermoon check-setup --audience agent` outside a
+  repository, then `silvermoon check-project --audience agent` in the project.
+  These commands diagnose readiness without initializing or creating an Idea.
+- Discover Ideas with `silvermoon list-ideas --json`, then use
+  `silvermoon check-idea <idea> --audience agent` and follow its next action.
+  The Idea selector is required. Creation and check-project share the Project
+  Task, which reuses the Idea Task's first four checkpoints and then checks the
+  effective pre-commit hook for fail-closed staged validation; check-setup
+  reuses the first checkpoint only. Preserve existing hook logic and respect
+  `core.hooksPath`; checking does not install or execute hooks. Each Task has
+  its own strict contract and CAR. Creation still locks and revalidates before
+  writing.
+- Validate metadata with `silvermoon check-changes --worktree --audience agent`
+  before staging and `silvermoon check-changes --staged --audience agent` before
   committing.
+- Append events by editing the JSONL file without changing existing bytes. Read
+  Check Bundle documentation with `silvermoon get-reference <cid>`. Whole
+  deletion requires authorization and `check-changes --allow-delete <idea-id>`;
+  the exception does not permit partial deletion or rewriting history.
 
 ## Publishing
 
 - Keep repository release knowledge here, not in a project skill. See
   [README](../README.md#publish-one-package) for setup and commands.
+- Release authorization is channel-specific. For RCs, an advance user
+  instruction such as "publish a new RC after the fix" is explicit delegated
+  authorization for that task's selected package, including resolving and
+  recording its next valid `x.y.z-rc.n` version and exact eligible commit. Do
+  not request a second confirmation merely because those values became known
+  after implementation. This is not permission to publish unrelated packages or
+  dependencies. Stable releases require explicit release-specific user
+  confirmation of the package, exact stable version and commit; RC permission
+  never authorizes a stable release or changes to `latest`. An already supplied
+  confirmation for the same stable package/version/commit need not be repeated.
+  Both channels retain exact identity/version/SHA, main ancestry, successful
+  exact-SHA main-push CI and all existing release checks; advance RC permission
+  does not waive missing evidence or turn a blocked release into a success.
 - Release one explicitly declared package with `<full-npm-name>@<version>` tags.
   Never batch-publish workspaces or automatically release dependencies.
 - Register each actual npm delivery in its own `deliverable.yaml` with
@@ -141,7 +195,8 @@
   npm. Publish missing dependencies separately before tagging the dependent
   package.
 - Use npm Trusted Publishing, not stored tokens. Manual workflow runs are dry
-  runs only. Never push release tags or publish without explicit authorization.
+  runs only. Never push release tags or publish without the channel-specific
+  authorization above.
 - Release tags are immutable. Retry a failed pre-publication run without moving
   its tag; an existing npm version must block publication.
 

@@ -1,6 +1,6 @@
 import { setTimeout as yieldLoop } from "node:timers/promises";
 import { types } from "node:util";
-import { exactCid } from "./report.js";
+import { exactCid } from "./legacy-report.js";
 import {
   canonicalSnapshot,
   compare,
@@ -23,7 +23,7 @@ import {
   type CheckReport,
   type ReportNode,
   type ReportProblem,
-} from "./report.js";
+} from "./legacy-report.js";
 
 export interface CheckLimits {
   readonly concurrency: number;

@@ -4,7 +4,52 @@ import { CarReader } from "@ipld/car";
 import { importer } from "ipfs-unixfs-importer";
 import type { CID } from "multiformats/cid";
 import { IpfsStore } from "@silvermoon-work/ipfs-store";
+import { buildTaskBundle } from "@silvermoon-work/task-builder";
+import { encodeTaskBundleCar } from "@silvermoon-work/task-builder/car";
+import { memoryTree } from "@silvermoon-work/task-builder/tree";
 import { packRenderer } from "../src/bundle.js";
+
+export async function taskFixture(
+  script = "export default async (parameters) => parameters.text;",
+  result: unknown = { type: "string" },
+  runtime: { type: "browser" } | { type: "node"; minVersion: string } = {
+    type: "browser",
+  },
+  parameters: unknown = {
+    type: "object",
+    properties: { text: { type: "string" } },
+    required: ["text"],
+    additionalProperties: false,
+  },
+) {
+  const tree = await buildTaskBundle(
+    memoryTree(
+      new Map([
+        ["main.js", Buffer.from(script)],
+        ["note.txt", Buffer.from("actual bundled resource")],
+      ]),
+    ),
+    {
+      name: "browser acceptance",
+      runtime,
+      source: {
+        entry: "main.js",
+        mode: "explicit",
+        contract: { parameters, result, message: false },
+      },
+      include: [{ from: "note.txt", to: "resources/" }],
+    },
+  );
+  const encoded = await encodeTaskBundleCar(tree);
+  try {
+    return {
+      cid: encoded.cid,
+      car: new Uint8Array(await new Response(encoded.stream).arrayBuffer()),
+    };
+  } finally {
+    await encoded.close();
+  }
+}
 
 export async function fixtureDirectory(): Promise<{
   directory: string;

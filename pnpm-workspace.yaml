@@ -10,7 +10,8 @@ allowBuilds:
   esbuild: true
 
 catalog:
-  "@ipld/car": 5.4.6
+  "@ipld/dag-cbor": 10.0.2
+  "@ipld/car": 5.4.9
   ipfs-unixfs-importer: 17.1.1
   multiformats: 14.0.5
   react: 19.3.1
@@ -26,7 +27,7 @@ catalog:
   "@silvermoon-work/task-protocol": 0.2.1-rc.1
   "@silvermoon-work/task-builder": 0.2.1-rc.0
   "@silvermoon-work/task-builder-cli": 0.2.1-rc.0
-  "@silvermoon-work/task-engine": 0.2.1-rc.1
+  "@silvermoon-work/task-engine": 0.2.2-rc.0
   "@silvermoon-work/ipfs-store": 0.1.0
   "@silvermoon-work/ipfs-payload": 0.1.0
   "@sinclair/typebox": 0.34.52
@@ -64,7 +65,7 @@ minimumReleaseAgeExclude:
   - "@silvermoon-work/task-builder@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.2 ||
     0.2.1-rc.0"
   - "@silvermoon-work/task-engine@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.2 ||
-    0.2.1-rc.1"
+    0.2.1-rc.1 || 0.2.2-rc.0"
   - "@silvermoon-work/task-protocol@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.1 || 0.2.0
     || 0.2.1-rc.1"
   - "@silvermoon-work/task-sdk@0.1.0 || 0.2.0-rc.0 || 0.2.0-rc.1 || 0.2.0"

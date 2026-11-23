@@ -6,10 +6,10 @@ export const Input = Type.Object(
   { additionalProperties: false },
 );
 export type Input = Static<typeof Input>;
-export const ProblemCode = Type.Union([
-  Type.Literal("typescript-project-invalid"),
-  Type.Literal("workspace-configuration-invalid"),
+export const RuleCode = Type.Union([
+  Type.Literal("typescript-project-valid"),
+  Type.Literal("workspace-configuration-valid"),
 ]);
-export type ProblemCode = Static<typeof ProblemCode>;
+export type RuleCode = Static<typeof RuleCode>;
 
-export default createCheckContract(Input, ProblemCode);
+export default createCheckContract(Input, RuleCode, ["project", "workspace"]);

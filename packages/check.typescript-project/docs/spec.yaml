@@ -1,0 +1,293 @@
+$schema: urn:ipfsaw:check-bundle:1
+specVersion: "1.0"
+name: TypeScript 工程工具链检查 · 改造规格
+description: |
+  本规格属于现有作者包 @silvermoon-work/check.typescript-project，
+  描述 TypeScript 项目身份、pnpm workspace 和根工程工具声明的增量改造。
+  project、workspace 已实现；其余检查点沿用现有工程设计候选，尚未实现。
+  九个根 scripts 及其准确 Turbo 命令已确认，七个共享工具的组合与版本规则仍为候选。
+  Rule code 尽量以所属 Checkpoint ID 加连字符为前缀，并表达正向约束。
+  本规格已采用新命名；运行时、设计样例及参考文档尚未同步，仍使用原规则码。
+
+  所有检查点共享 projectDirectory，按数组顺序执行，通过继续，首次业务失败即停止；
+  同一步保留所有可独立判断的问题，后续步骤只通过 context.outputOf 读取本次较早成功的输出。
+  缺失或不符报告本步正向 Rule code，brief 说明路径、字段、实际值与期望条件；
+  意外 I/O、链接重定向、取消和无法可靠完成的探测属于执行故障，不伪装为通过。
+  成功输出仅用于本次执行内 Context，不写入日志、Task 结果或 IPFS。
+  Task 结果沿用 SDK 的 pass、documentation、references 和失败时的 problems；
+  references 按失败检查点聚合，日志仅记录 checkpoint 与 pass，不输出旧图、level 或逐问题文档。
+
+  检查只读，不执行目标 scripts、配置模块或工具，不安装、升级、发布或修改项目。
+  Node.js/pnpm/PATH/registry/NRM 的实际环境由独立 Node.js Toolchain Check 负责。
+  single repo 在 workspace 及后续 monorepo 专项中不适用，不据此宣称单包工程合规。
+  成员模式展开、Turbo 内容、成员工程、单包工程、工具稳定性/新鲜度/Node 与 peer 兼容性、
+  质量配置、CI、交付与发布政策尚待细化，不从本仓库配置或旧实现自动继承。
+  本文是定义而非执行成绩；当前生产 CAR 仍只检查项目身份与 workspace 配置。
+parameter:
+  schema:
+    type: object
+    additionalProperties: false
+    required: [projectDirectory]
+    properties:
+      projectDirectory:
+        type: string
+        minLength: 1
+        description: 执行宿主上的项目绝对目录；只作为读取范围，不作为脚本执行。
+checkpoints:
+  - id: project
+    title: 识别项目
+    description:
+      核验 TypeScript 项目身份，确定 single repo 或 monorepo，不执行目标代码。
+    instructions: |
+      只读核对根 package.json、TypeScript 身份证据与 workspace 声明。
+      不用成员数量猜测分类，也不把工具或 scripts 缺失归入身份错误。
+      指出不符文件及原因，修正后从任务起点重新检查。
+    rules:
+      - code: project-valid
+        description: |
+          根 package.json 必须为可解析的 JSON 对象普通文件，并存在 TypeScript 依赖、
+          tsconfig 或 TS 源码中的至少一种明确依据；monorepo 可读取成员 manifest 中的
+          TypeScript 依赖声明。根普通文件 pnpm-workspace.yaml 或根 manifest 的
+          workspaces 字段标识 monorepo，否则为 single repo；身份成立不保证 workspace 配置合法。
+    output:
+      description: 已实现的成功输出，供本次后续检查点判断适用范围，不代表完整工程规则通过。
+      fields:
+        - name: kind
+          description:
+            single-repo 或 monorepo；只表示身份识别结果，不保证 workspace
+            内容合法。
+  - id: workspace
+    title: Workspace 配置
+    description:
+      对 monorepo 核验 pnpm workspace 声明，不展开成员或限制目录布局。
+    instructions: |
+      通过 context.outputOf(project) 读取已确认分类；single repo 不适用本步配置要求。
+      monorepo 核对根 pnpm-workspace.yaml 的文件类型、YAML 与 packages 字段，
+      指出缺失或不符项后重新检查；不要以根 workspaces 字段替代 pnpm 配置。
+    rules:
+      - code: workspace-configuration-valid
+        description: |
+          Monorepo 根目录必须提供普通文件 pnpm-workspace.yaml，且为无重复键或未定义别名的
+          YAML 对象，显式包含非空 packages 数组，每项为含非空白字符的字符串；允许其他全局字段。
+          本规则不保证模式语义或匹配结果；链接重定向和别名预算耗尽属于执行故障。
+    output:
+      description:
+        已实现；成功输出为 undefined，single repo 不适用时亦如此，不新增 Context
+        数据。
+  - id: workspace-entry
+    title: 全局工程配置入口
+    description: 待实现候选；对 monorepo 核验根 scripts 容器与 turbo.json 入口。
+    instructions: |
+      读取 project 的成功分类；仅 monorepo 适用。
+      分别核对根 scripts 容器与 turbo.json 文件，报告准确路径和类型；
+      scripts 缺失时不重复报告容器类型错误，turbo.json 缺失时不重复报告文件类型错误。
+      不提前比较命令值或读取 Turbo 内容，不以文件存在证明任务可执行。
+    rules:
+      - code: workspace-entry-scripts-present
+        description: Monorepo 根 manifest 必须包含自有字段 scripts。
+      - code: workspace-entry-scripts-object
+        description:
+          已存在的 scripts 必须为命令映射对象，不能是 null、数组或其他非对象值。
+      - code: workspace-entry-turbo-present
+        description:
+          Monorepo 根目录必须存在准确命名的 turbo.json，不接受 turbo.jsonc
+          或其他文件名替代。
+      - code: workspace-entry-turbo-file
+        description: |
+          已存在的 turbo.json 必须是普通文件，不能是目录等条目；
+          链接重定向、意外 I/O 和取消属于执行故障。
+          此处不读取内容，解析、tasks、dependsOn、outputs 与 cache 政策不在本规则范围。
+    output:
+      description: 拟定成功输出为 undefined，不新增 Context 数据；本步尚未实现。
+  - id: workspace-scripts
+    title: 根 Scripts · 固定 Turbo 聚合接口
+    description: 九个封闭名称和准确命令已确认，尚未实现；根只聚合成员同名任务。
+    instructions: |
+      仅 monorepo 适用；前步成功后核对根 scripts 的自有键与命令值。
+      缺失名称、额外名称和允许名称的错误命令分别报告；
+      不对缺失或额外名称追加命令值诊断，不猜测拼写意图。
+      列明实际值与期望值，由 Agent 修正后重新检查，不执行命令作为声明核验的替代。
+    rules:
+      - code: workspace-scripts-required
+        description: |
+          根 scripts 必须包含 build、check、clean、format、format-check、lint、
+          test、test-coverage、typecheck 九个自有键，额外名称不能替代。
+      - code: workspace-scripts-allowed
+        description: |
+          根 scripts 只允许这九个名称，不允许 pre/post 生命周期钩子、
+          发布入口或项目专用等额外命令；每个额外名称均须指出。
+      - code: workspace-scripts-command-standard
+        description: |
+          每个已存在的允许名称，其字符串值必须精确等于 turbo run <同名任务>，
+          如 test-coverage 必须为 turbo run test-coverage；
+          不接受附加参数、空白变体、串联或包装脚本。
+          不要求本地 .mjs 入口、固定脚本核心或公共聚合工具包；
+          声明匹配不证明成员同名任务存在或成功执行。
+    output:
+      description: 拟定成功输出为 undefined，不新增 Context 数据；本步尚未实现。
+  - id: workspace-tools
+    title: 共享开发工具容器
+    description:
+      待实现候选；对 monorepo 核验根 devDependencies 容器，不检测实际安装。
+    instructions: |
+      仅 monorepo 适用；核对根 manifest 的 devDependencies 容器，
+      再由后续检查点逐一核验工具声明。不要安装工具，
+      不从工具存在推导消费者最低 Node 版本或宿主环境已就绪。
+    rules:
+      - code: workspace-tools-declarations-valid
+        description: |
+          根 devDependencies 必须为对象，不能缺失、为 null、数组或其他非对象值；
+          共享工具不要求成员重复声明，宿主全局安装不替代根声明。
+    output:
+      description: 拟定成功输出为 undefined，不新增 Context 数据；本步尚未实现。
+  - id: tool-turbo
+    title: turbo 工具声明
+    description: 待实现候选；核验承担九个根 scripts 同名任务聚合的 turbo 声明。
+    instructions: |
+      仅 monorepo 适用；检查根开发依赖 turbo 的自有键及版本声明，
+      catalog 引用须只读解析根 pnpm-workspace.yaml 的 catalog 或 catalogs。
+      报告缺失、引用目标或结构问题；声明缺失时不追加版本诊断。
+      不扫描 node_modules、不执行、安装、升级工具或查询本机 registry。
+    rules:
+      - code: tool-turbo-declared
+        description:
+          根 devDependencies 必须有 turbo
+          自有键，不以传递依赖或宿主全局安装替代。
+      - code: tool-turbo-version-valid
+        description: |
+          turbo 的已存在版本声明必须为非空字符串，且是受支持的明确 semver 声明，
+          或能从 workspace catalog / catalogs 唯一解析到此类声明的引用；
+          未知协议、缺少引用目标或非法结构不能视为有效版本。
+          稳定性、最新版本及 Node/peer 兼容性待另定可信元数据与新鲜度契约，不凭猜测自动升级。
+    output:
+      description:
+        拟定成功输出为 undefined，不新增 Context
+        数据；工具版本解析复用实现期共享逻辑，本步尚未实现。
+  - id: tool-prettier
+    title: prettier 工具声明
+    description:
+      待实现候选；核验 format 与 format-check 所需的共享 prettier 声明。
+    instructions: |
+      仅 monorepo 适用；核对根开发依赖 prettier 的自有键与版本声明，
+      只读解析 catalog / catalogs 引用，指出实际字段和引用目标；缺失时不追加版本诊断。
+      不执行格式化、不扫描安装目录、不安装或升级工具，不查询本机 registry。
+    rules:
+      - code: tool-prettier-declared
+        description:
+          根 devDependencies 必须有 prettier
+          自有键，不以传递依赖或宿主全局安装替代。
+      - code: tool-prettier-version-valid
+        description: |
+          prettier 的已存在版本声明必须为非空字符串，且是受支持的明确 semver 声明，
+          或能从 workspace catalog / catalogs 唯一解析到此类声明的引用；
+          未知协议、缺少引用目标或非法结构不能视为有效版本。
+          稳定性、最新版本及 Node/peer 兼容性待另定可信元数据与新鲜度契约，不凭猜测自动升级。
+    output:
+      description: 拟定成功输出为 undefined，不新增 Context 数据；本步尚未实现。
+  - id: tool-eslint
+    title: eslint 工具声明
+    description: 待实现候选；核验 lint 所需的共享 eslint 声明。
+    instructions: |
+      仅 monorepo 适用；核对根开发依赖 eslint 的自有键与版本声明，
+      只读解析 catalog / catalogs 引用，指出实际字段和引用目标；缺失时不追加版本诊断。
+      不执行 ESLint 或加载其配置模块，不扫描安装目录、不安装、升级或查询本机 registry。
+    rules:
+      - code: tool-eslint-declared
+        description:
+          根 devDependencies 必须有 eslint
+          自有键，不以传递依赖或宿主全局安装替代。
+      - code: tool-eslint-version-valid
+        description: |
+          eslint 的已存在版本声明必须为非空字符串，且是受支持的明确 semver 声明，
+          或能从 workspace catalog / catalogs 唯一解析到此类声明的引用；
+          未知协议、缺少引用目标或非法结构不能视为有效版本。
+          稳定性、最新版本及 Node/peer 兼容性待另定可信元数据与新鲜度契约，不凭猜测自动升级。
+    output:
+      description: 拟定成功输出为 undefined，不新增 Context 数据；本步尚未实现。
+  - id: tool-typescript-eslint
+    title: typescript-eslint 工具声明
+    description:
+      待实现候选；核验 TypeScript 类型感知 lint 所需的 typescript-eslint 声明。
+    instructions: |
+      仅 monorepo 适用；核对根开发依赖 typescript-eslint 的自有键与版本声明，
+      只读解析 catalog / catalogs 引用，指出实际字段和引用目标；缺失时不追加版本诊断。
+      不以声明存在证明类型感知 lint 已启用，不执行配置或查询本机 registry，不安装或升级。
+    rules:
+      - code: tool-typescript-eslint-declared
+        description:
+          根 devDependencies 必须有 typescript-eslint
+          自有键，不以传递依赖或宿主全局安装替代。
+      - code: tool-typescript-eslint-version-valid
+        description: |
+          typescript-eslint 的已存在版本声明必须为非空字符串，且是受支持的明确 semver 声明，
+          或能从 workspace catalog / catalogs 唯一解析到此类声明的引用；
+          未知协议、缺少引用目标或非法结构不能视为有效版本。
+          稳定性、最新版本及 Node/peer 兼容性待另定可信元数据与新鲜度契约，不凭猜测自动升级。
+    output:
+      description: 拟定成功输出为 undefined，不新增 Context 数据；本步尚未实现。
+  - id: tool-vitest
+    title: vitest 工具声明
+    description: 待实现候选；核验 test 与 test-coverage 所需的共享 vitest 声明。
+    instructions: |
+      仅 monorepo 适用；核对根开发依赖 vitest 的自有键与版本声明，
+      只读解析 catalog / catalogs 引用，指出实际字段和引用目标；缺失时不追加版本诊断。
+      不启动测试或加载配置，不以工具声明证明单次执行、覆盖范围或门限已满足；
+      不扫描安装目录、不安装、升级或查询本机 registry。
+    rules:
+      - code: tool-vitest-declared
+        description:
+          根 devDependencies 必须有 vitest
+          自有键，不以传递依赖或宿主全局安装替代。
+      - code: tool-vitest-version-valid
+        description: |
+          vitest 的已存在版本声明必须为非空字符串，且是受支持的明确 semver 声明，
+          或能从 workspace catalog / catalogs 唯一解析到此类声明的引用；
+          未知协议、缺少引用目标或非法结构不能视为有效版本。
+          稳定性、最新版本及 Node/peer 兼容性待另定可信元数据与新鲜度契约，不凭猜测自动升级。
+    output:
+      description: 拟定成功输出为 undefined，不新增 Context 数据；本步尚未实现。
+  - id: tool-vitest-coverage-v8
+    title: "@vitest/coverage-v8 工具声明"
+    description:
+      待实现候选；核验 test-coverage 所需的 V8 coverage provider 声明。
+    instructions: |
+      仅 monorepo 适用；核对根开发依赖 @vitest/coverage-v8 的自有键与版本声明，
+      只读解析 catalog / catalogs 引用，指出实际字段和引用目标；缺失时不追加版本诊断。
+      不执行覆盖率或把声明存在当作 provider 已启用；
+      与 Vitest 的版本兼容规则待细化，不查询本机 registry、不安装或升级。
+    rules:
+      - code: tool-vitest-coverage-v8-declared
+        description:
+          根 devDependencies 必须有 @vitest/coverage-v8
+          自有键，不以传递依赖或宿主全局安装替代。
+      - code: tool-vitest-coverage-v8-version-valid
+        description: |
+          @vitest/coverage-v8 的已存在版本声明必须为非空字符串，且是受支持的明确 semver 声明，
+          或能从 workspace catalog / catalogs 唯一解析到此类声明的引用；
+          未知协议、缺少引用目标或非法结构不能视为有效版本。
+          与 Vitest 及 Node/peer 的兼容性、稳定性和最新版本待另定可信元数据与新鲜度契约，
+          不凭猜测认定兼容或自动升级。
+    output:
+      description: 拟定成功输出为 undefined，不新增 Context 数据；本步尚未实现。
+  - id: tool-typescript
+    title: typescript 工具声明
+    description:
+      待实现候选；核验 typecheck 和类型感知工具所需的共享 typescript 声明。
+    instructions: |
+      仅 monorepo 适用；核对根开发依赖 typescript 的自有键与版本声明，
+      只读解析 catalog / catalogs 引用，指出实际字段和引用目标；缺失时不追加版本诊断。
+      不执行编译或加载目标配置模块，不以声明存在证明 strict、源码覆盖或类型检查已通过；
+      不扫描安装目录、不安装、升级或查询本机 registry。
+    rules:
+      - code: tool-typescript-declared
+        description:
+          根 devDependencies 必须有 typescript
+          自有键，不以传递依赖或宿主全局安装替代。
+      - code: tool-typescript-version-valid
+        description: |
+          typescript 的已存在版本声明必须为非空字符串，且是受支持的明确 semver 声明，
+          或能从 workspace catalog / catalogs 唯一解析到此类声明的引用；
+          未知协议、缺少引用目标或非法结构不能视为有效版本。
+          稳定性、最新版本及 Node/peer 兼容性待另定可信元数据与新鲜度契约，不凭猜测自动升级。
+    output:
+      description: 拟定成功输出为 undefined，不新增 Context 数据；本步尚未实现。

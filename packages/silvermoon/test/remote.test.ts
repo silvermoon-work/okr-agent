@@ -8,7 +8,7 @@ const command = vi.hoisted(() =>
     (
       file: string,
       args: string[],
-      options: { cwd: string },
+      options: { cwd: string; env: NodeJS.ProcessEnv },
     ) => Promise<{ stdout: string; stderr: string }>
   >(),
 );
@@ -17,12 +17,70 @@ vi.mock("node:child_process", () => ({
     [Symbol.for("nodejs.util.promisify.custom")]: command,
   }),
 }));
-import { remoteTip } from "../src/repository.js";
+import { git, remoteTip } from "../src/repository.js";
+import { withGitContext } from "../src/git-context.js";
 afterEach(() => {
   command.mockReset();
+  vi.unstubAllEnvs();
 });
 
 describe("remote-only snapshot selection", () => {
+  it("isolates concurrent host Git contexts and excludes executable or credential environment injection", async () => {
+    command.mockImplementation(() =>
+      Promise.resolve({ stdout: "", stderr: "" }),
+    );
+    vi.stubEnv("NODE_OPTIONS", "--require untrusted.js");
+    vi.stubEnv("GIT_SSH_COMMAND", "untrusted");
+    vi.stubEnv("GIT_CONFIG_COUNT", "1");
+    vi.stubEnv("GITHUB_TOKEN", "fixture-not-a-token");
+    const first = {
+      path: process.cwd(),
+      userHome: process.cwd(),
+      sshAuthSock: join(process.cwd(), "agent"),
+    };
+    const second = {
+      path: join(process.cwd(), "other"),
+      userHome: join(process.cwd(), "other"),
+    };
+    await Promise.all(
+      [first, second].map((environment) =>
+        withGitContext(environment, async () => {
+          await Promise.resolve();
+          await git("/fixture", ["status"]);
+        }),
+      ),
+    );
+    for (const [index, context] of [first, second].entries()) {
+      const env = command.mock.calls[index]?.[2].env;
+      expect(env).toMatchObject({
+        PATH: context.path,
+        HOME: context.userHome,
+        USERPROFILE: context.userHome,
+        GIT_TERMINAL_PROMPT: "0",
+        GIT_OPTIONAL_LOCKS: "0",
+      });
+      for (const key of [
+        "NODE_OPTIONS",
+        "GIT_SSH_COMMAND",
+        "GIT_CONFIG_COUNT",
+        "GITHUB_TOKEN",
+      ])
+        expect(env).not.toHaveProperty(key);
+    }
+    expect(command.mock.calls[0]?.[2].env.SSH_AUTH_SOCK).toBe(
+      first.sshAuthSock,
+    );
+    expect(command.mock.calls[1]?.[2].env).not.toHaveProperty("SSH_AUTH_SOCK");
+    for (const context of [
+      { ...first, userHome: "relative" },
+      { ...first, path: "" },
+      { ...first, path: "/a\n/b" },
+      { ...first, sshAuthSock: "relative" },
+    ])
+      expect(() => withGitContext(context, () => Promise.resolve())).toThrow(
+        /Git requires/,
+      );
+  });
   it("fetches the configured primary without requiring local HEAD synchronization or consuming dirty Idea files", async () => {
     const root = await scratch();
     await mkdir(join(root, ".silvermoon"));

@@ -92,7 +92,7 @@ export async function loadBrowserTask(
     )
       throw new TaskError(
         "unsupported_runtime",
-        "ipfsaw run requires a browser Task with an ESM main.mjs entry.",
+        "ipfsaw view requires a browser Task with an ESM main.mjs entry.",
       );
     const files = new Map<string, Uint8Array>();
     const visit = async (path: string): Promise<void> => {

@@ -35,6 +35,29 @@ import {
 } from "./fixtures.js";
 
 describe("bounded Git snapshots and archive isolation", () => {
+  it("distinguishes confirmed missing primary branches from transport failures", async () => {
+    const { root, remote } = await repository();
+    const project = await readProject(root);
+    await expect(
+      primary(project, { localRemote: remote, fetch: true, checkBranch: true }),
+    ).resolves.toHaveProperty("tip");
+    await git(remote, ["update-ref", "-d", "refs/heads/main"]);
+    await expect(
+      primary(project, { localRemote: remote, fetch: true, checkBranch: true }),
+    ).rejects.toMatchObject({
+      code: "primary-branch-missing",
+    });
+    await git(root, ["remote", "set-url", "origin", join(remote, "missing")]);
+    await expect(
+      primary(project, {
+        localRemote: join(remote, "missing"),
+        fetch: true,
+        checkBranch: true,
+      }),
+    ).rejects.not.toMatchObject({
+      code: "primary-branch-missing",
+    });
+  });
   it("validates snapshot history even when a candidate deletes every new Idea", async () => {
     const { root } = await repository();
     await expect(
@@ -328,7 +351,6 @@ describe("transactional new Idea creation and fact append", () => {
       object: "requirements",
       revision: current.revisions.requirements,
       upstream: {},
-      decision: "confirmed",
     });
     const options = {
       expectedDigest: digest(current.eventSource),
@@ -387,6 +409,49 @@ describe("transactional new Idea creation and fact append", () => {
     await expect(replay(root, id, `3:${digest("wrong")}`)).rejects.toThrow(
       /exact observed/,
     );
+  });
+  it("appends simplified confirmations without rewriting historical decision bytes", async () => {
+    const { root, remote } = await repository();
+    const initial = selectIdea(await readProject(root), id);
+    const legacy = event({
+      type: "signOff",
+      object: "requirements",
+      revision: initial.revisions.requirements,
+      upstream: {},
+      decision: "confirmed",
+    });
+    await materialize(root, add(initial.files, legacy));
+    await sync(root);
+    const path = join(root, ".silvermoon", "i", id, "events.jsonl");
+    const before = await readFile(path);
+    const current = selectIdea(await readProject(root), id);
+    const signoff = event({
+      type: "signOff",
+      object: "research",
+      revision: current.revisions.research,
+      upstream: { requirements: current.revisions.requirements },
+    });
+    const options = {
+      expectedDigest: digest(before),
+      expectedPrimary: await git(root, ["rev-parse", "origin/main"]),
+      localRemote: remote,
+      refresh: false,
+      confirmed: true,
+    };
+    await expect(
+      appendEvent(root, id, { ...signoff, decision: "confirmed" }, options),
+    ).rejects.toThrow(/omit.*decision/);
+    expect(await readFile(path)).toEqual(before);
+    await appendEvent(root, id, signoff, options);
+    const after = await readFile(path);
+    expect(after.subarray(0, before.length)).toEqual(before);
+    expect(before.toString("utf8")).toContain('"decision":"confirmed"');
+    expect(after.subarray(before.length).toString("utf8")).toBe(
+      canonical(signoff) + "\n",
+    );
+    expect(
+      selectIdea(await readProject(root), id).events.at(-1),
+    ).not.toHaveProperty("decision");
   });
   it("serializes concurrent writers, rejects unrelated edits, and records aliases/language and abandonment as explicit facts", async () => {
     const { root, remote } = await repository();

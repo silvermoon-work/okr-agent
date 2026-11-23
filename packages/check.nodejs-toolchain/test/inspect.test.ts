@@ -13,16 +13,17 @@ import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createCheckCallback,
-  defineChecker,
+  executeCheck,
 } from "@silvermoon-work/check-task-sdk";
 import contract, {
   type Input,
-  type ProblemCode,
+  type RuleCode,
   type Tool,
-} from "../src/contract.js";
+} from "../src/legacy/contract.js";
 import {
   compareVersions,
   inspect,
+  toolchainCheckpoints,
   nativeHost,
   posixNrmTarget,
   parseNrm,
@@ -31,7 +32,7 @@ import {
   within,
   type Host,
   type ToolEntry,
-} from "../src/inspect.js";
+} from "../src/legacy/inspect.js";
 import { execute, stopTree } from "../src/command.js";
 import {
   captureExecutionEnvironment,
@@ -121,7 +122,7 @@ function fixture(
   };
 }
 async function check(requirements: Input["requirements"], host = fixture()) {
-  const problems: { code: ProblemCode; brief: string }[] = [];
+  const problems: { code: RuleCode; brief: string }[] = [];
   await inspect(
     { context, requirements },
     signal(),
@@ -163,7 +164,7 @@ describe("composite requirements", () => {
       "npm-cli.js",
     );
     const host = fixture({ platform: "linux", npm: cli, npmNode: nodePath });
-    const originalRun = host.run.bind(host);
+    const originalRun = host.run;
     host.env.NVM_DIR = home;
     host.locate = (name) =>
       Promise.resolve({
@@ -203,7 +204,7 @@ describe("composite requirements", () => {
       const version = mode === "invalid-version" ? "unknown" : "v22.13.0";
       const nodePath = join(home, "versions", "node", version, "bin", "node");
       const host = fixture({ platform: "darwin" });
-      const originalRun = host.run.bind(host);
+      const originalRun = host.run;
       host.env.NVM_DIR = home;
       host.locate = (name) =>
         Promise.resolve({
@@ -234,7 +235,7 @@ describe("composite requirements", () => {
   it("continues npm management after a missing node and reports split pairing layout without pretending it is bundled", async () => {
     const host = fixture({ missing: ["node"] });
     expect((await check(all, host)).map((problem) => problem.code)).toEqual([
-      "tool-missing",
+      "tool-present",
     ]);
     const split = fixture({ npm: join(cwd, "split", "npm") });
     split.canonical = () =>
@@ -251,7 +252,7 @@ describe("composite requirements", () => {
           split,
         )
       ).map((problem) => problem.code),
-    ).toEqual(["pairing-unconfirmed"]);
+    ).toEqual(["node-npm-pairing-verifiable"]);
   });
   it("reuses a manager installation observation within one Run but never across Runs", async () => {
     const host = fixture();
@@ -268,7 +269,7 @@ describe("composite requirements", () => {
       run.mock.calls.filter(([, args]) => args[0] === "root"),
     ).toHaveLength(2);
   });
-  it("uses scoped tool prerequisites, prunes relationship probes, and continues independent registry/version leaves", async () => {
+  it("collects all installation failures and suppresses every configuration probe", async () => {
     const host = fixture({
       missing: ["node", "nvm"],
       output: { "npm:--version": "1.0.0", "pnpm:--version": "1.0.0" },
@@ -288,10 +289,10 @@ describe("composite requirements", () => {
       host,
     );
     expect(problems.map((problem) => problem.code)).toEqual([
-      "version-too-low",
-      "version-too-low",
-      "tool-missing",
-      "tool-missing",
+      "tool-present",
+      "tool-version-minimum",
+      "tool-version-minimum",
+      "tool-present",
     ]);
     expect(locate.mock.calls.map(([name]) => name)).toEqual([
       "node",
@@ -308,19 +309,10 @@ describe("composite requirements", () => {
             `${entry.executable.slice(cwd.length + 1)}:${args.join(" ")}`,
         )
         .sort(),
-    ).toEqual(
-      [
-        "npm:--version",
-        "pnpm:--version",
-        "nrm:--version",
-        "npm:config get registry",
-        "pnpm:config get registry",
-        "nrm:ls",
-      ].sort(),
-    );
+    ).toEqual(["npm:--version", "pnpm:--version", "nrm:--version"].sort());
     expect(await check(all)).toEqual([]);
   });
-  it("does not let a low version prune feasible pairing or registry checks", async () => {
+  it("short circuits configuration on a low version even when relationship probes are feasible", async () => {
     const host = fixture({
       npm: null,
       output: {
@@ -329,6 +321,7 @@ describe("composite requirements", () => {
       },
     });
     const provenance = vi.spyOn(host, "npmLocation");
+    const run = vi.spyOn(host, "run");
     const problems = await check(
       {
         tools: { node: { minimumVersion: "99" }, npm: {} },
@@ -340,11 +333,51 @@ describe("composite requirements", () => {
       host,
     );
     expect(problems.map((problem) => problem.code)).toEqual([
-      "version-too-low",
-      "pairing-unconfirmed",
-      "registry-mismatch",
+      "tool-version-minimum",
     ]);
-    expect(provenance).toHaveBeenCalledTimes(1);
+    expect(provenance).not.toHaveBeenCalled();
+    expect(run.mock.calls.every(([, args]) => args[0] === "--version")).toBe(
+      true,
+    );
+  });
+  it("collects independently assessable configuration failures with one checkpoint reference", async () => {
+    const host = fixture({
+      npm: null,
+      output: {
+        "npm:config get registry": "https://outside.test",
+        "pnpm:config get registry": "https://outside.test",
+        "nrm:ls": "target ---- https://outside.test",
+      },
+    });
+    const input: Input = { context, requirements: all };
+    const result = await executeCheck({
+      checkpoints: toolchainCheckpoints(input, signal(), host),
+      target: input,
+      signal: signal(),
+    });
+    expect(result).toMatchObject({
+      pass: false,
+      references: [
+        {
+          checkpoint: "configuration",
+          documentation: "references/checkpoints/configuration.md",
+        },
+      ],
+    });
+    if (result.pass) throw new Error("Expected configuration failures.");
+    expect(result.problems.map(({ code }) => code)).toEqual([
+      "node-npm-pairing-verifiable",
+      "tool-management-verifiable",
+      "registry-allowed",
+      "registry-allowed",
+      "nrm-registration-url-matched",
+    ]);
+    expect(
+      result.problems.every(({ checkpoint }) => checkpoint === "configuration"),
+    ).toBe(true);
+    expect(
+      result.problems.every((problem) => !("documentation" in problem)),
+    ).toBe(true);
   });
   it("does not require undeclared tools or a manager, and accepts independent empty tool policies", async () => {
     expect(
@@ -379,7 +412,7 @@ describe("composite requirements", () => {
       await check({ tools: { node: { minimumVersion: "23" } } }),
     ).toMatchObject([
       {
-        code: "version-too-low",
+        code: "tool-version-minimum",
         brief: expect.stringContaining("22.13.0") as string,
       },
     ]);
@@ -395,9 +428,9 @@ describe("composite requirements", () => {
         }),
       ),
     ).toMatchObject([
-      { code: "version-unparseable" },
-      { code: "tool-missing" },
-      { code: "tool-unusable" },
+      { code: "tool-version-readable" },
+      { code: "tool-executable" },
+      { code: "tool-present" },
     ]);
   });
   it("separates pairing, uncertain evidence and per-tool nvm management", async () => {
@@ -411,24 +444,24 @@ describe("composite requirements", () => {
       "npm-cli.js",
     );
     expect(await check(all, fixture({ npm: outside }))).toMatchObject([
+      { code: "node-npm-paired" },
       {
-        code: "management-mismatch",
+        code: "tool-managed",
         brief: expect.stringContaining("npm") as string,
       },
-      { code: "pairing-mismatch" },
     ]);
     expect(await check(all, fixture({ npm: null }))).toMatchObject([
-      { code: "management-unconfirmed" },
-      { code: "pairing-unconfirmed" },
+      { code: "node-npm-pairing-verifiable" },
+      { code: "tool-management-verifiable" },
     ]);
     expect(
       await check(all, fixture({ npmNode: join(cwd, "system", "node.exe") })),
     ).toMatchObject([
+      { code: "node-npm-paired" },
       {
-        code: "management-mismatch",
+        code: "tool-managed",
         brief: expect.stringContaining("npm") as string,
       },
-      { code: "pairing-mismatch" },
     ]);
     expect(
       await check({ tools: { node: {}, npm: {} } }, fixture({ npm: outside })),
@@ -438,10 +471,7 @@ describe("composite requirements", () => {
         all,
         fixture({ output: { "nvm:list": "No installations recognized." } }),
       ),
-    ).toMatchObject([
-      { code: "management-mismatch" },
-      { code: "management-mismatch" },
-    ]);
+    ).toMatchObject([{ code: "tool-managed" }, { code: "tool-managed" }]);
     await expect(
       check(
         all,
@@ -480,7 +510,7 @@ describe("composite requirements", () => {
         },
         host,
       ),
-    ).toMatchObject([{ code: "pairing-mismatch" }]);
+    ).toMatchObject([{ code: "node-npm-paired" }]);
   });
   it("checks each effective registry and all exact nrm mappings, allowing extras", async () => {
     expect(
@@ -495,18 +525,18 @@ describe("composite requirements", () => {
         }),
       ),
     ).toMatchObject([
-      { code: "nrm-registration-mismatch" },
-      { code: "registry-mismatch" },
+      { code: "registry-allowed" },
+      { code: "nrm-registration-url-matched" },
     ]);
     expect(
       await check(
         all,
         fixture({ output: { "nrm:ls": "extra ---- https://extra.test/" } }),
       ),
-    ).toMatchObject([{ code: "nrm-registration-missing" }]);
+    ).toMatchObject([{ code: "nrm-registration-present" }]);
     expect(
       await check(all, fixture({ codes: { "pnpm:config get registry": 2 } })),
-    ).toMatchObject([{ code: "registry-unusable" }]);
+    ).toMatchObject([{ code: "registry-readable" }]);
     await expect(
       check(all, fixture({ output: { "nrm:ls": "new output format" } })),
     ).rejects.toThrow("Unknown");
@@ -541,13 +571,11 @@ describe("composite requirements", () => {
     // SDK callback is used by the entrypoint, not a bespoke result envelope.
     expect(
       typeof createCheckCallback(contract, {
-        root: "toolchain",
-        registry: {
-          toolchain: defineChecker({
-            target: contract.parameters,
-            check: () => Promise.resolve({ pass: true, children: [] } as const),
-          }),
-        },
+        checkpoints: toolchainCheckpoints(
+          { context, requirements: all },
+          signal(),
+          fixture(),
+        ),
       }),
     ).toBe("function");
   });
@@ -1048,7 +1076,7 @@ process.stdout.write("11.22.0\\n");`,
       expect((await host.npmLocation(npm!, cwd, signal()))?.cli).toBe(
         await realpath(join(packageRoot, "bin", "npm-cli.js")),
       );
-      const problems: ProblemCode[] = [];
+      const problems: RuleCode[] = [];
       await inspect(
         {
           context: {
@@ -1065,7 +1093,7 @@ process.stdout.write("11.22.0\\n");`,
           problems.push(code);
         },
       );
-      expect(problems).toEqual(["pairing-mismatch"]);
+      expect(problems).toEqual(["node-npm-paired"]);
     },
     30_000,
   );
@@ -1079,7 +1107,9 @@ process.stdout.write("11.22.0\\n");`,
         script,
         `const {spawn}=require('node:child_process'); const fs=require('node:fs');
 const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});
-fs.writeFileSync(${JSON.stringify(marker)},String(child.pid)); setInterval(()=>{},1000);`,
+const marker=${JSON.stringify(marker)};
+fs.writeFileSync(marker+'.tmp',String(child.pid)); fs.renameSync(marker+'.tmp',marker);
+setInterval(()=>{},1000);`,
       );
       const controller = new AbortController();
       const running = execute(
@@ -1104,23 +1134,26 @@ fs.writeFileSync(${JSON.stringify(marker)},String(child.pid)); setInterval(()=>{
             : "timed out",
       );
       let childPid: number | undefined;
-      for (let i = 0; i < 100; i++) {
-        try {
-          childPid = Number(await readFile(marker, "utf8"));
-          break;
-        } catch (error) {
-          if (!(
-            error instanceof Error &&
-            "code" in error &&
-            error.code === "ENOENT"
-          ))
-            throw error;
-          await new Promise((done) => setTimeout(done, 10));
+      try {
+        for (let i = 0; i < 100; i++) {
+          try {
+            childPid = Number(await readFile(marker, "utf8"));
+            break;
+          } catch (error) {
+            if (!(
+              error instanceof Error &&
+              "code" in error &&
+              error.code === "ENOENT"
+            ))
+              throw error;
+            await new Promise((done) => setTimeout(done, 10));
+          }
         }
+        expect(childPid).toBeGreaterThan(0);
+      } finally {
+        if (mode === "cancel") controller.abort();
+        await expected;
       }
-      expect(childPid).toBeGreaterThan(0);
-      if (mode === "cancel") controller.abort();
-      await expected;
       let terminated = false;
       for (let attempt = 0; attempt < 100; attempt++) {
         try {

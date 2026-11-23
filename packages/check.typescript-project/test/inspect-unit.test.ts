@@ -23,7 +23,8 @@ import { dataYaml } from "../src-legacy/files.js";
 
 const maintenance = vi.hoisted(() => ({ check: vi.fn() }));
 vi.mock("../src-legacy/checks/maintenance.js", async () => {
-  const { defineChecker } = await import("@silvermoon-work/check-task-sdk");
+  const { defineChecker } =
+    await import("@silvermoon-work/check-task-sdk/legacy");
   const { Type } = await import("@sinclair/typebox");
   return {
     maintenanceRegistry: () => ({

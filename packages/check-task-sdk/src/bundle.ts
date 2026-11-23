@@ -6,8 +6,8 @@ import {
 import type { TObject, TSchema } from "@sinclair/typebox";
 import { canonicalSnapshot, jsonObject, type JsonObject } from "./canonical.js";
 import { defineChecker, type CheckerResult, type Problem } from "./checker.js";
-import { problemCodes, type CheckContract } from "./contracts.js";
-import { exactCid, validateCheckReport } from "./report.js";
+import { problemCodes, type CheckContract } from "./legacy-contracts.js";
+import { exactCid, validateCheckReport } from "./legacy-report.js";
 
 /** The owner must cancel accepted work and await its real release before settling. */
 export interface CheckExecutionPort {

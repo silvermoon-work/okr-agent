@@ -35,7 +35,7 @@ const ancillary = [...files.keys()]
     (path) =>
       path.startsWith("resources/references/") &&
       path !== "resources/references/check.md" &&
-      !path.startsWith("resources/references/problems/"),
+      !path.startsWith("resources/references/checkpoints/"),
   )
   .map((path) => path.slice("resources/".length));
 const archive = await encodeTaskBundleCar(tree);
@@ -82,21 +82,19 @@ try {
       run.result.cidPaths,
       result.pass
         ? ['$["documentation"]']
-        : ['$["documentation"]', '$["problems"][*]["documentation"]'],
+        : ['$["documentation"]', '$["references"][*]["documentation"]'],
     );
     assert.equal("outputCid" in result, false);
     assert.equal("problems" in result, !result.pass);
     const paths = [
       result.documentation,
-      ...(result.pass
-        ? []
-        : result.problems.map((problem) => problem.documentation)),
+      ...result.references.map((reference) => reference.documentation),
     ];
     const references = [
       [result.documentation, "references/check.md"],
-      ...(result.problems ?? []).map((problem) => [
-        problem.documentation,
-        `references/problems/${problem.code}.md`,
+      ...result.references.map((reference) => [
+        reference.documentation,
+        `references/checkpoints/${reference.checkpoint}.md`,
       ]),
       ...ancillary.map((path) => [`${cid}/resources/${path}`, path]),
     ];

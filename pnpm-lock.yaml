@@ -10,8 +10,11 @@ catalogs:
       specifier: ^10.0.1
       version: 10.0.1
     '@ipld/car':
-      specifier: 5.4.6
-      version: 5.4.6
+      specifier: 5.4.9
+      version: 5.4.9
+    '@ipld/dag-cbor':
+      specifier: 10.0.2
+      version: 10.0.2
     '@silvermoon-work/ipfs-payload':
       specifier: 0.1.0
       version: 0.1.0
@@ -25,8 +28,8 @@ catalogs:
       specifier: 0.2.1-rc.0
       version: 0.2.1-rc.0
     '@silvermoon-work/task-engine':
-      specifier: 0.2.1-rc.1
-      version: 0.2.1-rc.1
+      specifier: 0.2.2-rc.0
+      version: 0.2.2-rc.0
     '@silvermoon-work/task-protocol':
       specifier: 0.2.1-rc.1
       version: 0.2.1-rc.1
@@ -253,7 +256,7 @@ importers:
     devDependencies:
       '@silvermoon-work/task-engine':
         specifier: 'catalog:'
-        version: 0.2.1-rc.1(supports-color@10.2.2)
+        version: 0.2.2-rc.0(supports-color@10.2.2)
       '@silvermoon-work/task-sdk':
         specifier: 'catalog:'
         version: 0.2.0
@@ -284,6 +287,9 @@ importers:
       '@silvermoon-work/check-task-sdk':
         specifier: workspace:*
         version: link:../check-task-sdk
+      '@silvermoon-work/task-sdk':
+        specifier: 'catalog:'
+        version: 0.2.0
       '@sinclair/typebox':
         specifier: 'catalog:'
         version: 0.34.52
@@ -305,7 +311,7 @@ importers:
         version: 0.2.1-rc.0(supports-color@10.2.2)
       '@silvermoon-work/task-engine':
         specifier: 'catalog:'
-        version: 0.2.1-rc.1(supports-color@10.2.2)
+        version: 0.2.2-rc.0(supports-color@10.2.2)
       ipfs-unixfs-exporter:
         specifier: 'catalog:'
         version: 16.2.3
@@ -361,13 +367,35 @@ importers:
         version: 0.2.1-rc.0(supports-color@10.2.2)
       '@silvermoon-work/task-engine':
         specifier: 'catalog:'
-        version: 0.2.1-rc.1(supports-color@10.2.2)
+        version: 0.2.2-rc.0(supports-color@10.2.2)
       '@types/semver':
         specifier: 'catalog:'
         version: 7.8.0
       ipfs-unixfs-exporter:
         specifier: 'catalog:'
         version: 16.2.3
+
+  packages/content-bundle:
+    dependencies:
+      '@ipld/dag-cbor':
+        specifier: 'catalog:'
+        version: 10.0.2
+      '@silvermoon-work/ipfs-store':
+        specifier: 'catalog:'
+        version: 0.1.0(supports-color@10.2.2)
+      ajv:
+        specifier: 'catalog:'
+        version: 8.20.0
+      multiformats:
+        specifier: 'catalog:'
+        version: 14.0.5
+      yaml:
+        specifier: 'catalog:'
+        version: 2.9.1
+    devDependencies:
+      ipfs-unixfs-importer:
+        specifier: 'catalog:'
+        version: 17.1.1(supports-color@10.2.2)
 
   packages/core: {}
 
@@ -391,7 +419,7 @@ importers:
     dependencies:
       '@ipld/car':
         specifier: 'catalog:'
-        version: 5.4.6
+        version: 5.4.9
       '@silvermoon-work/ipfs-payload':
         specifier: 'catalog:'
         version: 0.1.0
@@ -455,7 +483,7 @@ importers:
         version: 0.2.1-rc.0(supports-color@10.2.2)
       '@silvermoon-work/task-engine':
         specifier: 'catalog:'
-        version: 0.2.1-rc.1(supports-color@10.2.2)
+        version: 0.2.2-rc.0(supports-color@10.2.2)
       '@sinclair/typebox':
         specifier: 'catalog:'
         version: 0.34.52
@@ -798,6 +826,10 @@ packages:
     resolution: {integrity: sha512-f1Iyb9ci8B/TGCyjAuSQ6BOLiy2u8en7rB+SumbyweqXDu3gxYJwYbGzoposKjOzc4CeGlkEbwEw8REoekYAKQ==}
     engines: {node: '>=16.0.0', npm: '>=7.0.0'}
 
+  '@ipld/car@5.4.9':
+    resolution: {integrity: sha512-+a6iWfLXhfnTfEA0dITpB4DDp8vHhsA1aIVrR50xnxfjbNevw/fQhH9q2kKe9sJdZMyCMbp/NVq0rj2fBqL0Zw==}
+    engines: {node: '>=16.0.0', npm: '>=7.0.0'}
+
   '@ipld/dag-cbor@10.0.2':
     resolution: {integrity: sha512-1eCD4YMTlkx5i36oQUmeAojLS/wu+XCd1Gs31BA0afk0TaVkhnyMofIAT/pi0wV3HS3/G7QSN/1NibhiksMyZQ==}
 
@@ -1051,12 +1083,16 @@ packages:
     resolution: {integrity: sha512-i16x6l/CgbzKcegFMKIYId+FW11idzKsbTOZqW7/aAPCOfAHZtZkjuXs1Bh9XHT267FX7yfIb6DGdtFsu3O12Q==}
     engines: {node: '>=22.15.0'}
 
-  '@silvermoon-work/task-engine@0.2.1-rc.1':
-    resolution: {integrity: sha512-yKtQphRU5QSXmMoRi/ldMd2ZzFco89chXNICcUxsytRyskLcgwjcuBvL0jOLBHwt9JHS4cFUQ+312hX0SXvVOQ==}
+  '@silvermoon-work/task-engine@0.2.2-rc.0':
+    resolution: {integrity: sha512-WbOMuaLvo/9JeVUpgGFm4C8IrKSOoeECH9RwM106nWz3f+y1FQUDZ4VBNb8oZhomSpgtfRK9dpbOnatENDe/kg==}
     engines: {node: ^22.15.0 || >=23.5.0}
 
   '@silvermoon-work/task-protocol@0.2.0':
     resolution: {integrity: sha512-HMIrhYCo/pxObQddul+2NgEiprjfojDaFu5MDg28sX1ylvg+SyXCbx+klJ4znve1T3wpJyUgyMZD85gQccOLyg==}
+    engines: {node: '>=22.13.0'}
+
+  '@silvermoon-work/task-protocol@0.2.1':
+    resolution: {integrity: sha512-2KSnRwFSBkrfn+ly/iCoQhsFJF6+XMdYT3Ph5iH+LzQOCw2tPqpEhhSxpXTgCZble+kQjszCa+hGNqnW1lG/uA==}
     engines: {node: '>=22.13.0'}
 
   '@silvermoon-work/task-protocol@0.2.1-rc.1':
@@ -1334,6 +1370,10 @@ packages:
 
   cborg@6.2.1:
     resolution: {integrity: sha512-DwiF3Jd5RW6kJuTQMzQb/sdZD03utp15EcQNOMTvE/ZYCdDPzETsGOY5lj8imKxbsEuYvOzcMSiKLiT4C2/2Lw==}
+    hasBin: true
+
+  cborg@7.0.0:
+    resolution: {integrity: sha512-YYXJ+ozY26INm46oz2P+iOww/LhrfgPz2CuHaskDcitt0rKyh6LlWhNCfMlxxcdD+k7m0TspkRvcPPXAGYzZ8w==}
     hasBin: true
 
   ccount@2.0.1:
@@ -3152,6 +3192,13 @@ snapshots:
       multiformats: 14.0.5
       varint: 6.0.0
 
+  '@ipld/car@5.4.9':
+    dependencies:
+      '@ipld/dag-cbor': 10.0.2
+      cborg: 7.0.0
+      multiformats: 14.0.5
+      varint: 6.0.0
+
   '@ipld/dag-cbor@10.0.2':
     dependencies:
       cborg: 6.2.1
@@ -3513,13 +3560,13 @@ snapshots:
       - encoding
       - supports-color
 
-  '@silvermoon-work/task-engine@0.2.1-rc.1(supports-color@10.2.2)':
+  '@silvermoon-work/task-engine@0.2.2-rc.0(supports-color@10.2.2)':
     dependencies:
       '@helia/unixfs': 8.0.9(supports-color@10.2.2)
       '@silvermoon-work/ipfs-access': 0.1.0
       '@silvermoon-work/ipfs-payload': 0.1.0
       '@silvermoon-work/ipfs-store': 0.1.0(supports-color@10.2.2)
-      '@silvermoon-work/task-protocol': 0.2.1-rc.1
+      '@silvermoon-work/task-protocol': 0.2.1
       blockstore-core: 7.0.1
       ipfs-unixfs-exporter: 16.2.3
       ipfs-unixfs-importer: 17.1.1(supports-color@10.2.2)
@@ -3530,6 +3577,14 @@ snapshots:
       - supports-color
 
   '@silvermoon-work/task-protocol@0.2.0':
+    dependencies:
+      '@silvermoon-work/ipfs-access': 0.1.0
+      '@silvermoon-work/ipfs-payload': 0.1.0
+      ajv: 8.20.0
+      multiformats: 14.0.5
+      yaml: 2.9.1
+
+  '@silvermoon-work/task-protocol@0.2.1':
     dependencies:
       '@silvermoon-work/ipfs-access': 0.1.0
       '@silvermoon-work/ipfs-payload': 0.1.0
@@ -3853,6 +3908,8 @@ snapshots:
   cborg@5.1.11: {}
 
   cborg@6.2.1: {}
+
+  cborg@7.0.0: {}
 
   ccount@2.0.1: {}
 

@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node ../check-task-builder/dist/bin.js build",
     "lint": "eslint . --max-warnings=0",
-    "native-test": "node scripts/native-test.mjs",
+    "native-test": "vitest run --root . --config vitest.native.config.ts",
     "nvm-smoke": "node scripts/nvm-smoke.mjs",
     "smoke": "node scripts/smoke.mjs",
     "test": "vitest run --root . --config ../../vitest.config.ts",
@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@silvermoon-work/check-task-sdk": "workspace:*",
+    "@silvermoon-work/task-sdk": "catalog:",
     "@sinclair/typebox": "catalog:",
     "yaml": "catalog:"
   },

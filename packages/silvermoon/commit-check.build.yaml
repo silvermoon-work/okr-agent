@@ -1,0 +1,9 @@
+name: Silvermoon Commit
+spec: ../../docs/silvermoon-commit-check.yaml
+runtime:
+  minVersion: 22.15.0
+source:
+  entry: src/commit-main.ts
+  contract: src/commit-contract.ts
+references: references/commit
+outDirectory: dist/commit-check

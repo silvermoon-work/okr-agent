@@ -1,8 +1,8 @@
 import { expectTypeOf, it } from "vitest";
 import { Type } from "@sinclair/typebox";
-import { defineChecker, executeCheck, type CheckItem } from "../src/index.js";
-import { createCheckCallback } from "../src/task.js";
-import { createCheckContract } from "../src/contracts.js";
+import { defineChecker, executeCheck, type CheckItem } from "../src/legacy.js";
+import { createCheckCallback } from "../src/legacy-task.js";
+import { createCheckContract } from "../src/legacy-contracts.js";
 
 it("retains heterogeneous schemas and rejects incorrect roots and children", () => {
   const Text = Type.Object({ text: Type.String() });

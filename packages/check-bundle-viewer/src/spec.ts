@@ -1,33 +1,27 @@
 import { Ajv2020 } from "ajv/dist/2020.js";
 import type { AnySchemaObject, ErrorObject } from "ajv";
 
-export interface ChildDefinition {
-  checker: string;
-  when: string;
-  parameter: string;
-  forEach?: string;
-}
-
-export interface CheckerDefinition {
+export interface CheckpointDefinition {
+  id: string;
   title: string;
   description: string;
-  parameter: {
-    schema: Record<string, unknown>;
-    preconditions: string[];
-  };
-  rules: {
+  instructions: string;
+  output: {
     description: string;
-    problems: { code: string; description: string; when: string }[];
-  }[];
-  children: ChildDefinition[];
+    fields?: { name: string; description: string }[];
+  };
+  rules: { code: string; description: string }[];
 }
 
 export interface CheckBundleSpec {
   $schema?: "urn:ipfsaw:check-bundle:1";
   specVersion: "1.0";
   name: string;
-  root: string;
-  checkers: Record<string, CheckerDefinition>;
+  description: string;
+  parameter: {
+    schema: Record<string, unknown>;
+  };
+  checkpoints: CheckpointDefinition[];
 }
 
 const text = { type: "string", minLength: 1, pattern: "\\S" };
@@ -36,7 +30,7 @@ const object = (
   required = Object.keys(properties),
 ) => ({ type: "object", properties, required, additionalProperties: false });
 
-/** JSON Schema 2020-12 for document shape; reference and DAG checks run separately. */
+/** JSON Schema 2020-12; scoped identifier uniqueness is checked separately. */
 export const checkBundleSpecSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   ...object(
@@ -44,43 +38,46 @@ export const checkBundleSpecSchema = {
       $schema: { const: "urn:ipfsaw:check-bundle:1" },
       specVersion: { const: "1.0" },
       name: text,
-      root: text,
-      checkers: {
-        type: "object",
-        minProperties: 1,
-        propertyNames: text,
-        additionalProperties: object({
+      description: text,
+      parameter: object({
+        schema: {
+          type: "object",
+          required: ["type"],
+          properties: { type: { const: "object" } },
+        },
+      }),
+      checkpoints: {
+        type: "array",
+        minItems: 1,
+        items: object({
+          id: {
+            type: "string",
+            pattern: "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+            not: { pattern: "^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\\.|$)" },
+          },
           title: text,
           description: text,
-          parameter: object({
-            schema: {
-              type: "object",
-              required: ["type"],
-              properties: { type: { const: "object" } },
+          instructions: text,
+          output: object(
+            {
+              description: text,
+              fields: {
+                type: "array",
+                minItems: 1,
+                items: object({ name: text, description: text }),
+              },
             },
-            preconditions: { type: "array", items: text, uniqueItems: true },
-          }),
+            ["description"],
+          ),
           rules: {
             type: "array",
-            items: object({
-              description: text,
-              problems: {
-                type: "array",
-                items: object({ code: text, description: text, when: text }),
-              },
-            }),
-          },
-          children: {
-            type: "array",
-            items: object(
-              { checker: text, when: text, parameter: text, forEach: text },
-              ["checker", "when", "parameter"],
-            ),
+            minItems: 1,
+            items: object({ code: text, description: text }),
           },
         }),
       },
     },
-    ["specVersion", "name", "root", "checkers"],
+    ["specVersion", "name", "description", "parameter", "checkpoints"],
   ),
 } as const;
 
@@ -123,34 +120,6 @@ function shapeIssues(errors: ErrorObject[]): SpecIssue[] {
   }));
 }
 
-function pointer(name: string): string {
-  return name.replaceAll("~", "~0").replaceAll("/", "~1");
-}
-
-function cycleIssues(spec: CheckBundleSpec): SpecIssue[] {
-  const issues: SpecIssue[] = [];
-  const visited = new Set<string>();
-  const path: string[] = [];
-  const visit = (name: string) => {
-    if (visited.has(name)) return;
-    visited.add(name);
-    path.push(name);
-    spec.checkers[name]!.children.forEach((child, index) => {
-      if (!Object.hasOwn(spec.checkers, child.checker)) return;
-      const start = path.indexOf(child.checker);
-      if (start !== -1)
-        issues.push({
-          path: `/checkers/${pointer(name)}/children/${String(index)}/checker`,
-          message: `checker 引用存在循环：${[...path.slice(start), child.checker].join(" → ")}；定义必须是 DAG。`,
-        });
-      else visit(child.checker);
-    });
-    path.pop();
-  };
-  for (const name of Object.keys(spec.checkers)) visit(name);
-  return issues;
-}
-
 export function validateCheckBundleSpec(value: unknown): SpecValidation {
   try {
     if (!isJson(value))
@@ -161,29 +130,44 @@ export function validateCheckBundleSpec(value: unknown): SpecValidation {
     if (!validateShape(value))
       return { valid: false, issues: shapeIssues(validateShape.errors ?? []) };
     const issues: SpecIssue[] = [];
-    if (!Object.hasOwn(value.checkers, value.root))
-      issues.push({ path: "/root", message: `找不到 checker：${value.root}` });
-    for (const [name, checker] of Object.entries(value.checkers)) {
-      const base = `/checkers/${pointer(name)}`;
-      try {
-        new Ajv2020(ajvOptions).compile(
-          checker.parameter.schema as AnySchemaObject,
-        );
-      } catch (error) {
-        issues.push({
-          path: `${base}/parameter/schema`,
-          message: `无效的参数 JSON Schema：${String(error)}`,
-        });
-      }
-      checker.children.forEach((child, index) => {
-        if (!Object.hasOwn(value.checkers, child.checker))
-          issues.push({
-            path: `${base}/children/${String(index)}/checker`,
-            message: `找不到 checker：${child.checker}`,
-          });
+    try {
+      new Ajv2020(ajvOptions).compile(
+        value.parameter.schema as AnySchemaObject,
+      );
+    } catch (error) {
+      issues.push({
+        path: "/parameter/schema",
+        message: `无效的参数 JSON Schema：${String(error)}`,
       });
     }
-    issues.push(...cycleIssues(value));
+    const ids = new Set<string>();
+    value.checkpoints.forEach((checkpoint, index) => {
+      const base = `/checkpoints/${String(index)}`;
+      if (ids.has(checkpoint.id))
+        issues.push({
+          path: `${base}/id`,
+          message: `重复的 checkpoint ID：${checkpoint.id}`,
+        });
+      ids.add(checkpoint.id);
+      const names = new Set<string>();
+      checkpoint.output.fields?.forEach((field, fieldIndex) => {
+        if (names.has(field.name))
+          issues.push({
+            path: `${base}/output/fields/${String(fieldIndex)}/name`,
+            message: `本 checkpoint 中重复的输出字段名：${field.name}`,
+          });
+        names.add(field.name);
+      });
+      const codes = new Set<string>();
+      checkpoint.rules.forEach((rule, ruleIndex) => {
+        if (codes.has(rule.code))
+          issues.push({
+            path: `${base}/rules/${String(ruleIndex)}/code`,
+            message: `本 checkpoint 中重复的规则码：${rule.code}`,
+          });
+        codes.add(rule.code);
+      });
+    });
     return issues.length
       ? { valid: false, issues }
       : { valid: true, spec: value };

@@ -51,11 +51,16 @@ const start: TaskCallback<CheckBundleSpec, { started: true }> = async (
   context.signal.throwIfAborted();
   const container = document.createElement("main");
   container.id = "check-definition";
-  container.style.height = "100%";
+  container.className = "cbv-fill";
   document.body.append(container);
   const root = createRoot(container);
   flushSync(() => {
-    root.render(createElement(CheckBundleViewer, { spec: validation.spec }));
+    root.render(
+      createElement(CheckBundleViewer, {
+        spec: validation.spec,
+        navigation: true,
+      }),
+    );
   });
   return { started: true };
 };

@@ -21,8 +21,14 @@ npm/pnpm 分别遵守各自版本的原生工作区与覆盖规则，不能互�
 11 默默忽略的 YAML 插值，不会因 fallback
 URL 恰好在允许列表中就通过。nrm 的只读启动仅验证了 1.2.6；2.1.0 会在只读命令启动时重写用户配置，本检查在调用前拒绝它及其他未验证实现，不安装替代版本。
 
-问题列表只含
-`code/brief/documentation`；文档路径相对于输出根。执行超时、取消、未知检测协议及清理故障抛出执行错误，不生成 Check 结果。详细修复见各问题文档；完成修复后在同一个项目目录以原 requirements 重验。版本命令成功不代表环境是安全沙箱；仅在获授权且可信的执行环境运行。
+按顺序执行两个 Checkpoint：[安装与版本就绪](checkpoints/installation.md)、
+[配置](checkpoints/configuration.md)。第一阶段失败不执行任何配置探测；每阶段收集所有可独立判断的失败规则。
+结果包含 `pass/documentation/references`，失败时另含
+`problems[{checkpoint,code,brief}]`。重复规则码保留，brief 标明工具。
+references 为失败阶段聚合一份文档，不按问题生成文档；成功时为空。
+执行超时、取消、未知检测协议及清理故障抛出执行错误，不生成 Check 结果。
+详细修复见对应 Checkpoint 文档；完成修复后在同一个项目目录以原 requirements 重验。
+版本命令成功不代表环境是安全沙箱；仅在获授权且可信的执行环境运行。
 
 ## 证据边界
 

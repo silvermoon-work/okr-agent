@@ -11,9 +11,10 @@ afterEach(() => {
   });
   document.body.replaceChildren();
   vi.unstubAllGlobals();
+  window.history.replaceState(null, "", "/");
 });
 describe("optional routing annotation and browser renderer ABI", () => {
-  it("accepts exactly the annotation and preserves legacy input/strict unknown-field rejection", () => {
+  it("accepts only the v1 annotation, including unannotated v1, and rejects unknown fields", () => {
     expect(validateCheckBundleSpec(typescriptProjectSpec).valid).toBe(true);
     expect(
       validateCheckBundleSpec({
@@ -41,6 +42,8 @@ describe("optional routing annotation and browser renderer ABI", () => {
     });
     const container = document.createElement("main");
     document.body.append(container);
+    const selected = typescriptProjectSpec.checkpoints[1]!.id;
+    window.history.replaceState(null, "", `#checkpoint=${selected}`);
     expect(() => {
       renderer.update({});
     }).toThrow("not mounted");
@@ -51,10 +54,18 @@ describe("optional routing annotation and browser renderer ABI", () => {
       });
     });
     expect(container.textContent).toContain(typescriptProjectSpec.name);
+    expect(container.querySelector(".cbv-fill > .cbv")).not.toBeNull();
+    expect(container.querySelector(".cbv-identity > code")?.textContent).toBe(
+      selected,
+    );
     act(() => {
       renderer.update({ ...typescriptProjectSpec, name: "Updated document" });
     });
     expect(container.textContent).toContain("Updated document");
+    expect(container.querySelector(".cbv-fill > .cbv")).not.toBeNull();
+    expect(container.querySelector(".cbv-identity > code")?.textContent).toBe(
+      selected,
+    );
     act(() => {
       renderer.dispose();
     });

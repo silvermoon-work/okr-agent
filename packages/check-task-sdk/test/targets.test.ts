@@ -5,7 +5,7 @@ import {
   executeCheck,
   mergeCheckerRegistries,
   type CheckerResult,
-} from "../src/index.js";
+} from "../src/legacy.js";
 
 const Root = Type.Object(
   { text: Type.String() },

@@ -18,10 +18,9 @@ class Port {
     this.onmessage?.({ data: value } as MessageEvent);
   }
 }
-function host(saved = false) {
+function host() {
   document.body.innerHTML =
-    '<p id="status"></p><main id="renderer" hidden></main><button id="cancel"></button><button id="close"></button>';
-  if (!saved) history.replaceState(null, "", "/#PRIVATE_CAPABILITY");
+    '<p id="status"></p><main id="renderer" hidden></main>';
   const listeners = new Map<string, EventListenerOrEventListenerObject>();
   vi.spyOn(window, "addEventListener").mockImplementation((name, callback) => {
     listeners.set(name, callback);
@@ -138,7 +137,7 @@ const task = (revision = 1) => ({
 const status = () => document.querySelector("#status")!.textContent;
 
 describe("browser Task session ownership", () => {
-  it("shows a real iframe viewport before startup, authenticates the port and distinguishes cancel from close", async () => {
+  it("shows the real iframe before startup, validates the port and hides successful startup status", async () => {
     const h = await host();
     try {
       expect(location.hash).toBe("");
@@ -161,9 +160,6 @@ describe("browser Task session ownership", () => {
       ).not.toHaveBeenCalled();
       const handshake = h.hello();
       expect(handshake).toHaveBeenCalledTimes(1);
-      expect(JSON.stringify(handshake.mock.calls)).not.toContain(
-        "PRIVATE_CAPABILITY",
-      );
       const port = h.ports[0]!;
       expect(port.postMessage).toHaveBeenCalledWith(
         expect.objectContaining({ type: "start", revision: 1 }),
@@ -180,24 +176,22 @@ describe("browser Task session ownership", () => {
           expect.objectContaining({ type: "reply", id: 1 }),
         );
       });
+      expect(h.fetch).toHaveBeenCalledWith(
+        "/call",
+        expect.objectContaining({
+          headers: {
+            "X-IPFSAW-Client": "browser",
+            "Content-Type": "application/json",
+          },
+          mode: "same-origin",
+        }),
+      );
       port.send({ protocol, type: "ready", revision: 1 });
       expect(status()).toBe("Started revision 1");
-      document.querySelector<HTMLButtonElement>("#cancel")!.click();
-      await vi.waitFor(() => {
-        expect(
-          h.fetch.mock.calls.some(
-            ([, init]) =>
-              typeof init?.body === "string" && init.body.includes('"cancel"'),
-          ),
-        ).toBe(true);
-      });
+      expect(document.querySelector<HTMLElement>("#status")!.hidden).toBe(true);
       expect(document.querySelector("iframe")).toBe(iframe);
-      document.querySelector<HTMLButtonElement>("#close")!.click();
-      expect(document.querySelector("iframe")).toBeNull();
-      await vi.waitFor(() => {
-        expect(status()).toContain("App closed");
-      });
       h.event("pagehide", {});
+      expect(document.querySelector("iframe")).toBeNull();
     } finally {
       h.end();
     }
@@ -209,6 +203,9 @@ describe("browser Task session ownership", () => {
       h.hello();
       const old = h.ports[0]!;
       await h.send({ type: "loading", revision: 2 });
+      expect(document.querySelector<HTMLElement>("#status")!.hidden).toBe(
+        false,
+      );
       expect(document.querySelector("iframe")).toBeNull();
       old.send({ protocol, type: "ready", revision: 1 });
       expect(status()).toContain("Loading");
@@ -239,6 +236,9 @@ describe("browser Task session ownership", () => {
       current.send({ protocol, type: "ready", revision: 2 });
       current.send({ protocol, type: "error", revision: 2 });
       expect(status()).toContain("after startup");
+      expect(document.querySelector<HTMLElement>("#status")!.hidden).toBe(
+        false,
+      );
       await h.send({ type: "task", revision: 1 });
       expect(status()).toContain("after startup");
       await h.send({ type: "error", revision: 3, message: "Correct document" });
@@ -255,99 +255,94 @@ describe("browser Task session ownership", () => {
       h.end();
     }
   });
-  it("cancels pending startup without waiting for completion and bounds in-flight requests", async () => {
+  it("bounds in-flight requests and removes the app when capacity is exceeded", async () => {
     const h = await host();
     try {
       await h.send(task());
       h.hello();
-      h.cancel(true);
-      document.querySelector<HTMLButtonElement>("#cancel")!.click();
-      await vi.waitFor(() => {
-        expect(status()).toBe("Startup cancelled.");
-      });
-      expect(document.querySelector("iframe")).toBeNull();
-      await h.send(task(2));
-      h.hello();
       h.block();
-      const port = h.ports[2]!;
+      const port = h.ports[0]!;
       for (let id = 0; id < 9; id++)
         port.send({
           protocol,
           type: "request",
           operation: "readContent",
-          revision: 2,
+          revision: 1,
           id,
         });
       expect(status()).toContain("capacity");
+      expect(document.querySelector("iframe")).toBeNull();
     } finally {
       h.end();
     }
   });
-  it("retains only same-origin history capability and surfaces transport closure", async () => {
-    history.replaceState(
-      { protocol, origin: location.origin, capability: "HISTORY_CAP" },
-      "",
-      "/",
-    );
-    const h = await host(true);
+  it("opens a bare URL without saved credentials and surfaces transport closure", async () => {
+    const h = await host();
+    expect(history.state).toBeNull();
+    expect(location.hash).toBe("");
     expect(h.fetch).toHaveBeenCalledWith(
       "/events",
       expect.objectContaining({
         headers: expect.objectContaining({
-          Authorization: "Bearer HISTORY_CAP",
+          "X-IPFSAW-Client": "browser",
         }) as unknown,
+        mode: "same-origin",
       }),
+    );
+    expect(h.fetch.mock.calls[0]?.[1]?.headers).not.toHaveProperty(
+      "Authorization",
     );
     h.end();
     await vi.waitFor(() => {
       expect(status()).toContain("connection closed");
     });
   });
-  it("reports a rejected cancel without closing an already-started app or claiming cancellation", async () => {
+  it("removes a started app and reveals transport failure when its connection closes", async () => {
     const h = await host();
     try {
       await h.send(task());
       h.hello();
       h.ports[0]!.send({ protocol, type: "ready", revision: 1 });
-      const iframe = document.querySelector("iframe");
-      h.error();
-      document.querySelector<HTMLButtonElement>("#cancel")!.click();
+      expect(document.querySelector<HTMLElement>("#status")!.hidden).toBe(true);
+      h.end();
       await vi.waitFor(() => {
-        expect(status()).toContain("cancellation could not be confirmed");
+        expect(status()).toContain("Host connection closed");
       });
-      expect(status()).not.toContain("Startup cancelled");
       expect(document.querySelector("#status")!.getAttribute("role")).toBe(
         "alert",
       );
-      expect(document.querySelector("iframe")).toBe(iframe);
-      expect(h.diagnostic).toHaveBeenCalled();
-      expect(JSON.stringify(h.diagnostic.mock.calls)).not.toMatch(
-        /SERVER_SECRET|PRIVATE_CAPABILITY/,
+      expect(document.querySelector<HTMLElement>("#status")!.hidden).toBe(
+        false,
       );
+      expect(document.querySelector("iframe")).toBeNull();
     } finally {
-      h.end();
+      h.event("pagehide", {});
     }
   });
-  it("removes the app locally but never claims a rejected host close was confirmed", async () => {
+  it("ignores a rejected content request from a replaced app", async () => {
     const h = await host();
     try {
       await h.send(task());
       h.hello();
-      h.error("network");
-      document.querySelector<HTMLButtonElement>("#close")!.click();
-      expect(document.querySelector("iframe")).toBeNull();
-      expect(status()).not.toContain("App closed");
-      await vi.waitFor(() => {
-        expect(status()).toContain("host close could not be confirmed");
+      h.block();
+      const previous = h.ports[0]!;
+      previous.send({
+        protocol,
+        type: "request",
+        operation: "readContent",
+        revision: 1,
+        id: 17,
       });
-      expect(status()).toContain("removed locally");
-      expect(document.querySelector("#status")!.getAttribute("role")).toBe(
-        "alert",
+      await h.send(task(2));
+      h.hello();
+      h.ports[2]!.send({ protocol, type: "ready", revision: 2 });
+      h.rejectPending();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(status()).toBe("Started revision 2");
+      expect(previous.postMessage).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "reply", id: 17 }),
       );
-      expect(h.diagnostic).toHaveBeenCalled();
-      expect(JSON.stringify(h.diagnostic.mock.calls)).not.toMatch(
-        /SERVER_SECRET|PRIVATE_CAPABILITY/,
-      );
+      expect(document.querySelector<HTMLElement>("#status")!.hidden).toBe(true);
     } finally {
       h.end();
     }

@@ -3,6 +3,12 @@ import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { CID } from "multiformats/cid";
 import { parseDocument } from "yaml";
+import {
+  deploymentReport,
+  pairedHistory,
+  reducePaired,
+  validatePairedAppend,
+} from "./lifecycle.js";
 
 export const gates = [
   "requirements",
@@ -18,6 +24,9 @@ export const maxBytes = 16 * 1024 * 1024;
 const closed = { additionalProperties: false };
 const nonempty = Type.String({ minLength: 1, pattern: "\\S" });
 const digestSchema = Type.String({ pattern: "^sha256:[a-f0-9]{64}$" });
+const commitSchema = Type.String({
+  pattern: "^[a-f0-9]{40}(?:[a-f0-9]{24})?$",
+});
 const gateSchema = Type.Union(gates.map((gate) => Type.Literal(gate)));
 const phaseSchema = Type.Union([
   Type.Literal("implementation"),
@@ -67,7 +76,45 @@ const batchSchema = Type.Object(
   },
   closed,
 );
-const eventsSchema = Type.Union([
+const pairedEventsSchema = Type.Union([
+  Type.Object(
+    {
+      ...common,
+      type: Type.Literal("submit"),
+      object: Type.Union([gateSchema, Type.Literal("user-acceptance")]),
+      revision: digestSchema,
+      upstream: Type.Union([Type.Null(), digestSchema]),
+    },
+    closed,
+  ),
+  Type.Object(
+    {
+      ...common,
+      type: Type.Literal("signOff"),
+      submit: common.id,
+    },
+    closed,
+  ),
+  Type.Object(
+    {
+      ...common,
+      type: Type.Literal("verify"),
+      phase: Type.Literal("implementation"),
+      rev: commitSchema,
+    },
+    closed,
+  ),
+  Type.Object(
+    {
+      ...common,
+      type: Type.Literal("verify"),
+      phase: Type.Literal("deployment"),
+      rev: digestSchema,
+    },
+    closed,
+  ),
+]);
+const legacyEventsSchema = Type.Union([
   Type.Object(
     {
       ...common,
@@ -85,7 +132,7 @@ const eventsSchema = Type.Union([
       object: gateSchema,
       revision: digestSchema,
       upstream: Type.Partial(vectorSchema),
-      decision: Type.Literal("confirmed"),
+      decision: Type.Optional(Type.Literal("confirmed")),
     },
     closed,
   ),
@@ -118,7 +165,18 @@ const eventsSchema = Type.Union([
     closed,
   ),
 ]);
+const eventsSchema = Type.Union([pairedEventsSchema, legacyEventsSchema]);
 export type Event = Static<typeof eventsSchema>;
+export type LegacyEvent = Static<typeof legacyEventsSchema>;
+export type PairedEvent = Static<typeof pairedEventsSchema>;
+export function isPairedEvent(event: Event): event is PairedEvent {
+  return (
+    event.type === "submit" ||
+    (event.type === "signOff" && "submit" in event) ||
+    (event.type === "verify" && "phase" in event)
+  );
+}
+export type SubmissionObject = Gate | "user-acceptance";
 export type Batch = Static<typeof batchSchema>;
 export const BootstrapSchema = Type.Object(
   {
@@ -130,7 +188,7 @@ export const BootstrapSchema = Type.Object(
   closed,
 );
 export type Bootstrap = Static<typeof BootstrapSchema>;
-const caseIndexSchema = Type.Object(
+const legacyCaseIndexSchema = Type.Object(
   {
     version: Type.Literal(1),
     cases: Type.Array(
@@ -151,7 +209,30 @@ const caseIndexSchema = Type.Object(
   },
   closed,
 );
+const pairedCaseIndexSchema = Type.Object(
+  {
+    version: Type.Literal(1),
+    cases: Type.Array(
+      Type.Object(
+        {
+          id: Type.String({ pattern: "^[A-Z][A-Z0-9-]{0,63}$" }),
+          phase: phaseSchema,
+        },
+        closed,
+      ),
+      { minItems: 1, maxItems: 512 },
+    ),
+  },
+  closed,
+);
+const caseIndexSchema = Type.Union([
+  legacyCaseIndexSchema,
+  pairedCaseIndexSchema,
+]);
 export type CaseIndex = Static<typeof caseIndexSchema>;
+export function isPairedIndex(index: CaseIndex): boolean {
+  return index.cases.every((item) => !("environment" in item));
+}
 const projectSchema = Type.Object(
   {
     version: Type.Literal(2),
@@ -219,6 +300,12 @@ export function yamlObject(source: string): unknown {
   invariant(!doc.errors.length, "config", "Invalid YAML configuration.");
   return doc.toJS({ maxAliasCount: 0 }) as unknown;
 }
+export function repositoryIdentity(value: string): string | undefined {
+  if (/^[\w.-]+\/[\w.-]+$/.test(value) && !value.endsWith(".git")) return value;
+  return /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(
+    value,
+  )?.[1];
+}
 export function projectConfig(source: string): ProjectConfig {
   const value = yamlObject(source);
   invariant(
@@ -226,11 +313,11 @@ export function projectConfig(source: string): ProjectConfig {
     "config",
     "Expected v2 config with primaryRepository, primaryBranch and optional preferredLanguage only.",
   );
+  const identity = repositoryIdentity(value.primaryRepository);
   invariant(
-    /^[\w.-]+\/[\w.-]+$/.test(value.primaryRepository) &&
-      !value.primaryRepository.endsWith(".git"),
+    identity,
     "config",
-    "primaryRepository must be owner/repository, never a URL or credentials.",
+    "primaryRepository must identify a GitHub owner/repository without URL credentials, query or fragment.",
   );
   invariant(
     !value.primaryBranch.startsWith("-") &&
@@ -241,7 +328,7 @@ export function projectConfig(source: string): ProjectConfig {
     "Invalid primary branch.",
   );
   if (value.preferredLanguage) language(value.preferredLanguage);
-  return value;
+  return { ...value, primaryRepository: identity };
 }
 export function userLanguage(source?: string): string | undefined {
   if (source === undefined) return undefined;
@@ -395,11 +482,14 @@ export function caseIndex(files: Files): CaseIndex {
     "Both implementation and deployment cases are required.",
   );
   invariant(
-    value.cases.every((item) =>
-      item.phase === "implementation"
-        ? item.subject === "git-head"
-        : item.subject === "implementation",
-    ),
+    isPairedIndex(value) ||
+      value.cases.every(
+        (item) =>
+          "subject" in item &&
+          (item.phase === "implementation"
+            ? item.subject === "git-head"
+            : item.subject === "implementation"),
+      ),
     "cases",
     "Implementation cases bind git-head; deployment cases bind implementation.",
   );
@@ -421,6 +511,14 @@ export function parseEvents(source: string, bootstrap: Bootstrap): Event[] {
   );
   const events = lines.map((line) => {
     const value: unknown = JSON.parse(line);
+    invariant(
+      typeof value === "object" &&
+        value !== null &&
+        "version" in value &&
+        value.version === 1,
+      "protocol",
+      "Unsupported event protocol version.",
+    );
     invariant(
       Value.Check(eventsSchema, value) &&
         validTimestamp(value.at) &&
@@ -446,9 +544,18 @@ export function parseEvents(source: string, bootstrap: Bootstrap): Event[] {
     "Duplicate creation or request ID.",
   );
   const batches = new Set<string>();
-  const signed = new Map<Gate, Extract<Event, { type: "signOff" }>>();
+  const signed = new Map<Gate, Extract<LegacyEvent, { type: "signOff" }>>();
+  let paired = false;
   let abandoned = false;
   for (const event of events) {
+    if (isPairedEvent(event)) paired = true;
+    invariant(
+      !paired ||
+        isPairedEvent(event) ||
+        (event.type !== "signOff" && event.type !== "verify"),
+      "events",
+      "New-format history cannot append legacy signOff or verify events.",
+    );
     if (event.type === "abandon") {
       invariant(!abandoned, "events", "Idea is already abandoned.");
       abandoned = true;
@@ -465,7 +572,7 @@ export function parseEvents(source: string, bootstrap: Bootstrap): Event[] {
       language(event.language);
     if (event.type === "setLanguage" && event.language !== null)
       language(event.language);
-    if (event.type === "signOff") {
+    if (event.type === "signOff" && "object" in event) {
       const previous = gates.slice(0, gates.indexOf(event.object));
       invariant(
         Object.keys(event.upstream).length === previous.length &&
@@ -489,7 +596,7 @@ export function parseEvents(source: string, bootstrap: Bootstrap): Event[] {
       );
       signed.set(event.object, event);
     }
-    if (event.type === "verify") {
+    if (event.type === "verify" && "batch" in event) {
       invariant(
         gates.every(
           (gate) => signed.get(gate)?.revision === event.batch.revisions[gate],
@@ -529,6 +636,7 @@ export function parseEvents(source: string, bootstrap: Bootstrap): Event[] {
       );
     }
   }
+  pairedHistory(events);
   return events;
 }
 export interface Idea {
@@ -553,12 +661,27 @@ export function idea(files: Files, id: string): Idea {
   );
   const bootstrap = parseBootstrap(requiredText(files, "idea.json"), id);
   const eventSource = requiredText(files, "events.jsonl");
+  const events = parseEvents(eventSource, bootstrap);
+  if (files.has("evidence/deployment/report.jsonl")) deploymentReport(files);
+  const latestDeployment = events.findLast(
+    (event) =>
+      event.type === "verify" &&
+      "phase" in event &&
+      event.phase === "deployment",
+  );
+  if (latestDeployment)
+    invariant(
+      digest(requiredText(files, "evidence/deployment/report.jsonl")) ===
+        latestDeployment.rev,
+      "evidence",
+      "Latest deployment verification must match the current report bytes.",
+    );
   return {
     bootstrap,
     files,
     revisions: revisions(files),
     cases: caseIndex(files),
-    events: parseEvents(eventSource, bootstrap),
+    events,
     eventSource,
   };
 }
@@ -568,14 +691,16 @@ export interface State {
     | "synchronization"
     | "implementation"
     | "deployment"
+    | "user-acceptance"
     | "completed"
     | "abandoned";
   readonly contentLanguage: string;
   readonly alias: string | null;
   readonly abandoned: boolean;
   readonly revisions: Revisions;
-  readonly signed: Partial<Record<Gate, string>>;
-  readonly next?: Gate;
+  readonly signed: Partial<Record<SubmissionObject, string>>;
+  readonly submitted?: Partial<Record<SubmissionObject, string>>;
+  readonly next?: SubmissionObject;
   readonly implementation?: string;
   readonly deployment?: string;
 }
@@ -591,6 +716,7 @@ export function matchingSignoff(
 ): boolean {
   return (
     event.type === "signOff" &&
+    "object" in event &&
     event.object === gate &&
     event.revision === current[gate] &&
     canonical(event.upstream) === canonical(vectorAt(current, gate))
@@ -605,7 +731,9 @@ export function validBatch(
 ): boolean {
   const needed = current.cases.cases.filter(
     (item) =>
-      item.phase === batch.phase && item.environment === batch.environment,
+      item.phase === batch.phase &&
+      "environment" in item &&
+      item.environment === batch.environment,
   );
   return (
     needed.length > 0 &&
@@ -653,16 +781,21 @@ export function ideaFacts(
     revisions: current.revisions,
   };
 }
-export function reduce(
-  current: Idea,
-  options: {
-    projectLanguage?: string;
-    userLanguage?: string;
-    primary?: Idea;
-    head: string;
-    subjects?: readonly string[];
-  },
-): State {
+export interface ReductionOptions {
+  projectLanguage?: string;
+  userLanguage?: string;
+  primary?: Idea;
+  head: string;
+  subjects?: readonly string[];
+  paired?: boolean;
+}
+export function reduce(current: Idea, options: ReductionOptions): State {
+  if (
+    options.paired ||
+    isPairedIndex(current.cases) ||
+    current.events.some(isPairedEvent)
+  )
+    return reducePaired(current, options);
   const base = ideaFacts(current, options);
   const signed: Partial<Record<Gate, string>> = {};
   if (base.abandoned) return { ...base, level: "abandoned", signed };
@@ -683,7 +816,7 @@ export function reduce(
       return { ...base, level: "synchronization", next: gate, signed };
   }
   const batches = current.events
-    .filter((event) => event.type === "verify")
+    .filter((event) => event.type === "verify" && "batch" in event)
     .map((event) => event.batch);
   const subject = (batch: Batch) =>
     options.subjects?.includes(batch.subject) ? batch.subject : options.head;
@@ -695,7 +828,7 @@ export function reduce(
       ...new Set(
         current.cases.cases
           .filter((item) => item.phase === phase)
-          .map((item) => item.environment),
+          .flatMap((item) => ("environment" in item ? [item.environment] : [])),
       ),
     ].sort();
     const selected = environments.map((environment) => {
@@ -745,7 +878,22 @@ export function validateAppend(
     "event-conflict",
     "Event request ID already exists.",
   );
-  if (event.type === "signOff")
+  if (isPairedEvent(event)) {
+    validatePairedAppend(current, event, state, confirmed);
+    return;
+  }
+  invariant(
+    !current.events.some(isPairedEvent) ||
+      (event.type !== "signOff" && event.type !== "verify"),
+    "events",
+    "New-format history cannot append legacy signOff or verify events.",
+  );
+  if (event.type === "signOff") {
+    invariant(
+      !Object.hasOwn(event, "decision"),
+      "events",
+      "New signOff events must omit the legacy decision field.",
+    );
     invariant(
       confirmed &&
         event.object === state.level &&
@@ -753,6 +901,7 @@ export function validateAppend(
       "decision",
       "Explicit human decision confirmation and the exact current gate/vector are required; a flag is not authentication.",
     );
+  }
   if (event.type === "verify") {
     invariant(
       ["implementation", "deployment", "completed"].includes(state.level) &&

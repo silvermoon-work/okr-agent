@@ -30,7 +30,7 @@ export function App() {
       </header>
       <CheckBundleViewer spec={fixture.spec} />
       <footer>
-        条件、参数构造与逐项展开都是说明文本，不会求值。此页面不连接执行器或远程服务。
+        所有检查点共享任务参数，按顺序定义为通过继续、不通过即停止。此页面仅展示定义，不连接执行器或远程服务。
       </footer>
     </main>
   );

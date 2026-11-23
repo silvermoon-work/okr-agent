@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { expect, it, vi } from "vitest";
-import { executeCheck } from "@silvermoon-work/check-task-sdk";
+import { executeCheck } from "@silvermoon-work/check-task-sdk/legacy";
 import { Files, Unconfirmed } from "../src-legacy/files.js";
 import { FindingGroup, ruleScope } from "../src-legacy/checks/rules.js";
 import { projectRegistry } from "../src-legacy/inspect.js";

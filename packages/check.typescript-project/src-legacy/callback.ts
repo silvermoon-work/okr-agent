@@ -1,4 +1,4 @@
-import type { CheckContext } from "@silvermoon-work/check-task-sdk";
+import type { CheckContext } from "@silvermoon-work/check-task-sdk/legacy";
 import type { Input } from "./contract.js";
 import { projectRegistry } from "./inspect.js";
 import { publicMetadata, type Metadata } from "./metadata.js";

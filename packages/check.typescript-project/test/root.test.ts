@@ -8,7 +8,8 @@ import { executeCheck, type ReportNode } from "@silvermoon-work/check-task-sdk";
 import { runCheckBuilderCli } from "@silvermoon-work/check-task-builder/cli";
 import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
-import { registry } from "../src/registry.js";
+import { checkpoints } from "../src/checkpoints.js";
+import { project } from "../src/checks/project.js";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof fs>();
@@ -38,8 +39,8 @@ async function put(root: string, path: string, value: string | object) {
 const execute = (signal = new AbortController().signal) => {
   records = [];
   return executeCheck({
-    registry,
-    root: { checker: "project", target: { projectDirectory: directory } },
+    checkpoints,
+    target: { projectDirectory: directory },
     signal,
     log: (node) => {
       records.push(node);
@@ -76,13 +77,13 @@ it.each([
     expect(report).toEqual({
       pass: true,
       documentation: "references/check.md",
+      references: [],
     });
-    expect(records.map((node) => node.item.checker).sort()).toEqual([
+    expect(records.map((node) => node.checkpoint)).toEqual([
       "project",
-      "single-repo",
+      "workspace",
     ]);
-    expect(records[0]).not.toHaveProperty("parent");
-    expect(records[1]?.parent).toBe(records[0]?.key);
+    expect(records.every((node) => !("parent" in node))).toBe(true);
   },
 );
 
@@ -107,12 +108,13 @@ it.each([
       "documentation",
       "pass",
       "problems",
+      "references",
     ]);
     if (report.pass) throw new Error("Expected an invalid project.");
     expect(report.problems).toHaveLength(1);
-    expect(report.problems[0].code).toBe("typescript-project-invalid");
+    expect(report.problems[0].code).toBe("typescript-project-valid");
     expect(report.problems[0].brief).toContain(directory);
-    expect(report.problems[0].nodeKey).toBe(records[0]?.key);
+    expect(report.problems[0].checkpoint).toBe("project");
   },
 );
 
@@ -129,17 +131,16 @@ it.each(["pnpm", "manifest"] as const)(
     await put(directory, "packages/a/tsconfig.json", "{}");
     const report = await execute();
     expect(report.pass).toBe(false);
-    expect(records.map((node) => node.item.checker).sort()).toEqual([
-      "monorepo",
+    expect(records.map((node) => node.checkpoint)).toEqual([
       "project",
       "workspace",
     ]);
     if (report.pass)
       throw new Error("Expected invalid workspace configuration.");
     expect(report.problems.map((problem) => problem.code)).toEqual([
-      "workspace-configuration-invalid",
+      "workspace-configuration-valid",
     ]);
-    expect(report.problems[0].nodeKey).toBe(records[2]?.key);
+    expect(report.problems[0].checkpoint).toBe("workspace");
   },
 );
 
@@ -171,9 +172,9 @@ it("does not infer monorepo from nested packages or let dependency/output files 
   expect((await execute()).pass).toBe(false);
   await put(directory, "packages/a/src/index.ts", "export {};");
   await execute();
-  expect(records.map((node) => node.item.checker).sort()).toEqual([
+  expect(records.map((node) => node.checkpoint)).toEqual([
     "project",
-    "single-repo",
+    "workspace",
   ]);
 });
 
@@ -191,9 +192,14 @@ it("does not follow directory links and rejects a linked project root", async ()
   await fs.symlink(outside, link, "junction");
   expect((await execute()).pass).toBe(false);
   await expect(
-    registry.project.invoke(
+    project.invoke(
       { projectDirectory: link },
-      new AbortController().signal,
+      {
+        signal: new AbortController().signal,
+        outputOf: () => {
+          throw new Error("No predecessor");
+        },
+      },
     ),
   ).rejects.toThrow("linked or redirected");
 });
@@ -201,22 +207,37 @@ it("does not follow directory links and rejects a linked project root", async ()
 it("keeps invalid host paths and missing directories as execution errors", async () => {
   for (const path of ["relative", `${directory}\n`])
     await expect(
-      registry.project.invoke(
+      project.invoke(
         { projectDirectory: path },
-        new AbortController().signal,
+        {
+          signal: new AbortController().signal,
+          outputOf: () => {
+            throw new Error("No predecessor");
+          },
+        },
       ),
     ).rejects.toThrow("absolute host directory");
   await put(directory, "file", "");
   await expect(
-    registry.project.invoke(
+    project.invoke(
       { projectDirectory: join(directory, "file") },
-      new AbortController().signal,
+      {
+        signal: new AbortController().signal,
+        outputOf: () => {
+          throw new Error("No predecessor");
+        },
+      },
     ),
   ).rejects.toThrow("must be a directory");
   await expect(
-    registry.project.invoke(
+    project.invoke(
       { projectDirectory: join(directory, "absent") },
-      new AbortController().signal,
+      {
+        signal: new AbortController().signal,
+        outputOf: () => {
+          throw new Error("No predecessor");
+        },
+      },
     ),
   ).rejects.toThrow();
 });
@@ -298,7 +319,7 @@ it.each([
       pass: false,
       problems: [
         {
-          code: "workspace-configuration-invalid",
+          code: "workspace-configuration-valid",
         },
       ],
     });
@@ -307,9 +328,8 @@ it.each([
     expect(report.problems[0].brief).toContain(
       join(directory, "pnpm-workspace.yaml"),
     );
-    expect(records.map((node) => node.item.checker)).toEqual([
+    expect(records.map((node) => node.checkpoint)).toEqual([
       "project",
-      "monorepo",
       "workspace",
     ]);
   },
@@ -341,7 +361,7 @@ it("reports a non-file workspace declaration and rejects linked configuration", 
     pass: false,
     problems: [
       {
-        code: "workspace-configuration-invalid",
+        code: "workspace-configuration-valid",
       },
     ],
   });
@@ -355,22 +375,20 @@ it("reports a non-file workspace declaration and rejects linked configuration", 
 });
 
 it("propagates workspace read errors and enforces the file read budget", async () => {
+  await put(directory, "package.json", {
+    devDependencies: { typescript: "*" },
+  });
   await put(directory, "pnpm-workspace.yaml", " ".repeat(1_048_577));
-  await expect(
-    registry.workspace.invoke(
-      { projectDirectory: directory },
-      new AbortController().signal,
-    ),
-  ).rejects.toThrow("Project file read budget exceeded");
+  await expect(execute()).rejects.toThrow("Project file read budget exceeded");
   await put(directory, "pnpm-workspace.yaml", "packages: ['modules/*']");
   const failure = new Error("workspace read denied");
-  vi.mocked(fs.open).mockRejectedValueOnce(failure);
-  await expect(
-    registry.workspace.invoke(
-      { projectDirectory: directory },
-      new AbortController().signal,
-    ),
-  ).rejects.toBe(failure);
+  const actual = await vi.importActual<typeof fs>("node:fs/promises");
+  vi.mocked(fs.open).mockImplementation((path, flags, mode) =>
+    String(path).endsWith("pnpm-workspace.yaml")
+      ? Promise.reject(failure)
+      : actual.open(path, flags, mode),
+  );
+  await expect(execute()).rejects.toBe(failure);
 });
 
 it("builds the new production CAR and runs single, mono and invalid projects through Engine", async () => {
@@ -446,10 +464,10 @@ it("builds the new production CAR and runs single, mono and invalid projects thr
     for (const field of ["protocol", "nodes", "edges", "root"])
       expect(result).not.toHaveProperty(field);
   expect(value.results[2]?.problems?.map((problem) => problem.code)).toEqual([
-    "typescript-project-invalid",
+    "typescript-project-valid",
   ]);
   expect(value.results[3]?.problems?.map((problem) => problem.code)).toEqual([
-    "workspace-configuration-invalid",
+    "workspace-configuration-valid",
   ]);
   expect(value.reclaimed).toBe(true);
 }, 120_000);
