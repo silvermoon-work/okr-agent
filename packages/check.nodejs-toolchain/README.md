@@ -95,6 +95,8 @@ macOS/Linux 的 nrm 夹具在重写入口后显式设置执行权限，再建立
 该命令直接运行 Vitest；`vitest.native.config.ts` 复用共享配置，仅选择
 `test/inspect.test.ts` 并设置
 `TOOLCHAIN_NATIVE_TESTS=1`，不影响默认测试与覆盖率命令。
+子进程回收夹具通过同目录原子重命名发布完整 PID；即使就绪断言失败，也会等待
+命令故障断言与进程清理完成，不留下未等待的异步断言。
 
 ## 文档、历史与制品
 
