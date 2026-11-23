@@ -9,10 +9,8 @@ import {
   git,
   primary,
   protectedPath,
-  readProject,
   readRegular,
   regular,
-  selectIdea,
   snapshotDigest,
   snapshotHistory,
   validSubjects,
@@ -32,6 +30,8 @@ import {
   scratch,
   signed,
   sync,
+  readLegacyProject as readProject,
+  legacySelectIdea as selectIdea,
 } from "./fixtures.js";
 
 describe("bounded Git snapshots and archive isolation", () => {

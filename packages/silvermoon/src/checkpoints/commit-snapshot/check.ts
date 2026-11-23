@@ -173,6 +173,12 @@ export function snapshotCheckpoint(runtime: Runtime) {
               "deletion",
               `Deletion exception requires a whole existing Idea to be removed: ${id}`,
             );
+          invariant(
+            (await baseline(target.repoRoot, snapshot, context.signal)) ===
+              revision,
+            "concurrent-edit",
+            "Git baseline changed while validating the candidate.",
+          );
           return { project, previous };
         });
         return { pass: true as const, output: observation };

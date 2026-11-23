@@ -1,11 +1,14 @@
 import { Target } from "./contract.js";
 import type { ProjectTarget } from "./project-contract.js";
-import { gates } from "./domain.js";
+import { checkpoints } from "./flat.js";
 import { environmentCheckpoint } from "./checkpoints/global/check.js";
 import { repositoryCheckpoint } from "./checkpoints/repository/check.js";
 import { branchCheckpoint } from "./checkpoints/branch/check.js";
 import { layoutCheckpoint } from "./checkpoints/silvermoon-folder/check.js";
 import { ideaCheckpoint } from "./checkpoints/idea-folder/check.js";
+import { legacyIdeaCheckpoint } from "./checkpoints/idea-folder/legacy-check.js";
+import { flatCheckpoint } from "./checkpoints/flat.js";
+import { gates } from "./domain.js";
 import { consensusCheckpoint } from "./checkpoints/consensus.js";
 import { implementationCheckpoint } from "./checkpoints/implementation/check.js";
 import { deploymentCheckpoint } from "./checkpoints/deployment/check.js";
@@ -34,6 +37,28 @@ export function silvermoonCheckpoints(
   const prerequisites = prerequisiteCheckpoints(execution, Target);
   const [environment, , branch, layout] = prerequisites;
   const observation = ideaCheckpoint(
+    bundleCid,
+    execution,
+    environment,
+    branch,
+    layout,
+  );
+  return [
+    ...prerequisites,
+    observation,
+    ...checkpoints.map((id) => flatCheckpoint(id, observation)),
+  ] as const;
+}
+
+/** Original read-only contract for historical regression and snapshot consumers.
+ * The current CLI never routes navigation or creation through this contract. */
+export function legacySilvermoonCheckpoints(
+  bundleCid: string,
+  execution: CheckExecution,
+) {
+  const prerequisites = prerequisiteCheckpoints(execution, Target);
+  const [environment, , branch, layout] = prerequisites;
+  const observation = legacyIdeaCheckpoint(
     bundleCid,
     execution,
     environment,

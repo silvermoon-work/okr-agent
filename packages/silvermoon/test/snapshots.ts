@@ -1,12 +1,16 @@
-import { canonical, idea, type Files } from "../src/domain.js";
+import { canonical, idea, type Files, type Idea } from "../src/domain.js";
 import type { Project, Primary, LocalContext } from "../src/repository.js";
 import { files, head, id } from "./fixtures.js";
+import { directoryTree, gitObject } from "../src/flat.js";
 
 export const configText =
   "version: 2\nprimaryRepository: example/project\nprimaryBranch: main\npreferredLanguage: zh-CN\n";
 export const tip = "b".repeat(40);
 
-export function project(root: string, source: Files | null = files()): Project {
+export function project(
+  root: string,
+  source: Files | null = files(),
+): Project<Idea> {
   const copy = source
     ? new Map(
         [...source].map(([path, bytes]) => [path, Uint8Array.from(bytes)]),
@@ -61,14 +65,33 @@ export function localSnapshot(current: Project): LocalContext {
 
 export function encodedSnapshot(current: Project, staged = false) {
   const blobs = new Map<string, Uint8Array>();
-  const entries = [...current.files].map(([path, bytes], index) => {
-    const object = (index + 1).toString(16).padStart(40, "0");
+  const entries = [...current.files].map(([path, bytes]) => {
+    const object = gitObject("blob", bytes, "sha1");
     blobs.set(object, bytes);
     return staged
       ? `100644 ${object} 0\t${path}\0`
       : `100644 blob ${object}\t${path}\0`;
   });
-  return { listing: entries.join(""), blobs };
+  const directories = new Set(
+    [...current.files.keys()].flatMap((path) => {
+      const parts = path.split("/");
+      return parts
+        .slice(0, -1)
+        .map((_part, index) => parts.slice(0, index + 1).join("/"));
+    }),
+  );
+  const trees = [...directories]
+    .map((path) => {
+      const prefix = path + "/";
+      const files = new Map(
+        [...current.files]
+          .filter(([file]) => file.startsWith(prefix))
+          .map(([file, bytes]) => [file.slice(prefix.length), bytes]),
+      );
+      return `040000 tree ${directoryTree(files)}\t${path}\0`;
+    })
+    .join("");
+  return { listing: entries.join(""), blobs, trees };
 }
 
 export function bootstrapBytes(current: Project): Uint8Array {

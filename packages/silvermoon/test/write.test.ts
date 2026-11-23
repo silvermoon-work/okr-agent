@@ -3,9 +3,14 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { appendEvent, createIdea, replay } from "../src/write.js";
 import * as repository from "../src/repository.js";
-import { canonical, digest, reduce, type Event } from "../src/domain.js";
+import { digest } from "../src/domain.js";
 import {
-  add,
+  checkpoints,
+  isFlatIdea,
+  reduceFlat,
+  eventSchemaCid,
+} from "../src/flat.js";
+import {
   cid,
   date,
   event,
@@ -44,9 +49,13 @@ async function fixture(populated = true) {
     Promise.resolve({
       stdout: args.includes("--show-toplevel")
         ? options.cwd
-        : args.at(-1) === "HEAD"
-          ? head
-          : "",
+        : args.includes("--show-object-format")
+          ? "sha1"
+          : args.at(-1) === "core.filemode"
+            ? "true"
+            : args.at(-1) === "HEAD"
+              ? head
+              : "",
       stderr: "",
     }),
   );
@@ -80,7 +89,15 @@ describe("transactions with controlled primary observations", () => {
       await repository.readProject(root),
       id,
     );
-    expect(reduce(current, { head }).contentLanguage).toBe("ja-JP");
+    expect(isFlatIdea(current)).toBe(true);
+    if (!isFlatIdea(current)) throw new Error("Expected flat scaffold");
+    expect(reduceFlat(current).contentLanguage).toBe("ja-JP");
+    expect(current.bootstrap.eventSchemaCid).toBe(eventSchemaCid);
+    expect(await repository.absent(join(created.path, "idea.json"))).toBe(true);
+    for (const folder of checkpoints)
+      expect(
+        await readFile(join(created.path, folder, "Spec.md"), "utf8"),
+      ).not.toBe("");
     expect(
       await repository.absent(join(root, ".silvermoon", ".new.lock")),
     ).toBe(true);
@@ -157,7 +174,7 @@ describe("transactions with controlled primary observations", () => {
     ).toBe(true);
   });
 
-  it("requires human confirmation, compares primary/digest and permits only exact idempotent retries", async () => {
+  it("rejects historical writes regardless of confirmation, primary or digest, while preserving replay", async () => {
     const { root, current } = await fixture();
     const original = await current();
     const request = event({
@@ -172,7 +189,7 @@ describe("transactions with controlled primary observations", () => {
       refresh: false,
     };
     await expect(appendEvent(root, id, request, options)).rejects.toThrow(
-      /Explicit human/,
+      /read-only/,
     );
     await expect(
       appendEvent(root, id, request, {
@@ -180,13 +197,10 @@ describe("transactions with controlled primary observations", () => {
         expectedPrimary: "0".repeat(40),
         confirmed: true,
       }),
-    ).rejects.toThrow(/primary changed/);
-    expect(
-      await appendEvent(root, id, request, { ...options, confirmed: true }),
-    ).toMatchObject({ idempotent: false });
-    expect(
-      await appendEvent(root, id, request, { ...options, confirmed: true }),
-    ).toMatchObject({ idempotent: true });
+    ).rejects.toThrow(/migration/);
+    await expect(
+      appendEvent(root, id, request, { ...options, confirmed: true }),
+    ).rejects.toThrow(/read-only/);
     await expect(
       appendEvent(
         root,
@@ -194,12 +208,12 @@ describe("transactions with controlled primary observations", () => {
         event({ type: "setAlias", alias: "different" }),
         options,
       ),
-    ).rejects.toThrow(/digest changed/);
+    ).rejects.toThrow(/migration/);
     const replayed = (await replay(root, id)) as {
       cursor: string;
       events: unknown[];
     };
-    expect(replayed.events).toHaveLength(2);
+    expect(replayed.events).toHaveLength(1);
     expect(await replay(root, id, replayed.cursor)).toMatchObject({
       events: [],
     });
@@ -212,130 +226,47 @@ describe("transactions with controlled primary observations", () => {
     );
   });
 
-  it("preserves historical decision bytes while appending simplified confirmation", async () => {
-    const { root, current, observed } = await fixture();
-    const initial = await current();
-    await materialize(
-      root,
-      add(
-        initial.files,
-        event({
-          type: "signOff",
-          object: "requirements",
-          revision: initial.revisions.requirements,
-          upstream: {},
-          decision: "confirmed",
-        }),
-      ),
-    );
-    observed.project = await repository.readProject(root);
-    const before = (await current()).eventSource;
-    const request = event({
-      type: "signOff",
-      object: "research",
-      revision: initial.revisions.research,
-      upstream: { requirements: initial.revisions.requirements },
-    });
-    const options = {
-      expectedDigest: digest(before),
-      expectedPrimary: head,
-      confirmed: true,
-    };
-    await expect(
-      appendEvent(root, id, { ...request, decision: "confirmed" }, options),
-    ).rejects.toThrow(/omit.*decision/);
-    await appendEvent(root, id, request, options);
-    const after = (await current()).eventSource;
-    expect(after).toBe(before + canonical(request) + "\n");
-    expect(before).toContain('"decision":"confirmed"');
-  });
-
-  it("serializes writers and records alias/language/abandonment without permitting unrelated writes", async () => {
-    const { root, current, observed } = await fixture();
-    let selected = await current();
-    const options = {
-      expectedDigest: digest(selected.eventSource),
-      expectedPrimary: head,
-    };
-    const outcomes = await Promise.allSettled([
-      appendEvent(root, id, event({ type: "setAlias", alias: "one" }), options),
-      appendEvent(root, id, event({ type: "setAlias", alias: "two" }), options),
-    ]);
-    expect(
-      outcomes.filter((result) => result.status === "fulfilled"),
-    ).toHaveLength(1);
-    selected = await current();
-    const append = async (value: Event) => {
-      const result = await appendEvent(root, id, value, {
-        ...options,
-        expectedDigest: digest(selected.eventSource),
-      });
-      selected = await current();
-      return result;
-    };
-    await append(event({ type: "setLanguage", language: "fr-FR" }));
-    await append(event({ type: "abandon", reason: "stop" }));
-    await expect(
-      append(event({ type: "setAlias", alias: null })),
-    ).rejects.toThrow(/Resume/);
-    await append(event({ type: "resume" }));
-    expect(reduce(selected, { head })).toMatchObject({
-      contentLanguage: "fr-FR",
-      level: "requirements",
-    });
-    observed.changes = ["source.txt"];
-    await expect(
-      append(event({ type: "setAlias", alias: null })),
-    ).rejects.toThrow(/unrelated/);
-  });
-
-  it.each(["events", "candidate", "head"] as const)(
-    "rejects %s changes during compare-and-append and removes temporary output",
-    async (kind) => {
+  it.each(["setAlias", "setLanguage", "abandon", "resume"] as const)(
+    "does not let removed writers mutate historical %s facts",
+    async (type) => {
       const { root, current } = await fixture();
-      const selected = await current();
-      const options = {
-        expectedDigest: digest(selected.eventSource),
-        expectedPrimary: head,
-      };
-      if (kind === "events") {
-        const original = repository.readRegular;
-        vi.spyOn(repository, "readRegular").mockImplementation(
-          async (path, signal) =>
-            path.endsWith("events.jsonl")
-              ? Buffer.from("concurrent")
-              : original(path, signal),
-        );
-      } else if (kind === "candidate") {
-        const original = repository.readProject;
-        let calls = 0;
-        vi.spyOn(repository, "readProject").mockImplementation(
-          async (...args) => {
-            const result = await original(...args);
-            return ++calls === 2
-              ? {
-                  ...result,
-                  files: new Map([
-                    ...result.files,
-                    ["other", Buffer.from("edit")],
-                  ]),
-                }
-              : result;
-          },
-        );
-      } else vi.spyOn(repository, "git").mockResolvedValue("b".repeat(40));
+      const before = (await current()).eventSource;
+      const request =
+        type === "setAlias"
+          ? event({ type, alias: "new" })
+          : type === "setLanguage"
+            ? event({ type, language: "fr-FR" })
+            : type === "abandon"
+              ? event({ type, reason: "stop" })
+              : event({ type });
       await expect(
-        appendEvent(
-          root,
-          id,
-          event({ type: "setAlias", alias: "new" }),
-          options,
-        ),
-      ).rejects.toThrow(/changed/);
-      expect((await current()).eventSource).toBe(selected.eventSource);
+        appendEvent(root, id, request, {
+          expectedDigest: digest(before),
+          expectedPrimary: head,
+          confirmed: true,
+        }),
+      ).rejects.toThrow(/read-only/);
+      expect((await current()).eventSource).toBe(before);
       expect(
         await repository.absent(join(root, ".silvermoon", ".new.lock")),
       ).toBe(true);
     },
   );
+  it("rejects event writers for flat Ideas and replays their Schema identity without IDs", async () => {
+    const { root } = await fixture(false);
+    const created = await createIdea(root, cid, {
+      now: () => new Date(date),
+      random: () => Uint8Array.of(0x7a, 0x2f),
+    });
+    await expect(
+      appendEvent(root, created.id, event({ type: "resume" }), {
+        expectedDigest: digest(""),
+        expectedPrimary: head,
+      }),
+    ).rejects.toThrow(/directly/);
+    expect(await replay(root, created.id)).toMatchObject({
+      eventSchemaCid,
+      events: [{ at: date, type: "created", idea: id, eventSchemaCid }],
+    });
+  });
 });

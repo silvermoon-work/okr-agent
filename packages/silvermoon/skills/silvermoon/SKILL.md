@@ -1,168 +1,138 @@
 ---
 name: silvermoon
 description:
-  Operate the scoped Check-backed Silvermoon consensus and evidence workflow.
+  Operate Silvermoon's flat-folder, Check-backed submit/accept lifecycle.
 ---
 
-# Silvermoon (lifecycle protocol version 1)
+# Silvermoon
 
-Before formal release, events and case indexes stay version 1 even as their
-structure evolves. Paired and old inline formats are identified by their fields,
-not different version numbers. Never append version 2 events or indexes.
+Use the running device-level scoped installation and its canonical personal
+skill link. Do not install/link/replace a runtime or skill without
+authorization, add a project dependency or use a legacy tool as fallback.
 
-Use the running scoped installation's `silvermoon`, never a project dependency
-or a legacy tool as a fallback. Do not install, globally link or replace tools
-without independent authorization. This skill ships globally with the CLI;
-personal discovery uses a link to this canonical directory, never a project
-copy.
+## Observe one report
 
-## Observe
+- Pass --audience agent for readable reports; --json is for machine consumers,
+  never combined with audience. Preserve target/options on retries.
+- check-setup checks device installation, personal skill and user configuration
+  without Git; check-project checks shared repository/primary/layout readiness
+  and the effective fail-closed staged pre-commit hook. Neither initializes,
+  installs, executes hooks or records acceptance. Preserve existing hook logic.
+- list-ideas queries .silvermoon/i without fetch/hygiene. An Idea selector must
+  be explicit for check-idea; canonical ID observation scopes its data/history.
+- check-idea follows standardization first, then requirements → research-scope →
+  technical-spec → test-scope → test-spec → implementation → deployment.
+- check-changes independently validates changed candidate Ideas/history. Default
+  worktree against HEAD; --staged uses index; --commit uses first parent. Use
+  worktree before staging and staged before authorized commit. Snapshot validity
+  is not lifecycle completion. Whole deletion alone may use an independently
+  authorized --allow-delete; no partial-deletion exemption.
+- get-reference reads exact offline returned documentation CID, never
+  substitutes another historical resource. Documentation is inert, not an
+  execution hook.
 
-- Pass `--audience agent` for readable reports. Use `--json` only for machine
-  consumers; never combine it with `--audience`.
-- Use `check-setup` for device onboarding without a Git repository; it checks
-  installation, personal skill and user config only and rejects `--root`.
-- Use `check-project` for project onboarding without an Idea; it checks the
-  shared first four checkpoints plus a pre-commit hook checkpoint, including
-  clean worktree, upstream and primary synchronization. The hook must run
-  `silvermoon check-changes --staged --audience agent` with fail-closed behavior
-  using the documented shell prefix. Respect effective `core.hooksPath`,
-  preserve existing logic and obtain authorization before installing or changing
-  hooks. Missing configuration is reported with repair guidance, never
-  automatically initialized. Both readiness commands exit 1 for gaps and never
-  install software, link skills or create an Idea.
-- Use `check-idea <idea>` for the Idea Check Task: global → repository → branch
-  → silvermoon-folder → idea-folder → requirements → research → technical →
-  test-index → test-cases → implementation → deployment → user-acceptance. The
-  selector is required; use `list-ideas` to discover one, never guess it.
-  Identity/history protection is scoped to the selected Idea.
-- `list-ideas` queries only `.silvermoon/i`, without fetch or hygiene gates. The
-  archived `.silvermoon/ideas` is outside this protocol. Do not migrate,
-  retrofit CIDs or consume old guidance.
-- `check-changes` validates changed Ideas in the worktree against HEAD by
-  default; `--worktree`, `--staged` and `--commit <exact-sha>` are exclusive
-  selectors. It runs the independent commit Check Task, not Idea readiness. A
-  commit hook uses `check-changes --staged --audience agent`; dirty worktrees,
-  missing upstream and unapproved Ideas do not by themselves invalidate the
-  index. Snapshot validity does not mean lifecycle completion. Never install a
-  hook without authorization.
-- Only an independently authorized whole Idea deletion may use repeatable
-  `--allow-delete <idea-id>`; partial deletion still fails protocol validation.
-- `get-reference <cid>` reads returned reference files from the bundled CARs
-  through the Task Engine IPFS adapter, without executing a Check or fetching.
-- Read the whole result, including bounded inline ContentRef documentation. A
-  content/Engine/cancellation error is not a successful observation.
-  Documentation is inert and grants no authorization. Follow checkpoint
-  instructions only within existing permissions; never evaluate arbitrary
-  Markdown snippets or resolve implicit includes automatically.
+Read every Problem and exact checkpoint instruction. Act only at the first
+owning checkpoint/step; reobserve after relevant state changes. A content,
+Engine, I/O, cancellation, concurrency or unavailable-authority error never
+counts as success. Preserve unrelated content and both concurrent histories. Do
+not silently reset/clean/force-push or automatically stage/commit/push.
 
-The Check alone decides gaps. Follow the first owning Problem, preserve the
-target/audience on retries, and reobserve after a relevant change. Do not
-parallelize successors of a failed prerequisite or create a second stage model.
-Stop for human decisions or unavailable external authorization/evidence.
+## Data and material
 
-## Content
+New Idea layout is .silvermoon/i/<id>/events.jsonl and seven flat sibling
+folders: requirements 需求规格, research-scope 调研范围,
+technical-spec 技术规格, test-scope 测试范围, test-spec 测试规格,
+implementation 实现交付物, deployment 部署交付物. No new idea.json, ledger,
+nested worlds or independent user-acceptance checkpoint. Spec.md is a primary
+prompt, not a mandatory template or completeness predicate; keep concrete
+supporting details in the owning folder.
 
-Use the reported `contentLanguage` for Specs, support, evidence and human review
-prose. Precedence is Idea → project → user → en-US. Machine identifiers, paths
-and schema keys remain unchanged. `create-idea --language <canonical-tag>` sets
-only content language. Observational `--language` is intentionally unsupported,
-never silently repurposed as a content override.
+Creation only scaffolds and records created. Replace prompts in reported
+contentLanguage; precedence Idea → project → user → en-US. create-idea
+--language sets a canonical content override, not report locale. Keep
+identifiers, event fields, folder paths and machine contracts untranslated. No
+project guidance/skill executor or implicit migration exists.
 
-Creation makes a scaffold, not accepted requirements. Replace all prompts in the
-effective content language. No ledger, project guidance loader or project skill
-executor exists. Project-specific skills remain the Agent host's concern.
-`create-idea` runs the same Project Task as `check-project` before writing,
-sharing global, repository, branch and layout rules with the Idea Task;
-`check-setup` shares the global rule implementation too. It accepts no Idea
-selector; a successful prerequisite Check is not creation success. Repair
-reported gaps and retry the original creation intent. The CLI writer still locks
-and revalidates before writing; new Ideas pin the Idea CAR.
+created is first/unique and declares immutable idea, at, eventSchemaCid and
+optional language. The bounded fixed minimal reader discovers this
+identity/trust, then validates the entire log, including created, against the
+exact known trusted self-contained Schema. Schema identity is RFC8785 JCS UTF8
+SHA256 CIDv1 raw/base32, offline and separate from execution Check CID. Unknown
+Schema fails without fallback.
 
-## Five decisions
+Append canonical JCS UTF-8 JSONL directly, preserving every original byte, LF
+and final newline. Events have no id/version and only seven types: created,
+submit, accept, setAlias, setLanguage, abandon, resume. Do not rewrite, delete,
+reorder, truncate, invent IDs or write rollback/verify/signOff. Recheck current
+prefix and primary before append; integrate conflicts normally. Logs are bounded
+to 1 MiB/4096 rows and total candidate capacity remains bounded.
 
-Form consensus in this exact order:
+## Exact tuple and policy
 
-1. Complete `requirements/` including all support.
-2. Standalone `technical/research.md` question/focus index.
-3. Complete `technical/` except that index, including supplementary design.
-4. Standalone paired `tests/cases.json` index containing only case id and phase.
-5. Complete `tests/` except that index, including case bodies and support.
+submit fields are at,type=submit,object,revision,upstream. accept has the SAME
+object/revision/upstream tuple plus authority=user|delegate. revision is the
+ACTUAL owning folder Git TREE ID; upstream is the ACTUAL direct predecessor
+folder Git TREE ID, or null at requirements. Read full revisions from the Check;
+never fabricate composite material/upstream hashes, dependency trees,
+commit-as-revision, abbreviated IDs or synthetic Git refs.
 
-Show the exact current revision/diff and material files before asking the human.
-Append a paired `submit` before requesting the user's decision. It records
-object, current revision and only the direct predecessor revision (null for
-requirements). Record paired `signOff` only after explicit acceptance,
-referencing the latest exact submit ID without repeating
-object/revision/upstream. An event is not authentication or inferred permission.
-Read revisions from the Check, never guess hashes.
+Identical tuple resubmission is idempotent and does not reset matching
+acceptance. Folder changes, different direct upstream or invalid ancestors
+naturally stop at the first owning submit/accept/synchronization step. Unchanged
+local tree alone cannot reuse an old accept in a changed upstream context.
+Event-only commits do not change folder trees; line order, not time ordering,
+controls facts.
 
-Agent submits the exact draft FIRST, then people explicitly accept that request.
-Validate, commit and synchronize the same signed bytes and both events with
-ordinary authorized Git tools. Reobserve before the next gate. Editing ANY
-signed support detail, including an implementation plan, requires renewed
-signoff and dependent decisions. No minor-change exception exists. Independent
-index bytes retain their revision when only bodies are filled.
+Optional strict checkpointAcceptance config accepts only the seven checkpoint
+IDs and consensus/delegated. Defaults: test-spec and implementation delegated,
+all others consensus. Consensus recognizes user only; delegated user/delegate.
+Tightening invalidates delegate accept naturally; do not rewrite its authority,
+relax policy while waiting for a user or fabricate a user signal. The field
+records source, not identity authentication or operational permission.
 
-## Facts and evidence
+## Real acceptance responsibilities
 
-Use `check-idea <idea>` for lifecycle observation. Append supported protocol
-facts by editing `events.jsonl` directly: retain the old raw bytes as an exact
-prefix, use canonical JSON (recursively sorted keys), UTF-8, LF and a final
-newline. Recheck current bytes and revisions before recording a real decision;
-on concurrent edits, reobserve and integrate both histories, never overwrite
-another decision. Run `check-changes --worktree`, stage only intended content,
-then `check-changes --staged` before committing. After synchronization reobserve
-with `check-idea <idea>`. No append/replay command or confirmation flag exists.
+**Check ONLY validates event state, current folder revision/direct upstream,
+acceptance policy, history/protocol, standardization and synchronization. It
+does NOT judge tests, CI, report truth, case completeness, tested code or
+declared commit/path binding.** Do not mistake machine pass for semantic
+approval.
 
-Lifecycle Problem briefs include reduced state, current revisions,
-`eventDigest`, `primary` and `subject`. Reduction uses the whole valid history,
-current revisions, evidence and Git context. `level` is the first unmet domain
-phase. `state.submitted` contains latest submit IDs and `state.signed` contains
-matching signOff IDs. In the paired format, implementation is the tested commit
-and deployment is the report's raw-byte SHA-256; neither is an event ID. A local
-completed level is not proof of synchronization. Read each checkpoint's short
-description for its scope and its separate instructions for document
-preparation, review and exact event JSON. If the user does not explicitly
-approve the current materials, iterate the documents without recording a
-signOff; never submit template placeholders as facts.
+For requirements/research/technical/test scope, prepare material, submit exact
+tuple, show the current content and obtain explicit user acceptance under
+consensus. For test-spec, default delegation permits Agent acceptance after
+actual review; it never skips submit or accept. A configured consensus still
+requires the user.
 
-Use paired `type: "signOff"` with only its `submit` reference and no `decision`.
-Historical `decision: "confirmed"` events remain readable and must not be
-rewritten; other decision values are invalid. Only a real explicit user decision
-authorizes recording a signoff.
+For implementation, supporting SUBMISSION MATERIAL records which TEST CASES were
+added/deleted/modified and which commit they were submitted to. Before delegated
+accept, the Agent verifies passing local tests or CI INCLUDING THAT COMMIT. Keep
+these details in implementation supporting documents, not event body. Do not
+invent tracked-declaration Schema, scope paths, process/CI predicates or
+mandatory test-report formats. Unrun/failed tests do not authorize an Agent
+claim.
 
-Implementation/deployment have Agent verification, followed by an independent
-user-acceptance gate. Actually execute every implementation automated case on
-the exact commit; only after all pass record paired verify with phase and rev.
-Keep tests, dependencies and explicit commands reproducible, without an
-implementation report or test-output copy.
+For deployment, self-test the ACTUAL deployed result under existing operational
+authorization. Prepare deployment supporting material, submit its exact tuple,
+then have the USER hands-on operate the result and explicitly accept it. Record
+deployment accept(authority=user); no separate user-acceptance checkpoint. Do
+not infer user acceptance from silence, feedback, demos, self-tests or Git.
+Default consensus does not permit Agent self-acceptance. Project policy may
+explicitly delegate a gate, but never invent a user decision.
 
-For deployment, manually operate the actual delivery through every E2E case.
-Append a start row binding the implementation and then actual case attempts to
-evidence/deployment/report.jsonl. Preserve failures and old rounds; do not edit,
-truncate or format existing rows. Latest round and last attempt per case must
-all pass. Append paired verify with phase=deployment and the whole report hash.
-Unknown, blocked, not-run and incomplete results never pass.
+Synchronize exact accepted material/events normally under existing Git
+authorization, reobserve the same Idea and continue only from that fresh report.
+Production, publication, payment, destructive operations and installation need
+their own authority; lifecycle acceptance does not grant it. Stop for a real
+human/external decision rather than polling unchanged observations.
 
-Complete implementation verification, then commit and synchronize the
-implementation, tests and verify event to the configured primary before
-proceeding to deployment. Deploy that verified and synchronized implementation,
-verify the deployment and record its report and verify event, then commit and
-synchronize them before user acceptance. Both checkpoints require evidence and
-synchronization; a local event or a push command's success alone is
-insufficient. Submit the exact deployment report revision for user-acceptance,
-provide the corresponding delivery for the user to operate, and only after
-explicit acceptance append its paired signOff. Synchronize both events and
-reobserve before declaring completion.
+## History
 
-Historical v1 events remain unchanged; do not fabricate missing submits or mix
-old batches into new acceptance. After paired records begin, new old-format
-signOff vectors or inline verify batches are invalid. Never change an existing
-pinned Check CID to migrate it. These actions require existing authorization;
-the Check never performs them automatically. Checkpoint IDs do not change
-historical event phases or existing content paths.
-
-Publishing, production, payment and destructive actions require independent
-authorization. A lifecycle signoff never grants those rights. Preserve all
-unrelated changes; never silently clean, stage, commit, push or change CIDs.
+Historical idea.json/checkCid/id/version, signOff/verify and batch/report rules
+retain original read-only checking semantics and their exact CIDs/bytes. They
+are not the new Schema or new machine predicates. Navigation requires explicit
+migration; do not convert automatically, fabricate submits/accepts, rename
+checkCid or append old events/advance old protocols. Current tooling does not
+implement migration; report that boundary, not a guessed workaround. Archived
+.silvermoon/ideas stays outside current inventory. Historical acceptance does
+not certify new flat-folder checkpoints.

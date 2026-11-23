@@ -239,6 +239,43 @@ const projectSchema = Type.Object(
     primaryRepository: nonempty,
     primaryBranch: nonempty,
     preferredLanguage: Type.Optional(nonempty),
+    checkpointAcceptance: Type.Optional(
+      Type.Partial(
+        Type.Object(
+          {
+            requirements: Type.Union([
+              Type.Literal("consensus"),
+              Type.Literal("delegated"),
+            ]),
+            "research-scope": Type.Union([
+              Type.Literal("consensus"),
+              Type.Literal("delegated"),
+            ]),
+            "technical-spec": Type.Union([
+              Type.Literal("consensus"),
+              Type.Literal("delegated"),
+            ]),
+            "test-scope": Type.Union([
+              Type.Literal("consensus"),
+              Type.Literal("delegated"),
+            ]),
+            "test-spec": Type.Union([
+              Type.Literal("consensus"),
+              Type.Literal("delegated"),
+            ]),
+            implementation: Type.Union([
+              Type.Literal("consensus"),
+              Type.Literal("delegated"),
+            ]),
+            deployment: Type.Union([
+              Type.Literal("consensus"),
+              Type.Literal("delegated"),
+            ]),
+          },
+          closed,
+        ),
+      ),
+    ),
   },
   closed,
 );

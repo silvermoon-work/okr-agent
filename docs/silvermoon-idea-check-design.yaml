@@ -1,421 +1,220 @@
-# Review design only; aligned with silvermoon-events.md, not generated from runtime.
-# Runtime Spec: silvermoon-single-checker.yaml. Historical proposal: silvermoon-idea-check-candidate.yaml.
+# Approved design; runtime-generated Spec: silvermoon-single-checker.yaml.
+# Historical proposal remains silvermoon-idea-check-candidate.yaml.
 $schema: urn:ipfsaw:check-bundle:1
 specVersion: "1.0"
-name: Silvermoon · 标准化与统一 Checkpoint 推进（设计稿）
+name: Silvermoon · 平级文件夹与统一 Checkpoint 推进
 description: |
-  先检查设备、项目和选中 Idea 的标准化前提，非标准状态修复后重新观察；
-  再按有序推进 checkpoint measure 当前 Git 内容版本，统一执行 submit → accept。
-  首个未达成关口是当前工作位置，全部验收及 primary 同步通过才完成。
-
-  consensus 必须取得用户对准确内容的明确接受；delegated 允许 Agent 完成真实验收后
-  accept，但不省略 submit 或接受事件。项目配置 checkpointAcceptance；
-  默认 test-cases（事件对象 tests）和 implementation 为 delegated，其他推进关口为
-  consensus，包括 test-index（事件对象 cases）。
-  accept.authority=user|delegate，consensus 不认可旧 delegate 接受。
-
-  revision 使用验收范围的 Git tree；material tree 绑定范围内文件，
-  upstream tree 只引用直接前置 revision，requirements 根无 upstream entry。
-  每关只记录直接前置，不记录闭包；文件或前置变更自然导致版本退化和重新提交。
-  不把事件追加导致的 commit 变化当成所有关口的内容变化。
-  完整事件、Git 对象规则及 JSON Schema 见同目录 silvermoon-events.md。
-
-  **本文件仅为目标设计。** 当前运行时仍使用 id/version、signOff.submit、
-  verify、材料 SHA-256 和固定 checkCid，尚未支持 accept、authority、
-  Git 内容树、delegation 配置或 eventSchemaCid。不要写入目标事件或迁移历史；
-  本预览不执行代码、Git 对象写入、部署、发布或同步。
+  标准化前提与推进分离。七个平级文件夹位于 .silvermoon/i/<id>/，
+  events.jsonl 的唯一首条 created 固定 idea/at/eventSchemaCid，无 idea.json。
+  revision 是 owning 文件夹真实 Git TREE ID；upstream 是直接前置文件夹真实
+  Git TREE ID，根为 null。不合成 material/upstream 树或递归嵌入依赖。
+  submit 与 accept 使用相同 object/revision/upstream tuple，
+  accept 另有 authority=user|delegate；无事件 id/version、signOff、verify 或 rollback。
+  可选严格 checkpointAcceptance 默认 test-spec/implementation delegated，其余 consensus；
+  consensus 仅认可 user，delegated 认可 user/delegate，收紧自然使旧 delegate 接受失效。
+  顺序 measure 首个 owning submit/accept/synchronization，文件夹或前置/祖先失效自然退化；
+  相同 tuple 重复 submit 幂等，不重置匹配接受。
+  Check 只判断事件状态、当前 revision/upstream 与仓库匹配、权限政策、历史/协议、
+  标准化与同步，不判断测试、CI、报告真实性、用例完整性、受测代码或 commit/path 声明绑定。
+  Agent 的真实实现测试及部署/用户体验责任是指引，不是机器谓词。
+  完整规则见 silvermoon-events.md；旧数据只读按原契约检查，不自动转换或迁移。
 parameter:
   schema:
     type: object
     additionalProperties: false
     required: [userHome, repoRoot, idea]
     properties:
-      userHome:
-        type: string
-        minLength: 1
-      repoRoot:
-        type: string
-        minLength: 1
-      idea:
-        type: string
-        minLength: 1
+      userHome: { type: string, minLength: 1 }
+      repoRoot: { type: string, minLength: 1 }
+      idea: { type: string, minLength: 1 }
 checkpoints:
   - id: global
     title: 全局 Silvermoon 已标准化
-    description: 核验全局安装、个人 skill 链接和用户配置。
-    instructions: |
-      按 Rules 修复实际运行安装、skill 或配置问题，再重试原命令。
-      不用项目依赖或 skill 副本绕过设备边界，不自动安装或改配置。
-      本关属于标准化前提，不为它记录 submit/accept。
+    description: 核验实际运行安装、个人 canonical skill 链接和用户配置。
+    instructions:
+      修复标准化前提后重试，不自动安装或复制项目内 skill，不记录 submit/accept。
     rules:
       - code: global-runtime-ready
-        description:
-          实际入口须为当前安装的规范 bin，PATH 首个 silvermoon 对应同一安装；
-          允许全局链接开发版，不要求每次联网查询 registry。
+        description: PATH 首个规范 bin 属于实际安装。
       - code: global-skill-linked
-        description:
-          支持的个人发现路径须有效链接到当前安装 canonical skill，
-          不能是副本、失效链接或另一安装。
+        description: 个人发现路径链接至实际安装 canonical skill。
       - code: global-configuration-valid
-        description:
-          用户配置存在时须结构、协议及规范语言标签有效；
-          允许缺省时不因缺文件自动初始化。
-    output:
-      description: 提供本次个人语言配置，仅在当前执行共享。
-      fields:
-        - name: userLanguage
-          description: 规范标签或 undefined，不据此推断项目或 Idea 就绪。
+        description: 用户配置采用支持的协议、字段及规范语言标签。
   - id: repository
     title: 仓库已处于标准工作状态
-    description: 核验安全 Git 根、有效 HEAD、关联分支和工作区洁净。
-    instructions: |
-      保留已有工作，按授权通过普通 Git 操作整理和提交，再重新 measure。
-      不删除、隐藏或重置未知内容，不自动 stage/commit/push/clean。
-      本关是标准化前提，不记录 submit/accept。
+    description: 安全 Git 根、有效 HEAD、关联分支和洁净工作区。
+    instructions:
+      保留已有工作，按授权通过普通 Git 操作修复；不自动
+      stage/commit/push/clean。
     rules:
       - code: repository-root-valid
-        description:
-          repoRoot 须为安全可读且有有效 HEAD 的 Git 根，不是重定向或子目录。
+        description: 普通安全可读仓库根，非子目录或重定向。
       - code: repository-branch-attached
-        description: HEAD 须关联本地分支，不是 detached HEAD。
+        description: 有效 HEAD 关联本地分支。
       - code: repository-worktree-clean
-        description: 不得有暂存、未暂存或未跟踪改动；事件和草稿也须提交。
-    output:
-      description: 提供本次准确仓库位置和起始提交，不代表生命周期接受。
-      fields:
-        - name: root
-          description: 已验证的仓库根。
-        - name: head
-          description:
-            当前完整提交 ID，后续核对并发变化，不用它替代各关内容 revision。
+        description: 所有材料与事件已经提交，无暂存/未暂存/未跟踪变化。
   - id: branch
     title: 项目配置与 primary 同步已标准化
-    description: 核验项目政策、跟踪关系及准确 primary 同步。
-    instructions: |
-      按 Rules 修复配置或集成并发历史，保留双方工作，不改变 primary 绕过检查。
-      模式变化是项目政策修改，不是 Agent 等待用户时自行提权。
-      Check 不自动 pull/merge/rebase/push；修复后重新观察。
+    description: 核验 primary 政策、跟踪关系和准确同步。
+    instructions: 不改 primary 或自行提权绕过接受；不自动集成/推送并发历史。
     rules:
       - code: branch-silvermoon-config-valid
         description:
-          项目配置可解析、协议支持，primaryRepository 和 primaryBranch 有效。
-      - code: branch-acceptance-policy-valid
-        description:
-          可选 checkpointAcceptance 仅允许推进 checkpoint ID， 值为 consensus 或
-          delegated；未知键/值明确报错。 未配置项使用默认：test-cases 和
-          implementation delegated，其他 consensus。 不允许把标准化前提配置为
-          delegated，不依据未同步政策确认接受权限。
+          配置协议、primaryRepository/primaryBranch 和可选严格
+          checkpointAcceptance 合法。
       - code: branch-upstream-aligned
-        description:
-          分支 upstream 须对应配置的 primaryRepository 和 primaryBranch。
+        description: upstream 对应配置的 primary 仓库及分支。
       - code: branch-primary-synchronized
         description:
-          远端须存在 primary 分支且 HEAD 等于本次观察的 tip；
-          查询失败不等于分支不存在，本地快照不声明网络新鲜性。
-    output:
-      description: 提供项目、准确同步观察和有效接受政策，供同次执行复用。
-      fields:
-        - name: project
-          description: 仓库及已经验证的项目配置。
-        - name: observed
-          description: 当前 HEAD、primary tip、remote 和变更事实。
-        - name: acceptanceModes
-          description:
-            按推进 checkpoint ID 的完整有效模式映射，不是业务输入或已接受事实。
+          HEAD 等于本次准确观察的 primary tip；本地模式不声明网络新鲜性。
   - id: silvermoon-folder
     title: Silvermoon 容器已标准化
-    description: 核验数据容器、配置和 Idea 目录路径安全性。
-    instructions: |
-      修复容器类型和容量问题，不扫描、删除或迁移其他 Ideas。
-      首个 Idea 前 i 目录可不存在；本标准化关口不写 submit/accept。
+    description: 核验普通安全容器及容量。
+    instructions: i 在首个 Idea 前可不存在，不扫描或迁移其他 Ideas。
     rules:
       - code: silvermoon-folder-path-valid
-        description: .silvermoon 须为安全普通目录，无链接或重定向。
-      - code: silvermoon-folder-config-file-valid
-        description: config.yaml 须为安全普通文件且不超协议容量。
-      - code: silvermoon-folder-ideas-directory-valid
-        description: i 目录首次创建前可不存在，存在时须为安全普通目录。
-    output:
-      description: 成功为 undefined，不新增持久 readiness 标记。
+        description: .silvermoon、config.yaml 和可选 i 类型、路径及容量安全。
   - id: idea-folder
-    title: Idea 数据与版本测量已标准化
-    description:
-      核验选中 Idea 数据契约、历史和 Git 版本规则，推导首个未达成关口。
+    title: Idea 数据与版本已标准化
+    description: created-first 信任、平级布局、真实文件夹树及 append-only 历史。
     instructions: |
-      只处理选中 Idea，先消费前序仓库、政策及 primary 输出。
-      事件 Schema 与完整定义见 silvermoon-events.md；不要将本设计写入当前运行时。
-      bootstrap 和唯一 created 绑定固定 eventSchemaCid，Check CID 在执行报告中单独记录。
-      固定 Schema 为自包含 Draft 2020-12，RFC 8785/JCS UTF-8 →
-      SHA-256 → CIDv1(raw/sha2-256)，无 BOM 或末尾换行；
-      受控环境支持 dialect 和 date-time，不联网取可变 $ref 或回退最新 Schema。
-
-      每关 revision 是 Git tree，含 material tree 及直接前置 upstream tree；
-      requirements 根不含 upstream。完整 ID 使用仓库对象格式，不用缩写或自定义摘要。
-      范围、Git mode 和 blob 都参与；事件时间、提交次数不参与。
-      Git 对象必须可验证并能跨 checkout 获取或从同步材料确定性复原，
-      不假定普通 push 携带 dangling tree。本轮不写 Git 对象或迁移历史。
-
-      依次 measure 每个推进关口：前置有效接受且同步、当前内容树匹配最后 submit、
-      accept 对象/版本匹配且 authority 被当前模式认可、验收条件成立及材料/事件同步。
-      内容或前置不匹配是正常状态退化，回到首个 owning 关口重新提交；
-      结构损坏先修复标准化，不能把两者混为数据无效。
-      同对象/版本/前置重复 submit 不重置接受，accept 按对象/版本/来源归并；
-      行顺序是事实顺序，不按 at 排序、不删除历史、不过滤旧失败。
-      consensus 只认可 user；delegated 认可 user 或 delegate。
-      收紧政策后旧 delegate 接受自然失效，不改写其 authority。
-
-      固定部署 report.jsonl 保留 primary 原始字节前缀，最新 start/case 为当前轮；
-      每轮重新覆盖全部部署用例，保留失败，最新非 pass/缺项阻断验收。
-      目标 start.implementation 绑定 implementation 内容树，不将历史 commit 绑定猜为 tree。
-      报告上限 1 MiB/4096 行，每轮 512 个不同用例；事件上限 1 MiB/4096 行；
-      Idea 总容量 16 MiB，不截断历史绕过上限。
+      先用固定最小有界 reader 读取 created 的 idea/at/eventSchemaCid/可选 language，
+      再用已知可信不可变自包含 Draft 2020-12 Schema 校验整个日志，包括 created。
+      Schema 为 RFC8785 JCS UTF-8 SHA256 CIDv1 raw/base32，离线保存准确资源；
+      未知 Schema 明确失败，不 fallback 或改历史 CID。执行 Check CID 单独记录。
+      七个文件夹安全、可读可测量，Spec.md 为提示而非模板验证。
+      revision/upstream 是实际 owning/直接前置文件夹 tree ID，mode/blob 参与。
+      只解释事件、当前版本、政策、顺序历史和同步，不检查实现或报告真实性。
+      保留 created 身份与 primary 原始 UTF-8 事件前缀；日志 1 MiB/4096 LF 行，
+      总候选 16 MiB/2048 文件，拒绝链接、越界、无效编码、未知字段及并发变化。
+      历史 idea.json/checkCid/id/version 数据按原契约只读，导航须明确迁移，本轮不迁移。
     rules:
       - code: idea-folder-identity-immutable
         description:
-          目标 bootstrap.id/createdAt/eventSchemaCid 保留 primary 值； created
-          第一条唯一，身份与 bootstrap 一致。不直接重命名历史 checkCid。
+          created 首条唯一，idea/at/eventSchemaCid 保留 primary 身份。
       - code: idea-folder-schema-binding-valid
-        description:
-          固定 Schema
-          CID/块须可信、可取得、编码和哈希准确，受控校验环境支持其约束；
-          不可用、未知协议或不支持明确报错，不自动替换执行身份。
+        description: 精确可信 Schema 字节、CID 和受控校验约束有效，无静默替代。
       - code: idea-folder-history-append-only
         description:
-          事件和固定部署报告保留 primary 的原始 UTF-8 前缀，仅追加完整 LF 行；
-          状态归并不修改历史，也不删除曾被接受的证据。
-      - code: idea-folder-revisions-valid
-        description:
-          每个 revision 可验证为指定范围的 material/upstream Git tree，
-          非根只绑定直接前置完整 revision；当前文件、mode 或前置变化产生新版本。
-          上游树存在性、类型及跨 checkout 复原可验证，不用 HEAD
-          变化机械使所有关口失效。
-      - code: idea-folder-events-valid
-        description:
-          目标事件仅为
-          created/submit/accept/setAlias/setLanguage/abandon/resume， 无
-          id/version；submit 先于同版本
-          accept，只有直接前置已有效接受才提交后关。 accept.authority 为 user 或
-          delegate，来源如实记录，不把旧 verify 自动变成接受。
-          正常缺提交、缺认可接受或版本过期只退化到对应关口，不当作结构故障。
+          原始 canonical UTF-8 事件字节保留准确前缀，只追加完整 LF 行。
       - code: idea-folder-data-valid
         description:
-          布局、材料、索引、报告、规范时间/语言、路径和容量均符合目标定义，
-          未知字段、对象类型不符或缺必需文件明确失败； 意外
-          I/O、取消、并发变化与不支持协议按执行错误传播，不默认通过。
+          安全平级材料、真实目录树、最小事件形态及直接 tuple 有序历史有效。
       - code: idea-folder-active
-        description:
-          放弃后须明确有效 resume 才恢复，不从沉默或 Git 动作推断决定。
+        description: 显式放弃须有效 resume 才恢复。
     output:
-      description: 提供同一次归约的材料、政策与推进状态，后续不另建状态机。
-      fields:
-        - name: state
-          description: |
-            revisions 为八个推进对象的当前完整 Git tree ID，submitted 为最后候选版本，
-            accepted 为当前有效接受版本与 authority，不保存事件 ID。
-            level 是首个未达成推进关口；step 为 submit、accept 或 synchronization。
-            正常版本退化需要重新 submit，政策来源不满足需要重新 accept；
-            前序阻断不再单独推断后序失败。
-            全部材料、认可接受与 primary 同步成立才 completed；abandoned 不自动恢复。
-            这些字段是目标输出，不声称当前 CLI 已提供。
-        - name: brief
-          description: 受控版本、当前关口/小阶段、模式与同步事实，不泄漏材料全文。
+      description:
+        同一次 reduce 的七个 revisions、submitted/accepted
+        tuples、authority、模式及首个 owning level/step。
   - id: requirements
-    title: 需求已接受并同步
-    description: 核验需求全范围版本、有效提交与按政策接受及同步。
-    instructions: |
-      完成 requirements/Spec.md 及附件，说明目标、范围、场景和验收标准。
-      measure 当前需求树后先 submit：
-      {"at":"<UTC>","type":"submit","object":"requirements","revision":"<requirements-tree>","upstream":null}
-      默认 consensus，展示准确全部材料取得用户明确接受再 accept(authority=user)；
-      政策为 delegated 时 Agent 完成真实验收可 accept(delegate)，不能省略事件。
-      按授权同步材料与事件，版本变化重新 submit，不写 rollback。
+    title: 需求规格
+    description: 需求文件夹 tree 的提交、认可接受与同步。
+    instructions:
+      完成 requirements/Spec.md 及所需附件；submit(upstream=null)，默认用户明确
+      accept，再同步。
     rules:
       - code: requirements-submission-current
-        description:
-          最新需求 submit.revision 等于当前需求树，upstream=null，无前置。
+        description: 最新 submit 的 revision 为当前文件夹 tree，upstream=null。
       - code: requirements-acceptance-valid
-        description:
-          同版本 accept 的 authority
-          被当前需求模式认可，验收范围完整满足需求标准。
+        description: accept 匹配完整 tuple，来源被当前模式认可。
       - code: requirements-synchronized
-        description:
-          当前材料与有效 submit/accept 存于本次 primary，可验证版本对象一致。
-    output:
-      description: 成功为 undefined，调研复用当前有效需求 revision。
-  - id: research
-    title: 调研范围已接受并同步
-    description: 核验调研问题范围的内容树、需求前置及接受与同步。
-    instructions: |
-      在 technical/research.md 写调研问题、关注点及待查证事实，不冒充已完成结论。
-      需求关口有效且同步后 submit(research, upstream=requirements revision)。
-      默认 consensus，用户 review 后明确接受才 accept(user)；
-      delegated 时 Agent 按同一标准验收再 accept(delegate)。
-      需求或本文件变化使当前树失效，回到首个退化关口重提，随后同步。
+        description: 当前文件夹和有效 submit/accept 存于准确 primary。
+  - id: research-scope
+    title: 调研范围
+    description: 调研范围文件夹 tree、需求前置和认可接受与同步。
+    instructions:
+      在 research-scope/Spec.md
+      及支持材料写问题、风险和待查证事实；默认用户接受。
     rules:
-      - code: research-submission-current
+      - code: research-scope-submission-current
         description:
-          research 当前 material 加直接 requirements 树匹配最新 submit 和
-          upstream。
-      - code: research-acceptance-valid
-        description:
-          当前版本已提交，认可来源的 accept 存在，调研问题范围完整且前置有效。
-      - code: research-synchronized
-        description: 当前调研文件及有效事件、直接前置和版本对象在 primary 一致。
-    output:
-      description: 成功为 undefined，技术方案复用 research revision。
-  - id: technical
-    title: 技术方案已接受并同步
-    description: 核验完整技术方案、调研前置及按政策接受与同步。
-    instructions: |
-      完成调研，把依据、取舍、接口、错误处理、实施计划与验证方法写在 technical/Spec.md
-      及附件，材料范围排除独立 research.md。
-      前序 research 已接受同步后 submit，默认由用户接受再 accept(user)，最后同步。
-      即使正文未变，直接前置树变化也重新提交；delegate 不免除同样的方案完整性验收。
+          当前文件夹 tree 与直接 requirements tree 匹配最新 submit，前置有效。
+      - code: research-scope-acceptance-valid
+        description: 完整 tuple 的 accept 来源被政策认可。
+      - code: research-scope-synchronized
+        description: 材料及有效事件存于准确 primary。
+  - id: technical-spec
+    title: 技术规格
+    description: 技术规格文件夹 tree、调研前置及认可接受与同步。
+    instructions:
+      在 technical-spec/Spec.md 及支持材料写调研依据、取舍及方案；默认用户接受。
     rules:
-      - code: technical-submission-current
+      - code: technical-spec-submission-current
         description:
-          当前技术范围及 research 前置树准确匹配最新 technical
-          submit，不存祖先闭包。
-      - code: technical-acceptance-valid
-        description:
-          当前已提交版本有按有效模式认可的
-          accept，方案材料完整、可实施且前置有效。
-      - code: technical-synchronized
-        description:
-          全部当前技术材料、版本及有效 submit/accept 与 primary 一致。
-    output:
-      description: 成功为 undefined，用例索引复用 technical revision。
-  - id: test-index
-    title: 用例索引已接受并同步
-    description: 核验实现与部署用例索引完整、技术前置及接受与同步。
-    instructions: |
-      tests/cases.json 保持 version=1，每项仅含唯一 id 和 phase，
-      包含 implementation/deployment，最多 512 项；ID 大写字母开头，仅大写字母数字连字符。
-      事件对象 cases；technical 已接受同步后 submit(cases, upstream=technical revision)。
-      默认 consensus，展示索引范围及阶段分工，用户明确接受再 accept(user)。
-      该默认不同于 test-cases；索引变更先回本关，不接受正文替代机器索引。
+          当前文件夹 tree 与直接 research-scope tree 匹配最新 submit，前置有效。
+      - code: technical-spec-acceptance-valid
+        description: 完整 tuple 的 accept 来源被政策认可。
+      - code: technical-spec-synchronized
+        description: 材料及有效事件存于准确 primary。
+  - id: test-scope
+    title: 测试范围
+    description: 测试范围文件夹 tree、技术前置及认可接受与同步。
+    instructions:
+      test-scope/Spec.md
+      描述测试范围和预期结果，不强制机器用例索引；默认用户接受。
     rules:
-      - code: test-index-submission-current
+      - code: test-scope-submission-current
         description:
-          索引结构合法且包含两阶段，当前 cases 树和直接 technical 树匹配最新
-          submit。
-      - code: test-index-acceptance-valid
-        description:
-          当前 cases 版本有有效模式认可的
-          accept；默认要求用户，前置技术方案有效。
-      - code: test-index-synchronized
-        description: 当前索引、有效 submit/accept 和版本对象已同步 primary。
-    output:
-      description: 成功为 undefined，详细测试材料复用 cases revision。
-  - id: test-cases
-    title: 测试材料已接受并同步
-    description: 核验详细测试材料、用例索引前置及默认委托验收与同步。
-    instructions: |
-      完成 tests/Spec.md 及附件，排除 cases.json；
-      按索引写自动化映射/依赖/入口及手工操作/预期/条件，附件要求明确。
-      cases 已接受同步后 submit(tests, upstream=cases revision)。
-      默认 delegated：Agent 按标准审完内容确认无问题，再 accept(authority=delegate)；
-      无需用户共识但不能省略提交和接受。配置为 consensus 时必须取得用户接受。
-      计划不是执行证据；同步后进入 implementation。
+          当前文件夹 tree 与直接 technical-spec tree 匹配最新 submit，前置有效。
+      - code: test-scope-acceptance-valid
+        description: 完整 tuple 的 accept 来源被政策认可。
+      - code: test-scope-synchronized
+        description: 材料及有效事件存于准确 primary。
+  - id: test-spec
+    title: 测试规格
+    description: 测试规格文件夹 tree、范围前置及委托接受与同步。
+    instructions:
+      test-spec/Spec.md 描述操作/条件/预期；默认 delegated，Agent 实际审阅后
+      accept，不省略 submit。
     rules:
-      - code: test-cases-submission-current
-        description: 当前 tests 材料树及直接 cases 树匹配最后 submit，前序有效。
-      - code: test-cases-acceptance-valid
+      - code: test-spec-submission-current
         description:
-          全部索引用例有可执行操作与判据、实现自动化映射和部署手工要求，
-          当前版本已接受；默认认可 delegate/user，consensus 仅认可 user。
-      - code: test-cases-synchronized
+          当前文件夹 tree 与直接 test-scope tree 匹配最新 submit，前置有效。
+      - code: test-spec-acceptance-valid
         description:
-          当前详细测试范围、版本及有效 submit/accept 均已同步 primary。
-    output:
-      description: 成功为 undefined，实现验收复用 tests revision。
+          完整 tuple 的 accept 来源被政策认可；默认 user/delegate，收紧后仅
+          user。
+      - code: test-spec-synchronized
+        description: 材料及有效事件存于准确 primary。
   - id: implementation
-    title: 实现已接受并同步
-    description: 核验准确交付内容、真实自动化测试、测试前置及委托接受与同步。
+    title: 实现交付物
+    description:
+      实现交付文件夹 tree、测试规格前置及委托接受与同步，不判定代码/CI。
     instructions: |
-      完成实现、自动化代码、依赖锁定与入口，measure 项目受跟踪交付范围，
-      仅排除本 Idea events.jsonl 和 evidence/；不排除测试、配置、标准材料。
-      tests 已接受同步后先 submit：
-      {"at":"<UTC>","type":"submit","object":"implementation","revision":"<implementation-tree>","upstream":"<tests-tree>"}
-      按授权在对应准确快照实际执行全部实现用例及要求的平台组合。
-      默认 delegated，全部通过且内容未变后 accept(delegate)；失败/错误/阻塞/未执行不能接受。
-      consensus 模式先交付可审材料给用户，用户明确接受才 accept(user)，也不免除测试。
-      不存强制实现报告或测试输出副本，不再写 verify；同步后重新 measure。
+      implementation/Spec.md 及支持文档记录交付；提交材料记录增删改哪些 TEST CASES、
+      提交到哪个 commit。Agent 在 accept 前验证包含该 commit 的本地测试或 CI 通过。
+      这些是材料和 Agent 指令，不是 tracked-declaration Schema、scope paths 或 CI 机器谓词。
+      revision 是 implementation 文件夹 tree，不是仓库代码范围或受测 commit；
+      submit(upstream=test-spec tree)，默认 delegated accept 后同步。
     rules:
       - code: implementation-submission-current
         description:
-          当前实现 material tree 与直接 tests revision 匹配最后 submit；
-          真实受测快照与范围一致，事件/证据追加不导致实现树变化，其他范围变化必须重提。
+          当前 implementation 文件夹 tree 与直接 test-spec tree 匹配最新
+          submit，前置有效。
       - code: implementation-acceptance-valid
         description:
-          实际全部自动化测试通过、可重跑入口及依赖完整，并有当前模式认可的同版本
-          accept； 默认 delegated 认可 delegate/user，收紧为 consensus 后旧
-          delegate 不再通过。 Check
-          不执行项目测试或证明记录真实性，不用旧接受掩盖已知复测失败。
+          完整 tuple 的 accept 来源被政策认可；不判断测试执行、覆盖或
+          commit/path 绑定。
       - code: implementation-synchronized
-        description:
-          当前代码、测试、锁文件、配置、版本树及有效 submit/accept 已同步
-          primary。
-    output:
-      description:
-        成功为 undefined，deployment 直接依赖 implementation 的内容树。
+        description: 当前文件夹材料及有效事件存于准确 primary。
   - id: deployment
-    title: 部署交付已接受并同步
-    description: 核验部署手工报告、准确实现前置及按政策接受与同步。
+    title: 部署交付物
+    description:
+      部署文件夹 tree、实现前置及最终用户接受与同步，不判定报告真实性。
     instructions: |
-      implementation 已接受同步后按已有部署授权操作准确交付物；
-      Check 与 delegation 均不授权生产、付费或发布操作。
-      固定 evidence/deployment/report.jsonl 追加 start，implementation 字段绑定当前实现树，
-      再逐项操作并追加 case；失败保留，同轮取最后尝试，新轮重新覆盖全部用例。
-      完成后 measure 当前报告和必要附件，submit(deployment, upstream=implementation revision)。
-      默认 consensus，向用户展示准确交付、自验报告和限制，明确接受后 accept(user)；
-      授权为 delegated 时 Agent 完成同样验收可 accept(delegate)。
-      同步再进入用户体验关口，不再写 verify，不以部署命令成功宣称完成。
+      Agent 自验实际部署结果，记录 deployment/Spec.md 及所需支持材料；
+      不强制固定 report.jsonl、start/case Schema 或结果集合。
+      submit(upstream=implementation tree) 后用户 hands-on 实际操作并明确 accept(user)。
+      用户接受就是本关 accept，无独立 user-acceptance checkpoint。
+      默认 consensus；最终同步并重新观察所有关口后 completed，不写 verify/rollback。
     rules:
       - code: deployment-submission-current
         description:
-          当前报告及必要附件的 material tree 和直接实现树匹配最后 submit； 最新
-          start 绑定当前 implementation revision，追加报告自然使旧提交退化。
-          不将历史 start 的提交 SHA 静默解释成 tree。
+          当前 deployment 文件夹 tree 与直接 implementation tree 匹配最新
+          submit，前置有效。
       - code: deployment-acceptance-valid
         description:
-          报告安全、结构完整，最新轮按 case 取最后结果恰好覆盖全部部署用例且全
-          pass， 非 pass/缺项/过期不能回退旧成功；当前版本有按项目模式认可的
-          accept。 默认 consensus 仅认可 user，自验不代替用户接受或最终体验。
+          完整 tuple 的 accept 来源被政策认可；不判断报告、用例或部署真实性。
       - code: deployment-synchronized
         description:
-          当前报告、必要附件、版本对象和有效 submit/accept 均同步
-          primary，保留旧字节。
-    output:
-      description: 成功为 undefined，最终体验直接依赖 deployment revision。
-  - id: user-acceptance
-    title: 用户体验已接受并最终同步
-    description: 核验准确部署交付的体验、按政策接受及最终同步。
-    instructions: |
-      deployment 已接受同步后，measure 其前置树和可选 acceptance/ 体验材料范围。
-      先 submit 当前体验交付：
-      {"at":"<UTC>","type":"submit","object":"user-acceptance","revision":"<acceptance-tree>","upstream":"<deployment-tree>"}
-      默认 consensus，提供实际入口、操作指引、范围和限制，请用户亲自操作反馈，
-      明确接受后核对版本、记录 accept(user)。普通评论、沉默及 Agent 自验不是用户接受。
-      若项目明确委托此关，Agent 按体验标准完成验收可 accept(delegate)，仍不跳过事件。
-      修改交付或前置会自然退化，先回首个失效关口；
-      最后同步全部材料和有效事件，重新 measure 后才完成。
-    rules:
-      - code: user-acceptance-submission-current
-        description:
-          当前体验版本树及直接 deployment revision 匹配最后 submit； 不再绑定
-          tests 或报告 SHA-256，独立体验材料变化也使版本失效。
-      - code: user-acceptance-valid
-        description:
-          当前版本已提交且有有效模式认可的 accept；默认 consensus
-          必须来自真实用户
-          对准确交付实际体验后的明确接受。委托模式不免除体验验收， authority
-          不是身份认证，不能改写旧来源或把两关接受合为一条事件。
-      - code: user-acceptance-synchronized
-        description:
-          全部前序、当前材料和有效 submit/accept 均同步本次 primary，
-          工作区洁净且观察无并发变化；全部关口通过才 completed，
-          不用手写完成事件或 Git 命令退出成功替代事实。
-    output:
-      description:
-        成功为 undefined，Task 报告完成，不自动记录决定、发布或执行其他动作。
+          当前材料及所有有效前序与事件已在准确 primary，全部通过才 completed。

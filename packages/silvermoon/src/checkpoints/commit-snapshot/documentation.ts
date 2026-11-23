@@ -10,7 +10,7 @@ export const documentation = {
     {
       code: "commit-snapshot-valid",
       description:
-        "指定候选快照中发生变更的 Ideas 的 Silvermoon 配置、路径、文件、bootstrap、事件和用例索引必须符合支持的协议及安全、容量约束；暂存区检查只读取索引，不混入未暂存或未跟踪的工作区内容。",
+        "指定候选快照中发生变更的 Ideas 的配置、路径、平级材料、created-first 可信 Schema、事件及真实文件夹 Git tree/mode 必须符合当前协议和容量约束；历史 bootstrap/用例索引/机器证据仅按原契约只读核验，不混用于新 Ideas。暂存区只读取索引，不混入工作区；不检查测试/CI/报告真实性、用例完整性或 commit/path 声明。",
     },
   ],
   output: {

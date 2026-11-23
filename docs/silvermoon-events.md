@@ -1,544 +1,228 @@
-# Silvermoon Events：统一 Checkpoint 共识模型
+# Silvermoon Events：平级文件夹与统一 Checkpoint 生命周期
 
-## 1. 设计与实现边界
+本文记录已批准并接入当前源码的模型，与
+[Idea Check 设计](./silvermoon-idea-check-design.yaml)及
+[生成的运行时 Spec](./silvermoon-single-checker.yaml)配套。
+[原候选](./silvermoon-idea-check-candidate.yaml)是设计历史，不是新数据契约。
+构建候选不代表发布、安装、用户接受或迁移既有 Idea。
 
-本文是最新目标设计，与
-[Idea Check 设计 Spec](./silvermoon-idea-check-design.yaml)
-配套，不代表当前运行时或 CAR 已实现。
-[原候选](./silvermoon-idea-check-candidate.yaml)仅作设计历史保留。
+## 1. 标准化与推进分离
 
-目标流程分成两个层次：
+每次观察先检查设备、项目、Git 根/关联分支/洁净性、primary 配置与同步、
+安全容器及选中 Idea 的协议和历史。标准化前提不记录 submit/accept。
+合法内容改变导致旧版本失效是正常推进退化，不是数据损坏。
+Check 不自动安装、提交、推送、部署、删除或执行项目代码。
 
-1. **标准化**：每次观察先检查设备、项目和 Idea 的标准化前提。
-   非标准状态先修复，再重新观察；不能绕过标准或修改标准来宣称通过。
-2. **Checkpoint 推进**：每个推进 checkpoint 都统一使用
-   **Agent submit → 接受方 accept**，随后确认材料与事件同步到 primary。
+**Check 的机器边界只有**：事件标记状态、当前 revision/upstream 与仓库匹配、
+接受模式、历史/协议、标准化和同步。**不判断**测试、CI、报告真实性、
+用例完整性、受测代码或声明的 commit/path 绑定。
+Agent 仍须完成实际验收；机器通过不能代替这些责任或真实用户决定。
 
-implementation、deployment 不再用独立 `verify` 事件绕过统一范式。
-接受方由项目配置决定：consensus 要求用户明确同意；delegated 允许 Agent
-完成验收后自行接受。**Delegation 改变接受权限，不跳过验收或 accept 事件。**
+## 2. 七个平级材料文件夹
 
-当前源码仍使用事件 `id`、`version: 1`、`signOff.submit`、
-`verify.phase/rev`、本阶段材料 SHA-256 摘要和 bootstrap 的固定 `checkCid`。
-它已经有配对提交、最终用户验收和固定部署报告，但尚未实现本文的
-`accept`、authority、Git tree/blob revision、delegation 配置或 eventSchemaCid。
-本文示例不可写进当前日志；不改写历史事件、固定绑定或 CAR。
+```text
+.silvermoon/i/<id>/
+├── events.jsonl
+├── requirements/
+├── research-scope/
+├── technical-spec/
+├── test-scope/
+├── test-spec/
+├── implementation/
+└── deployment/
+```
 
-## 2. 两个层次的边界
+新 Idea **没有 idea.json**。created 是身份来源，不另设 bootstrap 文件、
+ledger、嵌套 worlds、独立 user-acceptance 或机器用例索引。
+七个文件夹必须安全、可读且能测量版本；允许同文件夹附件和支持文档。
+`Spec.md` 是创建时提供的主要入口与编写提示，不是强制模板或详尽内容门禁。
+材料文件的路径、Git mode 与原始内容参与版本，不通过模板填满或占位文案证明验收。
 
-### 2.1 标准化前提
+| Checkpoint / object | 名词标题   | 直接前置       | 默认模式  |
+| ------------------- | ---------- | -------------- | --------- |
+| requirements        | 需求规格   | 无             | consensus |
+| research-scope      | 调研范围   | requirements   | consensus |
+| technical-spec      | 技术规格   | research-scope | consensus |
+| test-scope          | 测试范围   | technical-spec | consensus |
+| test-spec           | 测试规格   | test-scope     | delegated |
+| implementation      | 实现交付物 | test-spec      | delegated |
+| deployment          | 部署交付物 | implementation | consensus |
 
-前置检查包括运行安装、个人 skill、Git 根/分支/洁净性、primary 配置与同步、
-安全数据容器，以及选中 Idea 的 Schema、布局、事件和报告历史合法性。
-
-- 标准化关口不是待用户接受的交付物，不为它们写 submit/accept。
-- 无 upstream、脏工作区、损坏文件或事件结构不合法时，先解决对应问题。
-- 合法材料改变但与旧提交版本不一致，是正常的推进状态退化，不是数据损坏。
-- 两者均通过“修复或更新 → 重新 measure”恢复，Check 本身不自动安装、
-  提交、推送、部署或删除内容。
-
-### 2.2 推进关口和默认权限
-
-保留现有有序关口与事件对象映射：
-
-| Checkpoint ID     | Event `object`    | 直接前置 checkpoint | 默认模式      |
-| ----------------- | ----------------- | ------------------- | ------------- |
-| `requirements`    | `requirements`    | 无                  | consensus     |
-| `research`        | `research`        | `requirements`      | consensus     |
-| `technical`       | `technical`       | `research`          | consensus     |
-| `test-index`      | `cases`           | `technical`         | consensus     |
-| `test-cases`      | `tests`           | `test-index`        | **delegated** |
-| `implementation`  | `implementation`  | `test-cases`        | **delegated** |
-| `deployment`      | `deployment`      | `implementation`    | consensus     |
-| `user-acceptance` | `user-acceptance` | `deployment`        | consensus     |
-
-`tests` 是测试用例正文/测试说明，默认 delegated；`cases` 是用例索引，
-仍默认 consensus。每关只保存直接前置版本，不保存所有祖先闭包。
-祖先关系通过固定链和递归 Git tree 自然绑定。
-
-### 2.3 项目级模式配置（候选）
-
-在现有项目配置中增加可选 `checkpointAcceptance`，键使用 Checkpoint ID：
+项目可配置：
 
 ```yaml
 checkpointAcceptance:
-  test-cases: delegated
+  test-spec: delegated
   implementation: delegated
 ```
 
-- 每个未配置的推进关口使用上表默认值；缺整个字段也采用上述默认值。
-- 值只允许 `consensus` 或 `delegated`，未知 ID/值明确报错，不静默回退。
-- 只允许配置推进关口，不将标准化前提变成可委托的接受步骤。
-- 配置生效以本次已验证、已同步的项目配置为准；改变它是项目政策变更，
-  不是 Agent 在等待用户时自行修改的捷径。
-- delegation 不授权生产操作、发布、付费或数据删除。
+严格限制为上述七个键和 consensus/delegated 值；未知键/值失败。
+缺省项采用表中默认值，不把标准化前提配置成委托关口。
+生效政策必须来自本次已验证、已同步的项目配置；不得在等待用户时自行提权。
+consensus 仅认可 authority=user；delegated 认可 user/delegate。
+收紧政策自然使旧 delegate 接受失效，须取得当前版本的用户接受；
+历史 authority 不得改写。放宽政策不自动生成接受。
+接受来源是事实，不是身份认证；委托也不授权生产、发布、付费或删除。
 
-accept 记录 `authority`：
+## 3. Revision 是真实文件夹 Git tree ID
 
-| 当前模式  | 可认可的接受来源     |
-| --------- | -------------------- |
-| consensus | 仅 `user`            |
-| delegated | `user` 或 `delegate` |
+每关 revision **就是该平级文件夹的实际 Git TREE ID**。
+upstream **就是直接前置文件夹的实际 Git TREE ID**，根 requirements 为 null。
+使用仓库对象格式的完整小写 ID：SHA-1 为 40 位、SHA-256 为 64 位。
+不缩写、不加 sha256:，不把 commit、blob 或任意 JSON 摘要当成文件夹版本。
 
-`user` 表示真实用户明确接受；`delegate` 表示 Agent 在有效委托下完成验收并接受。
-字段是事实记录，不是身份认证。配置由 delegated 收紧为 consensus 后，
-旧 delegate accept 不再通过该关口，须取得用户对当前准确版本的接受；
-历史行保留，不能把 authority 改成 user。放宽配置也不自动产生 accept。
+**没有合成 material/upstream 树，没有递归嵌入依赖或额外 Git refs。**
+前置改变时，本关文件夹 tree ID 可以不变；upstream 与历史上下文判定失效。
+祖先本身无效时依次停在首个 owning 关口，不能用相同本地树复活旧接受。
+事件位于文件夹外；仅追加事件或改变提交 SHA 不改变材料树。
 
-## 3. Revision：使用 Git 对象，不用事件身份
+已提交快照读取 Git ls-tree 的真实 tree/object ID 和 mode，并核对文件夹版本。
+暂存/工作区读取相应候选，以标准 Git blob/tree 编码、原始二进制对象 ID、
+Git 排序和文件 mode 确定性测量普通文件夹树，不写入对象或复合树。
+Windows 不提供 POSIX 执行位或 Git core.fileMode=false 时，保留已跟踪文件的 index
+mode；
+未跟踪普通文件默认 100644。读取保护路径、容量、UTF-8 和并发身份。
 
-### 3.1 三种身份
+## 4. 最小事件与完整 tuple
 
-| 名称                       | 用途                                                     |
-| -------------------------- | -------------------------------------------------------- |
-| Git commit SHA             | 定位材料来源快照或真实受测提交，不作为所有内容的统一版本 |
-| Git blob/tree 对象 ID      | 本设计的准确验收内容及直接前置版本                       |
-| eventSchemaCid / Check CID | 分别标识事件数据结构与实际执行程序，不是验收内容版本     |
-
-事件使用完整、小写的 Git 对象 ID（SHA-1 为 40 位，SHA-256 为 64 位），
-不使用缩写，不加 `sha256:` 前缀。对象必须存在、类型正确且可验证；
-仅正则匹配不证明它是有效 Git 对象。
-
-### 3.2 每关的材料范围
-
-| `object`        | 当前验收材料                                                     |
-| --------------- | ---------------------------------------------------------------- |
-| requirements    | Idea 内 `requirements/` 的全部材料                               |
-| research        | Idea 内 `technical/research.md`                                  |
-| technical       | Idea 内 `technical/`，排除 `research.md`                         |
-| cases           | Idea 内 `tests/cases.json`                                       |
-| tests           | Idea 内 `tests/`，排除 `cases.json`                              |
-| implementation  | 项目受跟踪交付快照，排除本 Idea 的 `events.jsonl` 和 `evidence/` |
-| deployment      | 固定 `evidence/deployment/report.jsonl` 及该关要求的证据附件     |
-| user-acceptance | 当前交付的直接前置 deployment revision；有独立体验材料时也纳入   |
-
-前五关和证据材料以 Idea 根为相对路径基准，implementation 以仓库根为基准。
-文件路径、Git mode 与原始内容都参与版本；空必需材料、链接、越界或未纳入
-候选快照的材料不能冒充有效对象。实现范围包含代码、测试、锁文件、配置和
-本 Idea 当前标准文件；不能排除这些文件来掩盖变更。
-用户体验材料若有新增/修改必须纳入固定的 `acceptance/` 范围，不能只展示
-范围外材料后声称用户已接受完整版本；尚无该目录可用空材料树。
-
-### 3.3 统一版本树
-
-仅记录裸本阶段 blob，无法检测“正文没变但前置已变”。因此每关使用相同结构的
-**Git tree revision**：
-
-```text
-checkpoint revision (Git tree)
-  material/   本关材料的 Git tree，保留范围内路径、mode 和 blob
-  upstream/   直接前置 checkpoint 的 revision tree；根 requirements 无此项
-```
-
-- 每条 submit.revision 指向上面的完整 tree；材料中的具体文件仍是 Git blob。
-- submit.upstream 为直接前置的完整 tree ID；requirements 为 `null`。
-- 非根版本树的 upstream entry 必须等于 submit.upstream，不能另外绑定一套祖先。
-- 不额外计算自定义 SHA-256，也不把事件、时间或 submit 次数塞进版本树。
-- 使用 Git 的对象格式、tree 排序及对象哈希，不用任意 JSON 序列化仿造 Git ID。
-- 相同材料、mode 和直接前置对象产生相同 revision。
-  祖先材料变化沿树引用传播，即使本关文件没变也会产生新的 revision。
-- commit 仅变化于排除的事件/证据时，相关材料树不变，不要求所有关口重签。
-  当前范围内的任何文件变化仍使对应 revision 退化。
-- 版本树和全部引用对象必须可从已同步的交付材料复原或取得；
-  本地存在但其他 checkout 无法取得的 dangling 对象不能算已同步。
-  后续实现须解决确定性的对象构造与跨 checkout 获取，不以 `git push` 自动
-  携带不可达 tree 为假设。本轮不执行或接入对象写入。
-
-用户验收同样使用版本树：它的 upstream 是 deployment 的完整 revision，
-不再使用部署报告 SHA-256 或 tests revision 作为替代。
-
-## 4. 事件通用定义
-
-目标模型有七种 `type`：
-`created`、`submit`、`accept`、`setAlias`、`setLanguage`、`abandon`、`resume`。
-不再新增目标 `signOff` 或 `verify` 分支；它们仅在当前/历史协议中保留原语义。
-
-每条事件的通用字段：
-
-| 字段   | 必需 | 定义                                             |
-| ------ | ---- | ------------------------------------------------ |
-| `at`   | 是   | 规范 UTC ISO 时间，如 `2026-11-23T05:00:00.000Z` |
-| `type` | 是   | 七种目标事件之一                                 |
-
-没有事件 `id`、`version` 或 `$schema`。事件文件位于当前 Idea 的 `events.jsonl`：
-
-- UTF-8、LF、一行一个完整 JSON，末尾换行；按行顺序回放，不按 at 重排。
-- 新行递归按 ASCII 键序规范序列化；不改写、删除或重排历史字节。
-- at 不是唯一键；重复提交按内容与依赖归并，不需要事件 ID。
-- 日志上限仍为 1 MiB/4096 条，Idea 总容量仍为 16 MiB。
-- Schema 拒绝未知字段；未知结构、不可用对象或并发变化明确报告。
-
-以下示例展开以便阅读，`<...>` 是真实观察值的占位符，不是可直接写入的日志。
-所有 revision/upstream 必须替换为完整 Git tree ID。
-
-## 5. `created`：创建身份和结构契约
+仅支持 created、submit、accept、setAlias、setLanguage、abandon、resume。
+没有事件 id/version/$schema，不新增 signOff/verify/rollback/completed 事件。
+以下 JSON 展开只便于阅读，实际日志使用规范单行：
 
 ```json
 {
   "at": "2026-11-23T05:00:00.000Z",
   "type": "created",
   "idea": "202611230500abcd",
-  "eventSchemaCid": "<fixed-events-schema-cid>",
+  "eventSchemaCid": "<trusted-schema-cid>",
   "language": "zh-CN"
 }
 ```
 
-`idea`、`eventSchemaCid` 必填，language 可选且为规范 BCP 47 标签。
-created 是第一条且唯一，idea/at/eventSchemaCid 分别匹配 bootstrap 的
-id/createdAt/eventSchemaCid。创建不是接受任何 checkpoint。
-固定 Schema CID 约束整份事件日志，Checker 的执行 CID 在报告中另记。
-历史 bootstrap.checkCid 不能直接重命名成 eventSchemaCid。
-
-## 6. `submit`：Agent 提交准确验收内容
+created 第一条且唯一，idea/at/eventSchemaCid 是不可变身份，language 可选。
+at 为规范 UTC ISO 时间，与 ID 的 UTC 分钟匹配；创建不接受任何关口。
 
 ```json
 {
   "at": "2026-11-23T05:10:00.000Z",
   "type": "submit",
   "object": "requirements",
-  "revision": "<requirements-tree-id>",
+  "revision": "<actual-requirements-folder-tree>",
   "upstream": null
 }
 ```
 
 ```json
 {
-  "at": "2026-11-23T05:20:00.000Z",
-  "type": "submit",
-  "object": "implementation",
-  "revision": "<implementation-tree-id>",
-  "upstream": "<tests-tree-id>"
-}
-```
-
-业务字段仅有必需的 object、revision、upstream。非根提交要求直接前置已被有效
-accept 且同步。验收内容、revision 和前置版本准确之后才提交。
-submit 不是接受，也不表示测试已通过；delegated 关口也必须先 submit。
-
-相同 object/revision/upstream 的重复 submit 幂等归并，不清除已有有效接受。
-状态展示取最后追加的时间，但当前候选仍取最后提交的版本，不能让旧版本覆盖
-后来不同版本。归并不删除历史，也不跳过实际复测或新的部署轮次。
-
-## 7. `accept`：接受已提交的准确内容
-
-### 7.1 Consensus：用户明确同意
-
-```json
-{
   "at": "2026-11-23T05:15:00.000Z",
   "type": "accept",
   "object": "requirements",
-  "revision": "<requirements-tree-id>",
+  "revision": "<actual-requirements-folder-tree>",
+  "upstream": null,
   "authority": "user"
 }
 ```
 
-Agent 展示准确材料和版本，取得真实用户 approval/acceptance 后才记录。
-评论、沉默、Agent 演示或自验不是用户接受。未同意就等待或修改重新 submit。
+submit 必需字段仅 at/type/object/revision/upstream；
+accept 同样完整 tuple，另加 authority=user|delegate。
+**accept 必须匹配 submit 的 object/revision/upstream，不仅匹配本地 revision。**
+非根记录要求历史中直接前置已有效接受；当前推进还要求前置版本、政策与同步有效。
+孤立、前向、迟到的不同 tuple 接受失败。
 
-### 7.2 Delegated：Agent 完成验收后接受
+相同 tuple 重复 submit 幂等，不清除匹配的 accept；不删除历史行。
+不同来源的接受不能归并成虚构用户决定。最后不同候选不能被旧接受替代。
+行顺序是事实顺序，不按 at 排序，at 不是唯一键。
 
-```json
-{
-  "at": "2026-11-23T05:25:00.000Z",
-  "type": "accept",
-  "object": "implementation",
-  "revision": "<implementation-tree-id>",
-  "authority": "delegate"
-}
-```
+setAlias 的 alias 是小写字母开头、总长不超过 64 的字母/数字/连字符或 null；
+setLanguage 的 language 是规范 BCP 47 标签或 null。以最后设置为准。
+null 清除覆盖，内容语言回退 Idea → project → user → en-US。
+abandon 必需非空 reason，详细分析放材料；resume 无其他业务字段。
+放弃后须先显式 resume，不能重复放弃或无放弃恢复。
 
-仅在该关有效模式为 delegated、Agent 按标准检查且认为无问题时记录。
-实现须实际运行全部所需自动化测试并通过，不能仅“可重现”就接受。
-失败、错误、阻塞或未执行时不写 accept，不拿旧接受掩盖本次失败。
-delegated 也允许用户亲自接受，记录 authority=user。
+## 5. Agent 的真实验收责任，不是机器谓词
 
-accept 的业务字段是 object、revision、authority，不存 submit ID、upstream
-闭包、结果数组或报告正文。必须已有同对象、同版本 submit，且当前材料与直接前置
-均准确。孤立、前向、迟到的不同版本接受无效。
-相同对象/版本/来源的接受幂等；来源不同不能合并成虚构的用户决定。
-accept 和 submit 的版本一致不等于已同步，所有关口都须检查 primary。
+### 实现（默认 delegated）
 
-## 8. 实现、部署与用户验收统一推进
+完成交付及自动化测试 → 在 implementation 支持文档记录**增/删/改了哪些
+TEST CASES、提交到哪个 commit** → 测量 implementation 文件夹 →
+submit(upstream=test-spec 文件夹 tree) → Agent 验证**包含该 commit 的本地
+测试或 CI 通过** → accept(authority=delegate) → 同步并重新观察。
 
-### 8.1 实现（默认 delegated）
+细节留在 `implementation/Submission.md` 等支持材料，**不写进 event body**。
+不发明 tracked-declaration Schema、scope paths、测试进程或 CI 机器检查。
+Check 不校验上述声明的真实性、覆盖完整性或 commit/path 绑定。
+失败、阻塞、未执行时 Agent 不能声称验收完成；consensus 时由用户明确接受。
 
-完成实现与自动化测试材料 → measure 当前 Git tree → submit(implementation,
-upstream=tests) → 真实运行全部测试 → accept(implementation, authority=delegate)
-→ 同步 → 重新 measure。
+### 部署（默认 consensus）
 
-保存测试代码、锁文件与运行入口，不强制复制测试输出或另存实现报告。
-真实受测 commit 用于定位运行快照，接受绑定验收范围的 tree。
-Check 校验对象和接受事实，不自动执行项目代码，也不能从事件证明测试真实发生。
+实现接受并同步 → 按已有授权部署 → Agent **自验实际部署结果**并记录所需材料 →
+submit(deployment, upstream=implementation 文件夹 tree) →
+向用户提供准确交付和操作入口 → **用户实际操作、明确接受** → accept(deployment,
+authority=user) → 最终同步。
 
-### 8.2 部署（默认 consensus）
+用户体验验收就是 deployment 的 accept，**没有 user-acceptance 独立关口**。
+报告格式、用例列表、轮次、结果和真实性不是 Check 谓词；
+新模型不强制固定 report.jsonl、start/case Schema 或“全部 pass”机器判定。
+报告与附件可存在 deployment 文件夹，任一文件变化自然改变部署 tree。
+项目显式委托 deployment 时机器政策可认可 delegate，但默认提示和流程仍要求
+真实用户 hands-on 明确接受，Agent 自验不得冒充用户决定。
 
-实现通过且同步 → 按已有授权部署 → Agent 实际操作、自验并记录材料 →
-submit(deployment, upstream=implementation) → 展示报告及准确交付 →
-用户明确接受 → accept(deployment, authority=user) → 同步。
+## 6. 顺序 measure 与自然退化
 
-固定 `evidence/deployment/report.jsonl` 仍是 append-only 手工验收材料，
-不是一个独立事件通道。report start 的 implementation 在目标设计中
-改为当前 implementation checkpoint 的 Git tree revision，而非受测 commit：
+依次检查：前置有效 → 最新 submit 匹配当前文件夹 revision/直接 upstream →
+完整 tuple 的 accept 被当前政策认可 → 材料及有效事件同步到 primary。
+只报告首个 owning checkpoint 的 submit、accept 或 synchronization 小阶段。
 
-```jsonl
-{"version":1,"type":"start","implementation":"<implementation-tree-id>"}
-{"type":"case","case":"D-01","steps":"实际操作交付入口。","expected":"进入主页。","actual":"进入主页且功能符合预期。","result":"pass"}
-```
+| 观察                               | 动作                                            |
+| ---------------------------------- | ----------------------------------------------- |
+| 标准化失败                         | 修复前提后重新观察                              |
+| 无提交、文件夹或前置变化、祖先无效 | 从首个 owning 关口重新 submit                   |
+| 有当前提交、无认可接受             | consensus 请求用户；delegated 实际验收后 accept |
+| 当前接受未同步                     | 同步准确材料和事件，重新观察                    |
+| 七关有效且同步                     | completed                                       |
 
-start 可带非空 context；case 的 steps/expected/actual 必须非空，
-result 为 pass/fail/error/blocked/not-run。所有旧行保留，新轮先追加 start，
-本轮按 case 取最后尝试，恰好覆盖全部部署用例且全部 pass 才能接受。
-必要附件也属于部署材料范围。仅命令退出成功不代表部署验收通过。
+需求变化时 research-scope 本地 tree 可以不变，但 upstream 变了；
+先重新接受需求，再重新提交调研；即使下一关直接前置本地 tree 相同，
+其历史前置上下文已无效，不能沿旧接受跳过。
+相同内容/依赖/上下文的重复提交不重置接受，不因事件提交次数触发回滚。
+政策收紧仅退化至 accept，不要求伪造内容变化。
 
-追加报告改变 deployment 的 material blob/tree，自然使旧 submit/accept 失效，
-不用 verify 或额外报告哈希事件。新轮即使实现内容相同也重新覆盖全部用例。
-报告仍限制 1 MiB/4096 行，每轮最多 512 个不同用例。
-历史报告 start 的 commit 绑定不能静默改写为 tree；
-此含义变更须在后续协议接入时明确兼容/迁移，不按相同长度猜对象类型。
+## 7. created-first 信任、规范化及安全
 
-项目若授权 deployment 为 delegated，同样先 submit，Agent 完成验收后可
-accept(delegate)；不会取消后续用户体验验收关口。
+先用**固定、最小且有界** reader 读取第一条 created 的 idea、at、
+eventSchemaCid、可选 language，再按其声明的**已知可信不可变 Schema**
+校验**整个日志，包括 created 自身**。未知/不可用 Schema 明确失败，
+不联网获取可变远程 $ref，不 fallback 最新 Schema，不混同执行 CID。
 
-### 8.3 用户体验验收（默认 consensus）
+自包含 Draft 2020-12 Schema 使用
+[RFC 8785/JCS](https://www.rfc-editor.org/rfc/rfc8785)：
+ECMAScript 数值/字符串序列化、递归 UTF-16 键序、数组保序，
+拒绝非有限数值和孤立 surrogate，UTF-8 无 BOM/末尾换行 → SHA-256 → CIDv1(raw
+0x55, sha2-256 0x12) → 小写无填充 base32。
+实现对照 RFC 的规范及测试向量；不是普通 stringify 冒充 JCS。
+date-time 断言及规范时间、语言、身份、历史另按受控规则校验。
 
-部署已接受且同步 → submit(user-acceptance, upstream=deployment) →
-用户实际操作并反馈 → 明确接受 → accept(user) → 最终同步。
+精确 Schema 构建为 `packages/silvermoon/dist/event-schema.json`，
+其 CID 在同目录 `event-schema.cid`；Idea/提交 CAR 离线包含
+`resources/schemas/events.json` 的精确规范字节。
+运行时可信 Schema 与历史 Schema 各自独立，不以旧 checkCid 替代 eventSchemaCid。
+Check 的真实执行 CID 在报告中单独记录。
 
-```json
-{
-  "at": "2026-11-23T06:00:00.000Z",
-  "type": "submit",
-  "object": "user-acceptance",
-  "revision": "<user-acceptance-tree-id>",
-  "upstream": "<deployment-tree-id>"
-}
-```
+events.jsonl 为规范 UTF-8/JCS、LF、一行一个完整 JSON、最终换行；
+拒绝 BOM、重复键、未知字段、空行、半行或无效编码。
+独立上限 1 MiB/4096 行；候选整体沿用 16 MiB/2048 文件上限。
+保留 primary 的原始字节前缀与 created 身份；
+取消、并发变化及意外 I/O 不能当作通过。不得截断历史绕过容量。
 
-```json
-{
-  "at": "2026-11-23T06:10:00.000Z",
-  "type": "accept",
-  "object": "user-acceptance",
-  "revision": "<user-acceptance-tree-id>",
-  "authority": "user"
-}
-```
+## 8. 历史与迁移边界
 
-部署共识审阅交付和自验材料，最终验收确认实际使用体验；默认两者都需用户同意，
-但不是一条接受事件跨两关通用。反馈放相关材料，不内嵌验收事件。
-项目可明确配置模式，默认不得以 Agent 自验代替用户。
+已有 idea.json + checkCid/id/version、旧 signOff/verify 或批次报告的 Ideas，
+保留原格式、原语义和原 CID，仍可读、可执行原数据/快照检查。
+旧机器证据规则仅留在原契约，**不应用于新平级文件夹协议**。
+导航必须显式迁移；不自动转换，不重命名 checkCid，不合成缺失 submit/accept，
+不新增旧格式事件或用旧协议推进新关口。本轮不实施迁移。
+旧 `.silvermoon/ideas`、历史 CAR 和验收记录继续保持历史身份。
 
-## 9. 每次 measure 与自然退化
-
-按标准化前提、推进关口顺序，逐个计算当前 revision 并检查：
-
-1. 直接前置是否已接受、同步、版本仍有效？
-2. 最后候选 submit 的 revision/upstream 是否等于当前对象及直接前置对象？
-3. 是否有匹配该对象版本、来源被当前模式认可的 accept？
-4. 当前验收条件是否仍满足，材料及有效事件是否已同步 primary？
-
-首个不满足关口是 Agent 当前工作位置：
-
-| 观察                             | 当前动作                                        |
-| -------------------------------- | ----------------------------------------------- |
-| 标准化失败                       | 修复对应前提，再 measure                        |
-| 没有 submit，或版本/前置不匹配   | 修改或准备准确材料，重新 submit                 |
-| 有有效 submit，没有可认可 accept | consensus 等待用户；delegated 完成验收再 accept |
-| 已接受但未同步                   | 同步准确材料和事件，再 measure                  |
-| 全部关口有效并同步               | completed                                       |
-
-**例：需求改变，技术方案正文未改。** requirements material 变化，
-requirements revision 变化；research、technical 等的 upstream tree 递归变化。
-旧接受留在日志里，但不匹配当前版本，先回 requirements 重新提交和接受，
-再逐关推进，不显式写 rollback/reset。
-
-**例：只追加 implementation 的 accept。** events 不在实现材料范围，
-implementation revision 不变，不因记录接受而触发重新实现验收。
-
-**例：delegation 收紧。**
-revision 未变但旧 authority=delegate 已不满足 consensus，
-该关退化到等待用户接受，不要求伪造文件变更或删除旧 accept。
-
-回到完全相同的材料和依赖版本，可复用该版本已有且来源仍有效的内容接受；
-仍需 measure 当前实际验收和同步条件，不能据此跳过已知复测失败或新的部署轮次。
-无显式 rollback、completed 或 synchronized 事件。
-
-## 10. 元数据与终止事件
-
-### setAlias
-
-```json
-{ "at": "2026-11-23T05:01:00.000Z", "type": "setAlias", "alias": "login-flow" }
-```
-
-alias 必填，小写字母开头、总长不超过 64，后续只允许小写字母、数字和连字符；
-null 表示清除，以最后设置为准，不使用空字符串。
-
-### setLanguage
-
-```json
-{ "at": "2026-11-23T05:02:00.000Z", "type": "setLanguage", "language": "zh-CN" }
-```
-
-language 必填，为规范 BCP 47 标签或 null。null 清除 Idea 覆盖，
-恢复项目 → 用户 → en-US 的回退；修改配置不自动翻译或接受文件。
-
-### abandon / resume
-
-```json
-{
-  "at": "2026-11-23T07:00:00.000Z",
-  "type": "abandon",
-  "reason": "目标需求取消，停止推进。"
-}
-```
-
-```json
-{ "at": "2026-11-23T08:00:00.000Z", "type": "resume" }
-```
-
-abandon.reason 必填、非空、简短；详细原因写材料。resume 无其他字段。
-两者需明确决定，放弃后只能先 resume 再继续其他事实，不能重复放弃或无放弃恢复。
-保留事件和材料；恢复后从重新 measure 得到的状态继续，不强行完成或重置全部关口。
-
-## 11. Events Schema 与执行身份
-
-保留前轮已讨论的 eventSchemaCid 边界，但 Schema 的目标分支改为本文七类事件。
-Schema 只定义字段形态；checkpoint 顺序、Git 对象类型/范围、delegation
-权限、真实用户决定、状态退化和同步规则由 Check 执行，不由 Schema 假装证明。
-
-固定的、自包含 Draft 2020-12 Schema 使用 RFC 8785/JCS → UTF-8 → SHA-256 →
-CIDv1(raw 0x55, sha2-256 0x12)，小写无填充 base32。
-块存 canonical bytes，无 BOM 或末尾换行。JCS 的字符串、数值和 UTF-16 键排序
-约束不能用普通 JSON.stringify 或任意键排序替代。
-内部 $ref 仅指向 $defs，不隐式联网取远程依赖；校验环境明确支持 date-time 断言。
-Schema CID 不放进自己的定义形成循环，bootstrap/created 在定义之外绑定一次。
-Checker 的实际 CID 单独记录；固定 Schema 不等于固定完整生命周期业务规则。
-
-### 单行事件 Schema（目标设计，未接入运行时）
-
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:silvermoon:events",
-  "type": "object",
-  "properties": {
-    "at": { "$ref": "#/$defs/timestamp" }
-  },
-  "required": ["at", "type"],
-  "oneOf": [
-    {
-      "properties": {
-        "type": { "const": "created" },
-        "idea": { "type": "string", "pattern": "^[0-9]{12}[a-f0-9]{4}$" },
-        "eventSchemaCid": { "type": "string", "pattern": "^b[a-z2-7]+$" },
-        "language": { "$ref": "#/$defs/nonempty" }
-      },
-      "required": ["idea", "eventSchemaCid"]
-    },
-    {
-      "properties": {
-        "type": { "const": "submit" },
-        "object": { "$ref": "#/$defs/object" },
-        "revision": { "$ref": "#/$defs/gitObject" },
-        "upstream": {
-          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/gitObject" }]
-        }
-      },
-      "required": ["object", "revision", "upstream"],
-      "if": {
-        "properties": { "object": { "const": "requirements" } },
-        "required": ["object"]
-      },
-      "then": { "properties": { "upstream": { "type": "null" } } },
-      "else": { "properties": { "upstream": { "$ref": "#/$defs/gitObject" } } }
-    },
-    {
-      "properties": {
-        "type": { "const": "accept" },
-        "object": { "$ref": "#/$defs/object" },
-        "revision": { "$ref": "#/$defs/gitObject" },
-        "authority": { "enum": ["user", "delegate"] }
-      },
-      "required": ["object", "revision", "authority"]
-    },
-    {
-      "properties": {
-        "type": { "const": "setAlias" },
-        "alias": {
-          "oneOf": [
-            { "type": "null" },
-            {
-              "type": "string",
-              "maxLength": 64,
-              "pattern": "^[a-z][a-z0-9-]*$"
-            }
-          ]
-        }
-      },
-      "required": ["alias"]
-    },
-    {
-      "properties": {
-        "type": { "const": "setLanguage" },
-        "language": {
-          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/nonempty" }]
-        }
-      },
-      "required": ["language"]
-    },
-    {
-      "properties": {
-        "type": { "const": "abandon" },
-        "reason": { "$ref": "#/$defs/nonempty" }
-      },
-      "required": ["reason"]
-    },
-    { "properties": { "type": { "const": "resume" } } }
-  ],
-  "unevaluatedProperties": false,
-  "$defs": {
-    "nonempty": { "type": "string", "minLength": 1, "pattern": "\\S" },
-    "timestamp": {
-      "type": "string",
-      "format": "date-time",
-      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
-    },
-    "gitObject": {
-      "type": "string",
-      "pattern": "^[a-f0-9]{40}(?:[a-f0-9]{24})?$"
-    },
-    "object": {
-      "enum": [
-        "requirements",
-        "research",
-        "technical",
-        "cases",
-        "tests",
-        "implementation",
-        "deployment",
-        "user-acceptance"
-      ]
-    }
-  }
-}
-```
-
-Schema 正则不是对象存在性、完整 CID 或规范语言验证。
-不删除未知字段以“修复”事件；读取方须额外验证 bootstrap、真实 Git 对象、
-原始字节前缀、容量和具体业务条件。
-
-## 12. 历史与后续实现
-
-- 现有 signOff 的 submit-ID 语义、verify 的 commit/报告摘要语义保持历史原样。
-- 不把旧 signOff 机械改名 accept，也不把旧 verify 自动当成 delegated accept。
-- 当前代码的固定 Check 绑定不自动换成新 Schema 绑定；未知协议明确阻断。
-- deployment 报告及 implementation 的目标对象绑定有语义变化，后续须明确
-  兼容、对象获取和必要迁移方案后才能构建新 CAR。
-- 本文定义默认 delegation，不证明项目当前已采用该配置或任何用户已接受内容。
-- 尚未持久化的实际复测失败不能被仅靠旧事件的 checker 独立发现；
-  Agent 必须停止推进、修复材料并重新提交验收，不用旧接受覆盖已知失败。
-
-整个闭环是：**标准化 → measure → submit → 按模式验收并 accept → 同步 →
-重新 measure**。版本退化发生在观察中，不发生在删历史或手写状态中。
+提交合法性检查和 Idea 推进是独立 Task；前者允许未完成 Idea，
+检查相应 staged/worktree/commit 候选和 append-only 历史，不要求业务完成。
+先 check-changes --worktree，再 --staged；Git 写入/发布/部署须有各自授权。

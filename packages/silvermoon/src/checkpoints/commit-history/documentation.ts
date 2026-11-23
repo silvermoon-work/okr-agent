@@ -9,12 +9,12 @@ export const documentation = {
     {
       code: "commit-history-deployment-report-append-only",
       description:
-        "已有 evidence/deployment/report.jsonl 必须保留基线的原始字节准确前缀，只能追加完整行；不得删除、覆盖、截断或重排，整体 Idea 的明确授权删除例外除外。",
+        "仅历史 idea.json 契约的已有 evidence/deployment/report.jsonl 保留原始字节前缀，整体授权删除除外。新平级文件夹协议不要求固定报告、报告 append-only 或机器结果真实性。",
     },
     {
       code: "commit-history-idea-identity-immutable",
       description:
-        "候选快照必须保留基线中所有已有 Idea 的 version、id、checkCid 和 createdAt 字段值，不得改写其 bootstrap 身份；只有 allowDelete 中显式声明的既有 Idea 可以整体删除，部分删除不适用；JSON 排版或字段顺序变化不构成身份变化。",
+        "新平级协议保留 created 的 idea、at、eventSchemaCid 身份及原始事件字节；历史契约保留原 bootstrap 的 version/id/checkCid/createdAt，不能静默替换 Schema 或执行 CID。只有 allowDelete 中显式授权的既有 Idea 可整体删除，部分删除不适用。",
     },
     {
       code: "commit-history-event-history-append-only",

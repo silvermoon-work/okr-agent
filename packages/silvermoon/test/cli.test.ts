@@ -6,7 +6,9 @@ import * as repository from "../src/repository.js";
 import * as host from "../src/host.js";
 import * as writer from "../src/write.js";
 import { idea, reduce, SilvermoonError } from "../src/domain.js";
-import { add, cid, event, files, head, id } from "./fixtures.js";
+import { add, cid, event, files, head, id, legacyIdea } from "./fixtures.js";
+import { eventSchemaCid, isFlatIdea, reduceFlat } from "../src/flat.js";
+import { flatProject, flatAdd, flatFiles } from "./flat-fixtures.js";
 import { bootstrapBytes, localSnapshot, project } from "./snapshots.js";
 
 vi.mock("../src/device.js", () => ({
@@ -23,6 +25,7 @@ vi.mock("../src/repository.js", async (importOriginal) => ({
   ...(await importOriginal<typeof repository>()),
   discoverRoot: vi.fn(),
   readProject: vi.fn(),
+  readIdeaProject: vi.fn(),
   readRegular: vi.fn(),
   protectedPath: vi.fn(),
   git: vi.fn(),
@@ -53,13 +56,23 @@ beforeEach(() => {
   vi.mocked(repository.readProject).mockImplementation(() =>
     Promise.resolve(current),
   );
+  vi.mocked(repository.readIdeaProject).mockImplementation(() =>
+    Promise.resolve(current),
+  );
   vi.mocked(repository.readRegular).mockResolvedValue(bootstrapBytes(current));
   vi.mocked(repository.protectedPath).mockResolvedValue(undefined);
   vi.mocked(repository.git).mockResolvedValue(head);
   vi.mocked(repository.localContext).mockResolvedValue(localSnapshot(current));
   vi.mocked(repository.localIdeaState).mockImplementation(
     (_project, selected) =>
-      Promise.resolve(reduce(selected, { head, primary: selected })),
+      Promise.resolve(
+        isFlatIdea(selected)
+          ? reduceFlat(selected, { primary: selected })
+          : reduce(legacyIdea(selected), {
+              head,
+              primary: legacyIdea(selected),
+            }),
+      ),
   );
   vi.mocked(host.observe).mockImplementation(() => Promise.resolve(report));
   vi.mocked(host.bundledArtifact).mockResolvedValue({
@@ -70,6 +83,7 @@ beforeEach(() => {
   vi.mocked(writer.createIdea).mockResolvedValue({
     id,
     checkCid: cid,
+    eventSchemaCid,
     path: root,
   });
 });
@@ -94,6 +108,17 @@ async function cli(args: string[], signal?: AbortSignal) {
 }
 
 describe("CLI parsing and dispatch with controlled host boundaries", () => {
+  it("keeps historical Ideas readable in inventory but requires migration for navigation", async () => {
+    expect((await cli(["list-ideas", "--all", "--json"])).json()).toMatchObject(
+      {
+        ideas: [{ id, checkCid: cid }],
+      },
+    );
+    expect((await cli(["check-idea", id])).stderr).toContain(
+      "migration-required",
+    );
+    expect(host.observe).not.toHaveBeenCalled();
+  });
   it("renders pass only and failure rules with deduplicated guidance, not internal Task parameters", () => {
     expect(renderReport(report)).toBe("pass\n");
     const failure: host.Report = {
@@ -212,18 +237,23 @@ describe("CLI parsing and dispatch with controlled host boundaries", () => {
     expect(output.exit).toBe(1);
     expect(output.stderr).toContain("target-context");
   });
-  it("checks exact ID/bootstrap CID or alias and emits identical human/agent business facts", async () => {
+  it("checks exact flat ID/Schema or alias with separate execution CID and identical human/agent facts", async () => {
+    current = flatProject(root);
     const human = await cli(["check-idea", id]);
     const agent = await cli(["check-idea", id, "--audience", "agent"]);
     expect(human.stdout).toBe(agent.stdout);
     expect(host.observe).toHaveBeenCalledWith(
       { userHome: home, repoRoot: root, idea: id },
-      { cid },
+      {},
     );
     expect(repository.readProject).not.toHaveBeenCalled();
-    current = project(
+    current = flatProject(
       root,
-      add(files(), event({ type: "setAlias", alias: "shortcut" })),
+      flatAdd(flatFiles(), {
+        at: "2026-11-17T16:09:22.408Z",
+        type: "setAlias",
+        alias: "shortcut",
+      }),
     );
     expect((await cli(["check-idea", "shortcut", "--json"])).json()).toEqual(
       report,
@@ -267,6 +297,7 @@ describe("CLI parsing and dispatch with controlled host boundaries", () => {
     },
   );
   it("creates only after project prerequisites and reports effective/scaffold language", async () => {
+    current = flatProject(root);
     const signal = new AbortController().signal;
     const output = await cli(
       ["create-idea", "--language", "fr-FR", "--json"],
@@ -306,6 +337,7 @@ describe("CLI parsing and dispatch with controlled host boundaries", () => {
     expect((await cli(["get-reference", cid])).stderr).toContain("execution");
   });
   it("keeps host faults, immutable Check identity and cancellation distinct", async () => {
+    current = flatProject(root);
     vi.mocked(host.observe).mockRejectedValueOnce(
       new SilvermoonError("untrusted-check", "pinned CID unavailable"),
     );
@@ -396,14 +428,14 @@ describe("CLI parsing and dispatch with controlled host boundaries", () => {
   });
   it("hides abandoned/completed by default and preserves unknown primary diagnostics", async () => {
     vi.mocked(repository.localIdeaState).mockResolvedValueOnce({
-      ...reduce(current.ideas.get(id)!, { head }),
+      ...reduce(legacyIdea(current.ideas.get(id)!), { head }),
       level: "completed",
     });
     expect((await cli(["list-ideas", "--json"])).json()).toMatchObject({
       ideas: [],
     });
     vi.mocked(repository.localIdeaState).mockResolvedValueOnce({
-      ...reduce(current.ideas.get(id)!, { head }),
+      ...reduce(legacyIdea(current.ideas.get(id)!), { head }),
       abandoned: true,
       level: "abandoned",
     });
@@ -418,7 +450,7 @@ describe("CLI parsing and dispatch with controlled host boundaries", () => {
       },
     });
     vi.mocked(repository.localIdeaState).mockResolvedValue({
-      ...reduce(current.ideas.get(id)!, { head }),
+      ...reduce(legacyIdea(current.ideas.get(id)!), { head }),
       level: "unknown",
     });
     expect(

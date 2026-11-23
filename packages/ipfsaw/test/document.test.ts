@@ -63,13 +63,12 @@ describe("bounded, JSON-compatible document input", () => {
       "silvermoon-folder",
       "idea-folder",
       "requirements",
-      "research",
-      "technical",
-      "test-index",
-      "test-cases",
+      "research-scope",
+      "technical-spec",
+      "test-scope",
+      "test-spec",
       "implementation",
       "deployment",
-      "user-acceptance",
     ]);
     expect(checkpoints[0]!.rules.map(({ code }) => code)).toEqual([
       "global-runtime-ready",
@@ -98,16 +97,15 @@ describe("bounded, JSON-compatible document input", () => {
         "idea-folder-identity-immutable",
       ]),
     );
-    expect(checkpoints.slice(5, 10).map(({ rules }) => rules[1]!.code)).toEqual(
-      checkpoints.slice(5, 10).map(({ id }) => `${id}-synchronized`),
+    for (const { id, rules } of checkpoints.slice(5))
+      expect(rules.map(({ code }) => code)).toEqual([
+        `${id}-submission-current`,
+        `${id}-acceptance-valid`,
+        `${id}-synchronized`,
+      ]);
+    expect(checkpoints.at(-1)!.instructions).toContain(
+      "It does not judge tests, CI, reports",
     );
-    for (const phase of ["implementation", "deployment"])
-      expect(
-        checkpoints
-          .find(({ id }) => id === phase)!
-          .rules.map(({ code }) => code),
-      ).toEqual([`${phase}-evidence-valid`, `${phase}-synchronized`]);
-    expect(checkpoints.at(-1)!.rules[1]!.description).toContain("执行错误");
   });
   it("loads the separate commit Check Task without lifecycle readiness rules", async () => {
     const source = await readFile(

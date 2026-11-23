@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { executeCheck } from "@silvermoon-work/check-task-sdk";
 import { commitCheckpoints } from "../src/commit-check.js";
 import { bundledArtifact, observe } from "../src/host.js";
-import { git, readProject, selectIdea } from "../src/repository.js";
+import { git } from "../src/repository.js";
 import {
   add,
   event,
@@ -13,6 +13,8 @@ import {
   repository,
   scratch,
   sync,
+  readLegacyProject as readProject,
+  legacySelectIdea as selectIdea,
 } from "./fixtures.js";
 
 async function setup() {

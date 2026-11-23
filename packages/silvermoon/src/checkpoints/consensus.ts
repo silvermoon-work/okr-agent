@@ -13,7 +13,7 @@ import {
 import type { Gate } from "../domain.js";
 import { consensusDocumentation } from "./catalog.js";
 import { failure } from "./shared.js";
-import type { ideaCheckpoint } from "./idea-folder/check.js";
+import type { legacyIdeaCheckpoint as ideaCheckpoint } from "./idea-folder/legacy-check.js";
 
 export function consensusCheckpoint(
   gate: Gate,

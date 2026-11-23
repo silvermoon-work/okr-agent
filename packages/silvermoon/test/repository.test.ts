@@ -18,11 +18,11 @@ import {
   readRegular,
   readRepository,
   regular,
-  selectIdea,
   snapshotDigest,
   snapshotHistory,
   validSubjects,
   verifyIdeaHistory,
+  type Project,
 } from "../src/repository.js";
 import { canonical, idea, SilvermoonError } from "../src/domain.js";
 import {
@@ -37,6 +37,7 @@ import {
   materialize,
   scratch,
   signed,
+  legacySelectIdea as selectIdea,
 } from "./fixtures.js";
 import {
   files as pairedFiles,
@@ -50,6 +51,13 @@ import {
   project,
   tip,
 } from "./snapshots.js";
+import { flatProject, flatFiles } from "./flat-fixtures.js";
+import { isFlatIdea } from "../src/flat.js";
+function repositoryFlat(project: Project) {
+  const current = project.ideas.get(id)!;
+  if (!isFlatIdea(current)) throw new Error("Expected a flat Idea fixture");
+  return current;
+}
 
 const command = vi.hoisted(() =>
   vi.fn<
@@ -93,6 +101,7 @@ async function fixture(source = files()) {
     "for-each-ref": "refs/remotes/origin/main",
     "ls-remote": `${tip}\trefs/heads/main`,
     fetch: "",
+    filemode: "true",
   };
   command.mockImplementation(async (_file, args) => {
     await Promise.resolve();
@@ -104,18 +113,24 @@ async function fixture(source = files()) {
     const name = query[0]!;
     if (name === "rev-parse")
       return {
-        stdout: query.includes("--show-toplevel")
-          ? root
-          : query.includes("--git-path")
-            ? join(root, "custom-hooks")
-            : query.at(-1) === "HEAD"
-              ? head
-              : tip,
+        stdout: query.includes("--show-object-format")
+          ? "sha1"
+          : query.includes("--show-toplevel")
+            ? root
+            : query.includes("--git-path")
+              ? join(root, "custom-hooks")
+              : query.at(-1) === "HEAD"
+                ? head
+                : tip,
         stderr: "",
       };
     if (name === "ls-tree" || name === "ls-files")
       return {
-        stdout: name === "ls-files" ? staged.listing : committed.listing,
+        stdout: query.includes("-d")
+          ? ""
+          : name === "ls-files"
+            ? staged.listing
+            : committed.listing,
         stderr: "",
       };
     if (name === "cat-file") {
@@ -126,6 +141,8 @@ async function fixture(source = files()) {
     }
     if (name === "config" && query.at(-1)?.endsWith(".merge"))
       return { stdout: "refs/heads/main", stderr: "" };
+    if (name === "config" && query.at(-1) === "core.filemode")
+      return { stdout: String(outputs.filemode), stderr: "" };
     const value = outputs[name];
     if (value instanceof Error) throw value;
     if (value === undefined)
@@ -136,6 +153,64 @@ async function fixture(source = files()) {
 }
 
 describe("repository adapters with prepared Git output", () => {
+  it("measures flat committed/index/worktree folder candidates with actual raw tree metadata and modes", async () => {
+    const { root, committed, staged, outputs } = await fixture();
+    await rm(join(root, ".silvermoon", "i", id), { recursive: true });
+    const source = flatFiles();
+    await materialize(root, source);
+    const expected = flatProject(root, source);
+    Object.assign(committed, encodedSnapshot(expected));
+    Object.assign(staged, encodedSnapshot(expected, true));
+    const normal = command.getMockImplementation()!;
+    command.mockImplementation((file, args, options) =>
+      args.includes("ls-tree") && args.includes("-d")
+        ? Promise.resolve({ stdout: committed.trees, stderr: "" })
+        : normal(file, args, options),
+    );
+    const current = repositoryFlat(await readProject(root, "HEAD"));
+    for (const [, , options] of command.mock.calls.filter(([, args]) =>
+      args.includes("cat-file"),
+    ))
+      expect(options.env).toMatchObject({
+        GIT_NO_REPLACE_OBJECTS: "1",
+        GIT_OPTIONAL_LOCKS: "0",
+      });
+    const candidate = repositoryFlat(await readProject(root, "staged"));
+    expect(current.revisions).toEqual(candidate.revisions);
+    expect(repositoryFlat(await readProject(root)).revisions).toEqual(
+      candidate.revisions,
+    );
+    staged.listing = staged.listing.replace(
+      /100644 ([a-f0-9]+) 0\t(\.silvermoon\/i\/[^/]+\/implementation\/Spec\.md)/,
+      "100755 $1 0\t$2",
+    );
+    const executable = repositoryFlat(await readProject(root, "staged"));
+    expect(executable.revisions.implementation).not.toBe(
+      candidate.revisions.implementation,
+    );
+    expect(executable.revisions["test-spec"]).toBe(
+      candidate.revisions["test-spec"],
+    );
+    outputs.filemode = "false";
+    expect(
+      repositoryFlat(await readProject(root)).revisions.implementation,
+    ).toBe(executable.revisions.implementation);
+    await writeFile(
+      join(root, ".silvermoon", "i", id, "requirements", "Spec.md"),
+      "new worktree requirement",
+    );
+    expect(
+      repositoryFlat(await readProject(root)).revisions.requirements,
+    ).not.toBe(candidate.revisions.requirements);
+    expect(
+      repositoryFlat(await readProject(root, "staged")).revisions.requirements,
+    ).toBe(candidate.revisions.requirements);
+    committed.trees = committed.trees.replace(
+      candidate.revisions.requirements,
+      "0".repeat(40),
+    );
+    await expect(readProject(root, "HEAD")).rejects.toThrow(/actual Git tree/);
+  });
   it("bounds and isolates process calls, and resolves hooks without disabling their configuration", async () => {
     const { root } = await fixture();
     const signal = new AbortController().signal;
@@ -263,7 +338,7 @@ describe("repository adapters with prepared Git output", () => {
     await expect(readProject(root, "HEAD")).rejects.toThrow(/2048/);
     command.mockImplementation(normal);
     committed.blobs.set(
-      "1".padStart(40, "0"),
+      committed.blobs.keys().next().value!,
       Buffer.alloc(16 * 1024 * 1024 + 1),
     );
     await expect(readProject(root, "HEAD")).rejects.toThrow(/16 MiB/);

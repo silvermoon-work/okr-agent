@@ -11,7 +11,7 @@ export const documentation = {
     {
       code: "branch-silvermoon-config-valid",
       description:
-        "项目配置必须存在、可按支持的协议解析，并声明有效的 primaryRepository 与 primaryBranch。",
+        "项目配置必须存在、可按支持的协议解析，并声明有效的 primaryRepository 与 primaryBranch。可选 checkpointAcceptance 仅允许七个推进 checkpoint ID，值为 consensus/delegated；未知键/值失败。缺省 test-spec 和 implementation delegated，其余 consensus；不得通过未同步政策或自行提权绕过用户接受。",
     },
     {
       code: "branch-primary-present",

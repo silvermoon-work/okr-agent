@@ -1,34 +1,34 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, open, rename, rm } from "node:fs/promises";
+import { mkdir, open, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { CID } from "multiformats/cid";
 import {
   SilvermoonError,
   canonical,
   digest,
-  idea,
   invariant,
   language,
   newIdeaId,
-  parseEvents,
-  validateAppend,
-  type Bootstrap,
   type Event,
-  type Idea,
 } from "./domain.js";
 import {
-  absent,
-  draftChanges,
+  checkpoints,
+  eventSchemaCid,
+  flatIdea,
+  isFlatIdea,
+  jcs,
+  type FlatEvent,
+} from "./flat.js";
+import {
   primary,
   protectedPath,
   readProject,
   readRegular,
-  git,
   selectIdea,
   snapshotDigest,
-  observedIdeaState,
   localContext,
   localIdeaState,
-  type Project,
+  git,
 } from "./repository.js";
 
 async function transaction<T>(
@@ -86,9 +86,11 @@ export async function createIdea(
 ): Promise<{
   readonly id: string;
   readonly checkCid: string;
+  readonly eventSchemaCid: string;
   readonly path: string;
 }> {
   if (options.language !== undefined) language(options.language);
+  CID.parse(cid);
   return transaction(
     root,
     async () => {
@@ -120,57 +122,37 @@ export async function createIdea(
           throw error;
         }
         try {
-          const bootstrap: Bootstrap = {
-            version: 1,
-            id,
-            checkCid: cid,
-            createdAt: now.toISOString(),
-          };
-          const created: Event = {
-            version: 1,
-            id: randomBytes(16).toString("hex"),
-            at: bootstrap.createdAt,
+          const created: FlatEvent = {
+            at: now.toISOString(),
             type: "created",
             idea: id,
-            checkCid: cid,
+            eventSchemaCid,
             ...(options.language ? { language: options.language } : {}),
           };
           const files = new Map<string, Uint8Array>();
           const scaffold: Record<string, string> = {
-            "idea.json": canonical(bootstrap) + "\n",
-            "events.jsonl": canonical(created) + "\n",
+            "events.jsonl": jcs(created) + "\n",
             "requirements/Spec.md":
-              "# Requirements\n\nDescribe the problem, intended outcome, examples, and boundaries before requesting signoff.\n",
-            "technical/research.md":
-              "# Research questions\n\nRecord the questions and human focus before research-scope signoff.\n",
-            "technical/Spec.md":
-              "# Technical specification\n\nDocument the complete researched decisions and supplementary design before signoff.\n",
-            "tests/Spec.md":
-              "# Test specification\n\nSpecify prerequisites, operations, expected outcomes and evidence for each approved case before signoff.\n",
-            "tests/cases.json":
-              canonical({
-                version: 1,
-                cases: [
-                  {
-                    id: "I-01",
-                    phase: "implementation",
-                  },
-                  {
-                    id: "D-01",
-                    phase: "deployment",
-                  },
-                ],
-              }) + "\n",
+              "# Requirements\n\nDescribe the problem, outcome, boundaries and acceptance criteria.\n",
+            "research-scope/Spec.md":
+              "# Research scope\n\nIdentify questions, risks and facts to investigate.\n",
+            "technical-spec/Spec.md":
+              "# Technical specification\n\nRecord researched decisions and design.\n",
+            "test-scope/Spec.md":
+              "# Test scope\n\nDescribe the cases and outcomes to cover.\n",
+            "test-spec/Spec.md":
+              "# Test specification\n\nDescribe prerequisites, operations and expected outcomes.\n",
+            "implementation/Spec.md":
+              "# Implementation deliverables\n\nRecord delivery and supporting material. Before delegated acceptance, verify passing local tests or CI including the submitted commit.\n",
+            "implementation/Submission.md":
+              "# Submission details\n\nRecord which test cases were added, deleted or modified, and which commit they were submitted to. This material guides Agent review; Check does not validate test execution or commit binding.\n",
+            "deployment/Spec.md":
+              "# Deployment deliverables\n\nSelf-test the actual deployed result, then obtain the user's explicit hands-on acceptance through deployment accept. Check does not judge deployment reports or outcomes.\n",
           };
           for (const [file, content] of Object.entries(scaffold))
             files.set(file, Buffer.from(content));
-          idea(files, id);
-          for (const directory of [
-            "requirements",
-            "technical",
-            "tests",
-            "evidence/deployment",
-          ])
+          flatIdea(files, id);
+          for (const directory of [...checkpoints])
             await mkdir(join(path, directory), { recursive: true });
           for (const [file, content] of Object.entries(scaffold))
             await exclusiveWrite(join(path, file), content);
@@ -186,7 +168,16 @@ export async function createIdea(
             "concurrent-edit",
             "Project changed during creation; owned scaffold was not retained.",
           );
-          return { id, checkCid: cid, path };
+          invariant(
+            (await git(
+              root,
+              ["rev-parse", "--verify", "HEAD"],
+              options.signal,
+            )) === observed.head,
+            "concurrent-edit",
+            "Git HEAD changed during creation; owned scaffold was not retained.",
+          );
+          return { id, checkCid: cid, eventSchemaCid, path };
         } catch (error) {
           await rm(path, { recursive: true, force: true });
           throw error;
@@ -208,129 +199,22 @@ export interface AppendOptions {
   readonly refresh?: boolean;
   readonly localRemote?: string;
 }
-function sameRetry(current: Idea, event: Event, expected: string): boolean {
-  const last = current.events.at(-1);
-  if (!last || canonical(last) !== canonical(event)) return false;
-  const prefix = current.eventSource.slice(0, -canonical(last).length - 1);
-  return digest(prefix) === expected;
-}
 export async function appendEvent(
   root: string,
   selector: string,
-  event: Event,
+  _event: Event,
   options: AppendOptions,
 ): Promise<{ readonly digest: string; readonly idempotent: boolean }> {
-  return transaction(
-    root,
-    async () => {
-      const project = await readProject(root, "worktree", options.signal);
-      const current = selectIdea(project, selector);
-      const observed = await primary(project, {
-        fetch: options.refresh ?? true,
-        ...(options.signal ? { signal: options.signal } : {}),
-        ...(options.localRemote ? { localRemote: options.localRemote } : {}),
-      });
-      invariant(
-        options.expectedPrimary === observed.tip,
-        "primary-conflict",
-        "Expected primary changed; reobserve instead of replaying a stale decision.",
-      );
-      if (digest(current.eventSource) !== options.expectedDigest) {
-        invariant(
-          sameRetry(current, event, options.expectedDigest),
-          "digest-conflict",
-          "Event digest changed; no facts were overwritten.",
-        );
-        return { digest: digest(current.eventSource), idempotent: true };
-      }
-      const state = await observedIdeaState(
-        project,
-        current,
-        {
-          head: observed.head,
-          primary: observed.project,
-        },
-        undefined,
-        options.signal,
-      );
-      const changes = observed.changes.filter(
-        (path) => path !== ".silvermoon/.new.lock",
-      );
-      invariant(
-        draftChanges(changes, current.bootstrap.id, state.level),
-        "repository",
-        "Mixed/unrelated worktree changes block this write.",
-      );
-      if (event.type === "verify")
-        invariant(
-          "batch" in event
-            ? event.batch.subject === observed.head
-            : event.phase !== "implementation" || event.rev === observed.head,
-          "evidence",
-          "A new batch must bind the current exact Git HEAD.",
-        );
-      validateAppend(current, event, state, options.confirmed ?? false);
-      const candidate = current.eventSource + canonical(event) + "\n";
-      parseEvents(candidate, current.bootstrap);
-      const updatedFiles = new Map(current.files);
-      updatedFiles.set("events.jsonl", Buffer.from(candidate));
-      const ideas = new Map(project.ideas);
-      ideas.set(current.bootstrap.id, idea(updatedFiles, current.bootstrap.id));
-      validateAliases({ ...project, ideas });
-      const before = snapshotDigest(project);
-      const path = join(
-        root,
-        ".silvermoon",
-        "i",
-        current.bootstrap.id,
-        "events.jsonl",
-      );
-      await protectedPath(root, path);
-      const temporary = join(
-        root,
-        ".silvermoon",
-        `.event-${randomBytes(8).toString("hex")}`,
-      );
-      try {
-        await exclusiveWrite(temporary, candidate);
-        options.signal?.throwIfAborted();
-        invariant(
-          digest(await readRegular(path, options.signal)) ===
-            options.expectedDigest,
-          "concurrent-edit",
-          "Event file changed during transaction.",
-        );
-        const latest = await readProject(root, "worktree", options.signal);
-        invariant(
-          snapshotDigest(latest) === before,
-          "concurrent-edit",
-          "Candidate changed while appending; the decision was not recorded.",
-        );
-        invariant(
-          (await git(root, ["rev-parse", "HEAD"], options.signal)) ===
-            observed.head,
-          "concurrent-edit",
-          "Git HEAD changed while appending.",
-        );
-        options.signal?.throwIfAborted();
-        await rename(temporary, path);
-      } finally {
-        if (!(await absent(temporary))) await rm(temporary);
-      }
-      return { digest: digest(candidate), idempotent: false };
-    },
-    options.signal,
-  );
-}
-function validateAliases(project: Project): void {
-  const aliases = [...project.ideas.values()].flatMap((idea) => {
-    const event = idea.events.findLast((event) => event.type === "setAlias");
-    return event?.type === "setAlias" && event.alias ? [event.alias] : [];
-  });
+  const project = await readProject(root, "worktree", options.signal);
+  const current = selectIdea(project, selector);
   invariant(
-    new Set(aliases).size === aliases.length,
-    "alias",
-    "Alias is already used by another new Idea.",
+    !isFlatIdea(current),
+    "event-write",
+    "Flat events are appended directly as canonical JSONL; no event mutation command exists.",
+  );
+  throw new SilvermoonError(
+    "migration-required",
+    "Historical Ideas are read-only; explicit migration is required before advancement.",
   );
 }
 export async function replay(
@@ -361,7 +245,9 @@ export async function replay(
   const state = await localIdeaState(project, current, context, preference);
   return {
     idea: current.bootstrap.id,
-    checkCid: current.bootstrap.checkCid,
+    ...(isFlatIdea(current)
+      ? { eventSchemaCid: current.bootstrap.eventSchemaCid }
+      : { checkCid: current.bootstrap.checkCid }),
     digest: digest(current.eventSource),
     cursor: `${current.events.length}:${digest(current.eventSource)}`,
     events: current.events.slice(offset),

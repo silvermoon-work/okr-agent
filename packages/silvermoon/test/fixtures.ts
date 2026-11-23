@@ -14,7 +14,32 @@ import {
   type Files,
   type Gate,
   type Idea,
+  invariant,
 } from "../src/domain.js";
+import { isFlatIdea, type AnyIdea } from "../src/flat.js";
+import { readProject, selectIdea, type Project } from "../src/repository.js";
+export function legacyIdea(current: AnyIdea): Idea {
+  invariant(
+    !isFlatIdea(current),
+    "fixture",
+    "Expected a historical test fixture.",
+  );
+  return current;
+}
+export function legacySelectIdea(current: Project, selector: string): Idea {
+  return legacyIdea(selectIdea(current, selector));
+}
+export async function readLegacyProject(
+  ...args: Parameters<typeof readProject>
+): Promise<Project<Idea>> {
+  const current = await readProject(...args);
+  return {
+    ...current,
+    ideas: new Map(
+      [...current.ideas].map(([id, value]) => [id, legacyIdea(value)]),
+    ),
+  };
+}
 
 export const cid =
   "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3thv36wjgksq4bqppj6bfk3sa";

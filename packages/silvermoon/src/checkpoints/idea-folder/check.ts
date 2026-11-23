@@ -1,14 +1,8 @@
 import { defineCheckpoint } from "@silvermoon-work/check-task-sdk";
-
 import { documentation } from "./documentation.js";
 import { Target } from "../../contract.js";
-import {
-  canonical,
-  digest,
-  invariant,
-  SilvermoonError,
-  type Idea,
-} from "../../domain.js";
+import { canonical, digest, invariant, SilvermoonError } from "../../domain.js";
+import { isFlatIdea, type FlatIdea } from "../../flat.js";
 import { withGitContext } from "../../git-context.js";
 import {
   readIdeaProject,
@@ -20,6 +14,7 @@ import { failure, type CheckExecution } from "../shared.js";
 import type { environmentCheckpoint } from "../global/check.js";
 import type { branchCheckpoint } from "../branch/check.js";
 import type { layoutCheckpoint } from "../silvermoon-folder/check.js";
+
 export function ideaCheckpoint(
   bundleCid: string,
   execution: CheckExecution,
@@ -35,28 +30,28 @@ export function ideaCheckpoint(
     check: async (target, context) => {
       context.outputOf(silvermoonLayout);
       const { observed } = context.outputOf(branch);
-      invariant(
-        target.idea,
-        "internal",
-        "Idea observation requires a selector.",
-      );
-      invariant(
-        target.repoRoot,
-        "internal",
-        "Idea observation requires a repository.",
-      );
-      const root = target.repoRoot;
       let project;
-      let current: Idea;
+      let current: FlatIdea;
       let previous;
       try {
         project = await inGit(target, () =>
-          readIdeaProject(root, target.idea, observed.head, context.signal),
+          readIdeaProject(
+            target.repoRoot,
+            target.idea,
+            observed.head,
+            context.signal,
+          ),
         );
-        current = selectIdea(project, target.idea);
+        const selected = selectIdea(project, target.idea);
+        invariant(
+          isFlatIdea(selected),
+          "migration-required",
+          "Historical Idea remains read-only/checkable; explicit migration is required before navigation.",
+        );
+        current = selected;
         previous = await inGit(target, () =>
           readIdeaProject(
-            root,
+            target.repoRoot,
             current.bootstrap.id,
             observed.tip,
             context.signal,
@@ -64,63 +59,52 @@ export function ideaCheckpoint(
         );
         const before = previous.ideas.get(current.bootstrap.id);
         invariant(
-          before,
+          before && isFlatIdea(before),
           "identity",
-          "The selected Idea must exist in the observed primary snapshot.",
+          "Selected flat Idea must exist with the same data contract in primary.",
         );
         verifyIdeaHistory(current, before);
       } catch (error) {
         context.signal.throwIfAborted();
         if (error instanceof SilvermoonError) {
           if (
-            ["git-context", "concurrent-edit", "internal", "protocol"].includes(
-              error.code,
-            )
+            [
+              "git-context",
+              "concurrent-edit",
+              "internal",
+              "protocol",
+              "migration-required",
+            ].includes(error.code)
           )
             throw error;
           if (error.code === "identity")
             return failure("idea-folder-identity-immutable", error);
           if (error.code === "history")
             return failure("idea-folder-event-history-append-only", error);
-          if (error.code === "report-history")
-            return failure("idea-folder-deployment-report-append-only", error);
           return failure("idea-folder-data-valid", error);
         }
         if (error instanceof SyntaxError || error instanceof TypeError)
           return failure("idea-folder-data-valid", error);
         throw error;
       }
-      invariant(
-        current.bootstrap.checkCid === bundleCid,
-        "check-identity",
-        "The executing Check CID does not match the Idea's immutable bootstrap.",
+      const state = await inGit(target, () =>
+        observedIdeaState(
+          project,
+          current,
+          { head: observed.head, primary: previous },
+          context.outputOf(environment).userLanguage,
+          context.signal,
+        ),
       );
-      let state;
-      try {
-        state = await inGit(target, () =>
-          observedIdeaState(
-            project,
-            current,
-            { head: observed.head, primary: previous, paired: true },
-            context.outputOf(environment).userLanguage,
-            context.signal,
-          ),
-        );
-      } catch (error) {
-        context.signal.throwIfAborted();
-        if (
-          error instanceof SilvermoonError &&
-          ["evidence", "layout", "events", "cases"].includes(error.code)
-        )
-          return failure("idea-folder-data-valid", error);
-        if (error instanceof Error && "code" in error && error.code === 128)
-          return failure("idea-folder-data-valid", error);
-        throw error;
-      }
+      invariant(
+        "acceptanceModes" in state,
+        "internal",
+        "Flat lifecycle state required.",
+      );
       if (state.level === "abandoned")
         return failure(
           "idea-folder-active",
-          "Idea is explicitly abandoned; only an authorized resume event can restore it.",
+          "Idea is explicitly abandoned; authorized resume is required.",
         );
       const brief = canonical({
         idea: current.bootstrap.id,
@@ -128,6 +112,7 @@ export function ideaCheckpoint(
         eventDigest: digest(current.eventSource),
         primary: observed.tip,
         subject: observed.head,
+        executionCheckCid: bundleCid,
       });
       return { pass: true as const, output: { state, brief } };
     },

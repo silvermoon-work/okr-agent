@@ -47,5 +47,6 @@ export function gitEnvironment(): NodeJS.ProcessEnv {
     ...(process.env.WINDIR ? { WINDIR: process.env.WINDIR } : {}),
     GIT_TERMINAL_PROMPT: "0",
     GIT_OPTIONAL_LOCKS: "0",
+    GIT_NO_REPLACE_OBJECTS: "1",
   };
 }

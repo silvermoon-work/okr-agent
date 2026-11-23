@@ -149,6 +149,24 @@
   Check Bundle documentation with `silvermoon get-reference <cid>`. Whole
   deletion requires authorization and `check-changes --allow-delete <idea-id>`;
   the exception does not permit partial deletion or rewriting history.
+- New Ideas use events.jsonl plus seven flat sibling folders: requirements,
+  research-scope, technical-spec, test-scope, test-spec, implementation,
+  deployment. No new idea.json or event id/version. Submit/accept match the same
+  object/revision/upstream tuple using actual owning/direct predecessor folder
+  Git tree IDs, never composite dependency trees. Created-first selects the
+  exact trusted offline immutable event Schema CID; execution CID is separate.
+- Check observes marked state, current tree/upstream, acceptance policy,
+  history/protocol, standardization and synchronization only. Tests, CI, report
+  truth, case completeness, tested code and commit/path declarations are not
+  predicates. Implementation supporting material records changed TEST CASES and
+  submitted commit; the Agent verifies passing tests/CI including that commit
+  before delegated accept. Deployment requires actual self-test then explicit
+  user hands-on deployment accept; no separate user-acceptance checkpoint.
+- Default test-spec/implementation acceptance is delegated, others consensus;
+  strict optional checkpointAcceptance may configure only the seven IDs.
+  Tightening invalidates delegate accepts naturally. Historical data retains
+  original read-only checking semantics; navigation requires explicit migration,
+  never automatic conversion or CID replacement.
 
 ## Publishing
 

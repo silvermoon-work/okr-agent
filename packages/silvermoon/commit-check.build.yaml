@@ -6,4 +6,7 @@ source:
   entry: src/commit-main.ts
   contract: src/commit-contract.ts
 references: references/commit
+include:
+  - from: schemas/events.json
+    to: resources/schemas/
 outDirectory: dist/commit-check

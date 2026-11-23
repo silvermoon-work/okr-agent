@@ -3,7 +3,7 @@ import { Target } from "../../contract.js";
 import { invariant } from "../../domain.js";
 import { documentation } from "./documentation.js";
 import { failure, synchronized, type CheckExecution } from "../shared.js";
-import type { ideaCheckpoint } from "../idea-folder/check.js";
+import type { legacyIdeaCheckpoint as ideaCheckpoint } from "../idea-folder/legacy-check.js";
 import type { branchCheckpoint } from "../branch/check.js";
 import type { deploymentCheckpoint } from "../deployment/check.js";
 

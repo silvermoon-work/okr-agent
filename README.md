@@ -174,25 +174,36 @@ hook，配置须保留原逻辑并尊重 `core.hooksPath`。`check-setup`
 独立执行[设备就绪检查](docs/silvermoon-setup-check.yaml)，不要求 Git 项目。
 `check-idea <idea>` 必须指定 Idea。
 `check-changes --staged` 走提交检查，可用于 commit hook，不要求工作区洁净、
-upstream 就绪或 Idea 完成。新 Idea 仅位于 `.silvermoon/i`，使用五个准确版本的
-配对 submit/signOff、配对 验证及最终用户验收。实现记录准确自动化测试提交，
-部署记录固定 append-only
-JSONL 手工报告；详见[Events 设计](docs/silvermoon-events.md)。
+upstream 就绪或 Idea 完成。新 Idea 仅位于 `.silvermoon/i`，包含
+events.jsonl 和 requirements、research-scope、technical-spec、test-scope、
+test-spec、implementation、deployment 七个平级文件夹，无 idea.json。
+详见[Events 契约](docs/silvermoon-events.md)。
 继续 review 使用[最新 Idea Check 设计 Spec](docs/silvermoon-idea-check-design.yaml)；
 [生成的运行时 Spec](docs/silvermoon-single-checker.yaml)与原设计候选保持各自原语义。
 最新 Events review 将标准化前提与 checkpoint 推进分开：
-推进关口统一 submit → accept，以验收范围的 Git tree/blob 对象和单个直接前置版本
+推进关口统一 submit → accept，以实际 owning 文件夹的 Git TREE
+ID 和单个直接前置文件夹 TREE ID
 measure，版本改变时自然退化，不写 rollback。项目级 checkpointAcceptance
-默认将 test-cases（tests）和 implementation 委托 Agent，其余关口要求用户共识；
+默认将 test-spec 和 implementation 委托 Agent，其余关口要求用户共识；
 accept.authority 区分 user/delegate，模式收紧不把旧自验误当用户接受。
-目标模型取消事件 id/version 及独立 signOff/verify 分支，按 object + revision
-接受内容；相同材料及依赖的提交幂等。文档包含目标统一 JSON Schema，
+推进对象统一为 requirements、research-scope、technical-spec、test-scope、
+test-spec、implementation、deployment；用户实际体验验收归入 deployment 的 accept，
+不再另设 user-acceptance。历史事件与材料保持原语义，不自动迁移。
+新模型取消事件 id/version 及独立 signOff/verify 分支，按 object + revision +
+upstream
+接受内容；相同材料及依赖的提交幂等。构建包含准确可信自包含 JSON
+Schema 的离线资源，
 另以 eventSchemaCid 固定数据契约，按 RFC 8785 → SHA-256 → CIDv1 生成身份；
 Checker 执行身份单独记录，不混同于事件格式。
-当前运行时仍要求 id 和 `version: 1`，并以 submit ID 配对确认；
-created 仍以 checkCid 固定 Check Bundle；目标模型示例仅供设计讨论，
-尚不能写入现有日志。
-旧 v1 历史保持只读语义，不自动满足新标准。
+created-first 先读取最小有界身份，再按 eventSchemaCid 校验整个日志，包括 created；
+未知 Schema 明确失败，不 fallback。不构造 material/upstream 复合树或递归依赖树。
+Check 只判断事件状态、当前版本/直接前置、权限、历史/协议、标准化和同步，
+不判断测试、CI、报告真实性、用例完整性、受测代码或声明 commit/path 绑定。
+实现支持材料记录增删改 TEST CASES 和提交 commit，Agent 接受前验证包含该 commit
+的本地测试或 CI 通过；部署由 Agent 自验实际结果后用户 hands-on 明确接受。
+这些是真实 Agent 责任而非机器谓词；Spec.md 是提示，不是强制模板。
+旧 idea.json/checkCid/id/version 数据保持只读原语义，可读可检查，
+导航要求显式迁移，本轮不迁移、不新增旧事件或以旧协议推进。
 旧版 `.silvermoon/ideas` 已从工作树移除，文档与验收记录仅保留在 Git 历史中，
 不迁移、不补 CID，也不自动满足新标准。
 候选构建和验证不会替换当前全局旧 CLI 或个人 skill；正式发布、安装及

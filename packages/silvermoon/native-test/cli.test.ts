@@ -21,6 +21,7 @@ import {
   sync,
   sign,
   batch,
+  legacyIdea,
 } from "./fixtures.js";
 
 const execute = promisify(execFile);
@@ -380,7 +381,7 @@ describe("CLI retained commands, presentation and explicit errors", () => {
         join(root, ".silvermoon", "i", id, path),
         new TextDecoder()
           .decode(currentIdea.files.get(path))
-          .replaceAll(currentIdea.bootstrap.checkCid, artifact.cid),
+          .replaceAll(legacyIdea(currentIdea).bootstrap.checkCid, artifact.cid),
       );
     await sync(root);
     await repositoryModule.git(root, [

@@ -15,16 +15,13 @@ import {
 import { cid, head, id } from "./fixtures.js";
 import { checkpointIds } from "../src/contract.js";
 import {
-  canonical,
-  digest,
-  gates,
-  idea,
-  reduce,
-  validateAppend,
-} from "../src/domain.js";
-import { add } from "./fixtures.js";
-import { files, pairedEvent, report } from "./paired-fixtures.js";
-import { reportPath } from "../src/lifecycle.js";
+  checkpoints,
+  flatIdea,
+  reduceFlat,
+  eventSchemaBytes,
+  eventSchemaCid,
+} from "../src/flat.js";
+import { flatFiles, flatAdd } from "./flat-fixtures.js";
 
 const engine = vi.hoisted(() => ({
   start: vi.fn(),
@@ -287,13 +284,38 @@ describe("host orchestration with a controlled Engine, never worker execution", 
 });
 
 describe("offline CAR references (no Task execution)", () => {
+  it.each(["idea", "commit"] as const)(
+    "bundles the exact trusted canonical Schema offline in %s CAR",
+    async (kind) => {
+      const artifact = await bundledArtifact(kind);
+      const car = await readTaskBundleCar(
+        new Blob([Uint8Array.from(await readFile(artifact.path))]).stream(),
+      );
+      const store = IpfsStore.fromClient({ block: car.block });
+      try {
+        expect(car.cid).toBe(artifact.cid);
+        const resource = await store.resolveContent(
+          CID.parse(car.cid),
+          "resources/schemas/events.json",
+        );
+        expect(
+          Buffer.from(await readDocument(store, resource.toString())),
+        ).toEqual(Buffer.from(eventSchemaBytes()));
+        expect(artifact.cid).not.toBe(eventSchemaCid);
+      } finally {
+        await store.close();
+        await car.close();
+      }
+      expect(createEngine).not.toHaveBeenCalled();
+    },
+  );
   it("validates every protocol instruction against prepared lifecycle snapshots through completion", async () => {
     const artifact = await bundledArtifact();
     const car = await readTaskBundleCar(
       new Blob([Uint8Array.from(await readFile(artifact.path))]).stream(),
     );
     const store = IpfsStore.fromClient({ block: car.block });
-    let source = files();
+    let source = flatFiles();
     try {
       for (const checkpoint of checkpointIds.slice(5)) {
         const index = checkpointIds.indexOf(checkpoint);
@@ -302,88 +324,27 @@ describe("offline CAR references (no Task execution)", () => {
           `resources/references/checkpoints/${checkpoint}.md`,
         );
         const markdown = await readDocument(store, document.toString());
-        if (checkpoint === "deployment")
-          source.set(reportPath, Buffer.from(report(head)));
-        const current = idea(source, id);
-        const state = reduce(current, { primary: current, head });
-        const replacements: Record<string, string> = {
-          "new-32-hex": String(index + 1).padStart(32, "0"),
-          "new-submit-32-hex": String(index + 1).padStart(32, "0"),
-          "new-signoff-32-hex": String(index + 30).padStart(32, "0"),
-          "current-UTC-ISO-time": new Date().toISOString(),
-          "exact-tested-commit-SHA": head,
-          "sha256-of-raw-report-bytes": digest(source.get(reportPath) ?? ""),
-          "current-user-acceptance-submit-id": String(index + 1).padStart(
-            32,
-            "0",
-          ),
-          ...Object.fromEntries(
-            gates.map((gate) => [
-              `state.revisions.${gate}`,
-              state.revisions[gate],
-            ]),
-          ),
-          ...(state.implementation
-            ? { "state.implementation": state.implementation }
-            : {}),
-          ...(state.deployment ? { "state.deployment": state.deployment } : {}),
+        expect(markdown).toContain("Check observes event state");
+        const object = checkpoints[index - 5]!;
+        const current = flatIdea(source, id);
+        const state = reduceFlat(current, { primary: current });
+        expect(state).toMatchObject({ level: object, step: "submit" });
+        const tuple = {
+          at: new Date().toISOString(),
+          object,
+          revision: current.revisions[object],
+          upstream:
+            index === 5 ? null : current.revisions[checkpoints[index - 6]!],
         };
-        let appended = 0;
-        for (const match of markdown.matchAll(/```json\n([\s\S]*?)\n```/g)) {
-          const json = match[1]!.replace(
-            /<([^<>]+)>/g,
-            (_match, key: string) => {
-              const value = replacements[key];
-              if (value === undefined)
-                throw new Error(`Unknown instruction placeholder: ${key}`);
-              return value;
-            },
-          );
-          const payload: unknown = JSON.parse(json);
-          if (typeof payload !== "object" || payload === null)
-            throw new Error("Expected an instruction JSON object.");
-          if (!("type" in payload)) {
-            const indexed = new Map(source);
-            indexed.set("tests/cases.json", Buffer.from(canonical(payload)));
-            expect(() => idea(indexed, id)).not.toThrow();
-            continue;
-          }
-          const before = idea(source, id);
-          const candidate = new Map(source);
-          candidate.set(
-            "events.jsonl",
-            Buffer.from(before.eventSource + canonical(payload) + "\n"),
-          );
-          const next = idea(candidate, id);
-          validateAppend(
-            before,
-            next.events.at(-1)!,
-            reduce(before, { primary: before, head }),
-            true,
-          );
-          source = candidate;
-          const last = next.events.at(-1)!;
-          if (last.type === "submit" && checkpoint !== "user-acceptance") {
-            const approval = pairedEvent({ type: "signOff", submit: last.id });
-            validateAppend(
-              next,
-              approval,
-              reduce(next, { primary: next, head }),
-              true,
-            );
-            source = add(source, approval);
-          }
-          appended++;
-        }
-        expect(appended, checkpoint).toBe(
-          checkpoint === "user-acceptance" ? 2 : 1,
-        );
+        source = flatAdd(source, { ...tuple, type: "submit" });
+        source = flatAdd(source, {
+          ...tuple,
+          type: "accept",
+          authority: "user",
+        });
       }
-      const current = idea(source, id);
-      expect(reduce(current, { primary: current, head })).toMatchObject({
-        level: "completed",
-        implementation: head,
-      });
+      const current = flatIdea(source, id);
+      expect(reduceFlat(current, { primary: current }).level).toBe("completed");
     } finally {
       await store.close();
       await car.close();
@@ -430,7 +391,9 @@ describe("offline CAR references (no Task execution)", () => {
     );
     const store = IpfsStore.fromClient({ block: car.block });
     try {
-      expect(await readDocument(store, documentation)).toContain("protocol v1");
+      expect(await readDocument(store, documentation)).toContain(
+        "flat-folder lifecycle",
+      );
       await expect(readDocument(store, documentation, 1)).rejects.toThrow(
         /budget/,
       );

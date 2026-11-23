@@ -23,17 +23,20 @@ import {
   inspectDevice,
   type Device,
 } from "../src/device.js";
-import { silvermoonCheckpoints } from "../src/check.js";
+import { legacySilvermoonCheckpoints as silvermoonCheckpoints } from "../src/check.js";
 import { projectCheckpoints } from "../src/project-check.js";
 import { ProjectTarget } from "../src/project-contract.js";
 import { SetupTarget } from "../src/setup-contract.js";
 import { runCli } from "../src/cli.js";
 import {
   Target,
-  checkpointIds,
   consensusCheckpointIds,
   consensusRuleCodes,
 } from "../src/contract.js";
+import { legacyIdeaDocumentation } from "../src/checkpoints/catalog.js";
+const checkpointIds = legacyIdeaDocumentation.map(
+  (checkpoint) => checkpoint.id,
+);
 import {
   bundledArtifact,
   observe as observeTarget,
@@ -53,7 +56,11 @@ import { createIdea, appendEvent } from "../src/write.js";
 import { commitCheckpoints } from "../src/commit-check.js";
 import * as deviceReads from "../src/device.js";
 import * as repositoryReads from "../src/repository.js";
-import { git, selectIdea, readProject } from "../src/repository.js";
+import { git } from "../src/repository.js";
+import {
+  legacySelectIdea as selectIdea,
+  readLegacyProject as readProject,
+} from "./fixtures.js";
 import type {
   Operation,
   Runtime,

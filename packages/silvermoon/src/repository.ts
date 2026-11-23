@@ -27,14 +27,24 @@ import {
   type State,
 } from "./domain.js";
 import { reportPath } from "./lifecycle.js";
+import {
+  flatIdea,
+  isFlatIdea,
+  reduceFlat,
+  flatFacts,
+  type AnyIdea,
+  type FlatState,
+  type Modes,
+} from "./flat.js";
 
 const execute = promisify(execFile);
 export type Snapshot = string;
-export interface Project {
+export interface Project<T extends AnyIdea = AnyIdea> {
   readonly root: string;
   readonly files: Files;
   readonly config: ProjectConfig;
-  readonly ideas: ReadonlyMap<string, Idea>;
+  readonly ideas: ReadonlyMap<string, T>;
+  readonly modes?: Modes;
 }
 export type Repository = Pick<Project, "root" | "config">;
 export async function git(
@@ -172,13 +182,15 @@ async function worktree(
   root: string,
   signal?: AbortSignal,
   ids?: ReadonlySet<string>,
-): Promise<Files> {
+): Promise<SnapshotFiles> {
   const files = new Map<string, Uint8Array>();
+  const modes = new Map<string, "100644" | "100755">();
+  const format = await objectFormat(root, signal);
   const config = join(root, ".silvermoon", "config.yaml");
   await protectedPath(root, config);
   files.set(".silvermoon/config.yaml", await readRegular(config, signal));
   const base = join(root, ".silvermoon", "i");
-  if (await absent(base)) return files;
+  if (await absent(base)) return { files, modes, format };
   await regular(base, true);
   let total = 0;
   const walk = async (directory: string, path: string): Promise<void> => {
@@ -198,6 +210,8 @@ async function worktree(
           "Snapshot exceeds 2048 files.",
         );
         const bytes = await readRegular(join(directory, entry.name), signal);
+        const stat = await lstat(join(directory, entry.name));
+        modes.set(child, (stat.mode & 0o111) !== 0 ? "100755" : "100644");
         total += bytes.byteLength;
         invariant(total <= maxBytes, "capacity", "Snapshot exceeds 16 MiB.");
         files.set(child, bytes);
@@ -214,14 +228,67 @@ async function worktree(
       }
     }
   } else await walk(base, ".silvermoon/i");
-  return files;
+  const fileMode = await git(
+    root,
+    ["config", "--type=bool", "--default=true", "--get", "core.filemode"],
+    signal,
+  );
+  invariant(
+    fileMode === "true" || fileMode === "false",
+    "config",
+    "Invalid Git file mode policy.",
+  );
+  if (process.platform === "win32" || fileMode === "false") {
+    const entries = (
+      await git(
+        root,
+        [
+          "ls-files",
+          "--stage",
+          "-z",
+          "--",
+          ...(ids
+            ? [...ids].map((id) => `.silvermoon/i/${id}`)
+            : [".silvermoon/i"]),
+        ],
+        signal,
+      )
+    )
+      .split("\0")
+      .filter(Boolean);
+    for (const entry of entries) {
+      const match = /^(100644|100755) [a-f0-9]+ 0\t(.+)$/.exec(entry);
+      invariant(match, "path", "Index contains a link or unresolved conflict.");
+      if (files.has(match[2]!))
+        modes.set(match[2]!, match[1] as "100644" | "100755");
+    }
+  }
+  return { files, modes, format };
+}
+interface SnapshotFiles {
+  readonly files: Files;
+  readonly modes: Modes;
+  readonly format: "sha1" | "sha256";
+  readonly trees?: ReadonlyMap<string, string>;
+}
+async function objectFormat(
+  root: string,
+  signal?: AbortSignal,
+): Promise<"sha1" | "sha256"> {
+  const format = await git(root, ["rev-parse", "--show-object-format"], signal);
+  invariant(
+    format === "sha1" || format === "sha256",
+    "snapshot",
+    "Unsupported Git object format.",
+  );
+  return format;
 }
 async function gitSnapshot(
   root: string,
   snapshot: string,
   signal?: AbortSignal,
   paths: readonly string[] = [".silvermoon/config.yaml", ".silvermoon/i"],
-): Promise<Files> {
+): Promise<SnapshotFiles> {
   invariant(
     snapshot === "staged" ||
       snapshot === "HEAD" ||
@@ -236,6 +303,8 @@ async function gitSnapshot(
   const entries = (await git(root, args, signal)).split("\0").filter(Boolean);
   invariant(entries.length <= 2048, "capacity", "Snapshot exceeds 2048 files.");
   const files = new Map<string, Uint8Array>();
+  const modes = new Map<string, "100644" | "100755">();
+  const format = await objectFormat(root, signal);
   let total = 0;
   for (const entry of entries) {
     const match = /^(100644|100755) (?:blob )?([a-f0-9]+)(?: 0)?\t(.+)$/.exec(
@@ -252,18 +321,46 @@ async function gitSnapshot(
       "path",
       "Invalid snapshot path.",
     );
+    invariant(
+      object.length === (format === "sha1" ? 40 : 64),
+      "snapshot",
+      "Git object ID does not match repository object format.",
+    );
     const { stdout } = await execute("git", ["cat-file", "blob", object], {
       cwd: root,
       encoding: "buffer",
       maxBuffer: maxBytes,
       timeout: 30_000,
+      env: gitEnvironment(),
       ...(signal ? { signal } : {}),
     });
     total += stdout.byteLength;
     invariant(total <= maxBytes, "capacity", "Snapshot exceeds 16 MiB.");
     files.set(path, stdout);
+    modes.set(path, match[1] as "100644" | "100755");
   }
-  return files;
+  const trees = new Map<string, string>();
+  if (snapshot !== "staged") {
+    const directories = (
+      await git(
+        root,
+        ["ls-tree", "-r", "-d", "-z", snapshot, "--", ...paths],
+        signal,
+      )
+    )
+      .split("\0")
+      .filter(Boolean);
+    for (const entry of directories) {
+      const match = /^040000 tree ([a-f0-9]+)\t(.+)$/.exec(entry);
+      invariant(
+        match && safeRelative(match[2]!),
+        "path",
+        "Invalid directory tree metadata.",
+      );
+      trees.set(match[2]!, match[1]!);
+    }
+  }
+  return { files, modes, format, ...(snapshot !== "staged" ? { trees } : {}) };
 }
 export async function verifyRepositoryRoot(
   root: string,
@@ -299,7 +396,7 @@ export async function readRepository(
     await protectedPath(root, path);
     source = await readRegular(path, signal);
   } else {
-    const files = await gitSnapshot(root, snapshot, signal, [
+    const { files } = await gitSnapshot(root, snapshot, signal, [
       ".silvermoon/config.yaml",
     ]);
     return {
@@ -309,7 +406,8 @@ export async function readRepository(
   }
   return { root, config: projectConfig(text(source)) };
 }
-function projectFiles(root: string, files: Files): Project {
+function projectFiles(root: string, snapshot: SnapshotFiles): Project {
+  const { files, modes, format } = snapshot;
   const config = projectConfig(requiredText(files, ".silvermoon/config.yaml"));
   const grouped = new Map<string, Map<string, Uint8Array>>();
   for (const [path, bytes] of files) {
@@ -327,9 +425,36 @@ function projectFiles(root: string, files: Files): Project {
     }
     group.set(tail.join("/"), bytes);
   }
-  const ideas = new Map(
-    [...grouped].map(([id, files]) => [id, idea(files, id)]),
+  const ideas = new Map<string, AnyIdea>(
+    [...grouped].map(([id, group]) => [
+      id,
+      group.has("idea.json")
+        ? idea(group, id)
+        : flatIdea(
+            group,
+            id,
+            new Map(
+              [...modes]
+                .filter(([path]) => path.startsWith(`.silvermoon/i/${id}/`))
+                .map(([path, mode]) => [
+                  path.slice(`.silvermoon/i/${id}/`.length),
+                  mode,
+                ]),
+            ),
+            format,
+          ),
+    ]),
   );
+  if (snapshot.trees)
+    for (const [id, current] of ideas) {
+      if (!isFlatIdea(current)) continue;
+      for (const [folder, revision] of Object.entries(current.revisions))
+        invariant(
+          snapshot.trees.get(`.silvermoon/i/${id}/${folder}`) === revision,
+          "snapshot",
+          "Measured folder does not match its actual Git tree object ID.",
+        );
+    }
   const aliases = [...ideas.values()].flatMap((idea) => {
     const event = idea.events.findLast((event) => event.type === "setAlias");
     return event?.type === "setAlias" && event.alias ? [event.alias] : [];
@@ -339,7 +464,7 @@ function projectFiles(root: string, files: Files): Project {
     "alias",
     "New Idea aliases must be unique.",
   );
-  return { root, files, config, ideas };
+  return { root, files, config, ideas, modes };
 }
 export async function readProject(
   root: string,
@@ -348,12 +473,16 @@ export async function readProject(
   ids?: ReadonlySet<string>,
 ): Promise<Project> {
   await verifyRepositoryRoot(root, signal);
+  const fixed =
+    snapshot === "HEAD"
+      ? await git(root, ["rev-parse", "--verify", "HEAD"], signal)
+      : snapshot;
   const files =
-    snapshot === "worktree"
+    fixed === "worktree"
       ? await worktree(root, signal, ids)
       : await gitSnapshot(
           root,
-          snapshot,
+          fixed,
           signal,
           ids
             ? [
@@ -362,7 +491,31 @@ export async function readProject(
               ]
             : undefined,
         );
-  return projectFiles(root, files);
+  const project = projectFiles(root, files);
+  if (fixed === "worktree" || fixed === "staged") {
+    const after =
+      fixed === "worktree"
+        ? await worktree(root, signal, ids)
+        : await gitSnapshot(
+            root,
+            fixed,
+            signal,
+            ids
+              ? [
+                  ".silvermoon/config.yaml",
+                  ...[...ids].map((id) => `.silvermoon/i/${id}`),
+                ]
+              : undefined,
+          );
+    invariant(
+      snapshotDigest(project) ===
+        snapshotDigest({ ...project, files: after.files }) &&
+        canonical([...files.modes]) === canonical([...after.modes]),
+      "concurrent-edit",
+      "Candidate changed while observing its files or Git modes.",
+    );
+  }
+  return project;
 }
 export async function readIdeaProject(
   root: string,
@@ -374,17 +527,12 @@ export async function readIdeaProject(
     ? selector
     : selectIdea(await readProject(root, snapshot, signal), selector).bootstrap
         .id;
-  await verifyRepositoryRoot(root, signal);
-  const files =
-    snapshot === "worktree"
-      ? await worktree(root, signal, new Set([id]))
-      : await gitSnapshot(root, snapshot, signal, [
-          ".silvermoon/config.yaml",
-          `.silvermoon/i/${id}`,
-        ]);
-  return projectFiles(root, files);
+  return readProject(root, snapshot, signal, new Set([id]));
 }
-export function selectIdea(project: Project, selector: string): Idea {
+export function selectIdea<T extends AnyIdea>(
+  project: Project<T>,
+  selector: string,
+): T {
   const found =
     project.ideas.get(selector) ??
     [...project.ideas.values()].find((idea) => {
@@ -402,7 +550,10 @@ export function snapshotDigest(project: Project): string {
   return digest(
     [...project.files]
       .sort(([a], [b]) => (a < b ? -1 : 1))
-      .map(([path, bytes]) => `${path}\0${digest(bytes)}\n`)
+      .map(
+        ([path, bytes]) =>
+          `${path}\0${project.modes?.get(path) ?? "100644"}\0${digest(bytes)}\n`,
+      )
       .join(""),
   );
 }
@@ -525,7 +676,7 @@ export async function observeRepository(
   const changes = records.map((entry) => entry.slice(3).replaceAll("\\", "/"));
   return { head, tip, remote, repository: committed, changes };
 }
-function eventPrefix(current: Idea, previous: Idea): boolean {
+function eventPrefix(current: AnyIdea, previous: AnyIdea): boolean {
   const after = current.files.get("events.jsonl")!;
   const before = previous.files.get("events.jsonl")!;
   return (
@@ -536,8 +687,8 @@ function eventPrefix(current: Idea, previous: Idea): boolean {
   );
 }
 export function verifyIdeaHistory(
-  current: Idea | undefined,
-  previous: Idea,
+  current: AnyIdea | undefined,
+  previous: AnyIdea,
 ): void {
   invariant(
     current && canonical(current.bootstrap) === canonical(previous.bootstrap),
@@ -549,6 +700,7 @@ export function verifyIdeaHistory(
     "history",
     "Primary Idea identity/history must be preserved as an exact append-only prefix.",
   );
+  if (isFlatIdea(current)) return;
   const before = previous.files.get(reportPath);
   const after = current.files.get(reportPath);
   invariant(
@@ -652,6 +804,7 @@ export async function validSubjects(
           const previous = snapshot.ideas.get(current.bootstrap.id);
           if (
             !previous ||
+            isFlatIdea(previous) ||
             canonical(previous.revisions) !== canonical(current.revisions)
           )
             continue;
@@ -673,7 +826,7 @@ export async function validSubjects(
 }
 export async function observedIdeaState(
   project: Project,
-  current: Idea,
+  current: AnyIdea,
   context: {
     readonly head: string;
     readonly primary: Project;
@@ -681,11 +834,22 @@ export async function observedIdeaState(
   },
   preference?: string,
   signal?: AbortSignal,
-): Promise<State> {
+): Promise<State | FlatState> {
   const past = context.primary.ideas.get(current.bootstrap.id);
+  if (isFlatIdea(current))
+    return reduceFlat(current, {
+      ...(past && isFlatIdea(past) ? { primary: past } : {}),
+      ...(project.config.checkpointAcceptance
+        ? { policy: project.config.checkpointAcceptance }
+        : {}),
+      ...(project.config.preferredLanguage
+        ? { projectLanguage: project.config.preferredLanguage }
+        : {}),
+      ...(preference ? { userLanguage: language(preference) } : {}),
+    });
   return reduce(current, {
     head: context.head,
-    ...(past ? { primary: past } : {}),
+    ...(past && !isFlatIdea(past) ? { primary: past } : {}),
     ...(project.config.preferredLanguage
       ? { projectLanguage: project.config.preferredLanguage }
       : {}),
@@ -695,7 +859,11 @@ export async function observedIdeaState(
   });
 }
 export type LocalState =
-  State | (ReturnType<typeof ideaFacts> & { readonly level: "unknown" });
+  | State
+  | FlatState
+  | ((ReturnType<typeof ideaFacts> | ReturnType<typeof flatFacts>) & {
+      readonly level: "unknown";
+    });
 export interface LocalContext {
   readonly head?: string;
   readonly primary?: Project;
@@ -785,7 +953,7 @@ export async function localContext(
 }
 export async function localIdeaState(
   project: Project,
-  current: Idea,
+  current: AnyIdea,
   context: LocalContext,
   preference?: string,
   signal?: AbortSignal,
@@ -799,12 +967,14 @@ export async function localIdeaState(
       signal,
     );
   return {
-    ...ideaFacts(current, {
-      ...(project.config.preferredLanguage
-        ? { projectLanguage: project.config.preferredLanguage }
-        : {}),
-      ...(preference ? { userLanguage: language(preference) } : {}),
-    }),
+    ...(isFlatIdea(current)
+      ? flatFacts(current, project.config.preferredLanguage, preference)
+      : ideaFacts(current, {
+          ...(project.config.preferredLanguage
+            ? { projectLanguage: project.config.preferredLanguage }
+            : {}),
+          ...(preference ? { userLanguage: language(preference) } : {}),
+        })),
     level: "unknown",
   };
 }

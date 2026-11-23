@@ -46,8 +46,12 @@ checkpoints:
     rules:
       - code: commit-snapshot-valid
         description:
-          指定候选快照中发生变更的 Ideas 的 Silvermoon
-          配置、路径、文件、bootstrap、事件和用例索引必须符合支持的协议及安全、容量约束；暂存区检查只读取索引，不混入未暂存或未跟踪的工作区内容。
+          指定候选快照中发生变更的 Ideas 的配置、路径、平级材料、created-first
+          可信 Schema、事件及真实文件夹 Git tree/mode
+          必须符合当前协议和容量约束；历史
+          bootstrap/用例索引/机器证据仅按原契约只读核验，不混用于新
+          Ideas。暂存区只读取索引，不混入工作区；不检查测试/CI/报告真实性、用例完整性或
+          commit/path 声明。
     output:
       description:
         提供本次已经固定的候选及基线内容，供修改合法性检查复用；文件集合包含 Map
@@ -70,15 +74,15 @@ checkpoints:
     rules:
       - code: commit-history-deployment-report-append-only
         description:
-          已有 evidence/deployment/report.jsonl
-          必须保留基线的原始字节准确前缀，只能追加完整行；不得删除、覆盖、截断或重排，整体
-          Idea 的明确授权删除例外除外。
+          仅历史 idea.json 契约的已有 evidence/deployment/report.jsonl
+          保留原始字节前缀，整体授权删除除外。新平级文件夹协议不要求固定报告、报告
+          append-only 或机器结果真实性。
       - code: commit-history-idea-identity-immutable
         description:
-          候选快照必须保留基线中所有已有 Idea 的 version、id、checkCid 和
-          createdAt 字段值，不得改写其 bootstrap 身份；只有 allowDelete
-          中显式声明的既有 Idea 可以整体删除，部分删除不适用；JSON
-          排版或字段顺序变化不构成身份变化。
+          新平级协议保留 created 的 idea、at、eventSchemaCid
+          身份及原始事件字节；历史契约保留原 bootstrap 的
+          version/id/checkCid/createdAt，不能静默替换 Schema 或执行 CID。只有
+          allowDelete 中显式授权的既有 Idea 可整体删除，部分删除不适用。
       - code: commit-history-event-history-append-only
         description:
           候选 events.jsonl 必须以基线字节为原始 UTF-8

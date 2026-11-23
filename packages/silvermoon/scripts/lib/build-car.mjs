@@ -10,31 +10,52 @@ import {
   specifications,
   specificationFiles,
 } from "../../dist/specifications.js";
+import { eventSchemaBytes, eventSchemaCid } from "../../dist/flat.js";
 
 export async function buildCar(output, kind = "idea") {
   if (!["idea", "commit", "project", "setup"].includes(kind))
     throw new Error("Unknown Silvermoon Check kind.");
   const name = kind === "idea" ? "check" : `${kind}-check`;
   const root = fileURLToPath(new URL("../..", import.meta.url));
+  await mkdir(join(root, "dist"), { recursive: true });
+  await writeFile(join(root, "dist", "event-schema.json"), eventSchemaBytes());
+  await writeFile(
+    join(root, "dist", "event-schema.cid"),
+    eventSchemaCid + "\n",
+  );
   const tree = await directoryTree(resolve(root, "../.."));
   const specPath = `docs/${specificationFiles[kind]}`;
   const bundle = await buildCheckBundle(
     {
-      list: (path, options) => tree.list(path, options),
+      list: async (path, options) => {
+        if (path === "packages/silvermoon/schemas")
+          return [{ name: "events.json", kind: "file" }];
+        const entries = await tree.list(path, options);
+        if (path === "packages/silvermoon") {
+          if (entries.some((entry) => entry.name === "schemas"))
+            throw new Error(
+              "Schema resource overlay must not shadow source files.",
+            );
+          return [...entries, { name: "schemas", kind: "directory" }];
+        }
+        return entries;
+      },
       read: (path, options) =>
-        path === specPath
-          ? Promise.resolve(
-              memoryFile(
-                Buffer.from(
-                  stringify(specifications[kind], {
-                    blockQuote: "literal",
-                    lineWidth: 0,
-                  }),
+        path === "packages/silvermoon/schemas/events.json"
+          ? Promise.resolve(memoryFile(eventSchemaBytes(), options))
+          : path === specPath
+            ? Promise.resolve(
+                memoryFile(
+                  Buffer.from(
+                    stringify(specifications[kind], {
+                      blockQuote: "literal",
+                      lineWidth: 0,
+                    }),
+                  ),
+                  options,
                 ),
-                options,
-              ),
-            )
-          : tree.read(path, options),
+              )
+            : tree.read(path, options),
     },
     `packages/silvermoon/${name}.build.yaml`,
   );

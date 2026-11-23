@@ -15,7 +15,7 @@ export const specifications = {
     specVersion: "1.0",
     name: "Silvermoon · Idea 推进检查",
     description:
-      "检查指定 Idea 是否已经完成。若未完成，报告下一个需要通过的 checkpoint（推进方向）及其未通过的 Rules（当前卡点）。 完成须先通过部署及 Agent 自验，再由用户实际操作、反馈并明确验收通过， 最后将验收事件同步至 primary。实现阶段执行可重现的自动化测试，不要求报告；部署阶段由 Agent 主导 E2E 手工验收，在固定路径的 append-only JSONL 逐项追加结果。事件只记录阶段与准确版本，不声明通用环境。 共识由 Agent submit 与用户信号触发的 signOff 配对，submit 只绑定直接前序内容 revision，沿单链追溯完整上下文。本实现支持 配对 配对共识、阶段验证及用户验收；旧历史保持原始字节，不自动迁移既有 Idea 或固定 Check。",
+      "先检查设备、项目及 Idea 的标准化前提，再按七个平级文件夹推进 submit → accept → synchronization。revision 是当前文件夹真实 Git tree ID，upstream 是直接前置文件夹真实 tree ID，根为 null；不构造复合或递归依赖版本树。默认 test-spec 和 implementation delegated，其他 consensus；consensus 仅认可 user，delegated 认可 user/delegate。Check 只判断事件状态、当前版本/前置、权限模式、历史/协议、标准化和同步，不判断测试、CI、报告真实性、用例完整性、受测代码或声明的提交路径绑定。实现提交材料由 Agent 记录增删改 TEST CASES 和提交 commit，接受前 Agent 验证包含该 commit 的本地测试或 CI 通过；部署由 Agent 自验真实结果后用户实际操作并明确 accept，无独立 user-acceptance。created-first 固定可信不可变 Schema CID，与执行 Check CID 分离；新 Ideas 无 idea.json/id/version，旧数据只读检查，不自动迁移。",
     parameter: { schema: Target },
     checkpoints: ideaDocumentation,
   },

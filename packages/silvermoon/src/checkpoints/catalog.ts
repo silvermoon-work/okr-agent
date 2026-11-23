@@ -3,6 +3,7 @@ import { documentation as repository } from "./repository/documentation.js";
 import { documentation as branch } from "./branch/documentation.js";
 import { documentation as silvermoonFolder } from "./silvermoon-folder/documentation.js";
 import { documentation as ideaFolder } from "./idea-folder/documentation.js";
+import { documentation as legacyIdeaFolder } from "./idea-folder/legacy-documentation.js";
 import { documentation as requirements } from "./requirements/documentation.js";
 import { documentation as research } from "./research/documentation.js";
 import { documentation as technical } from "./technical/documentation.js";
@@ -14,6 +15,7 @@ import { documentation as preCommit } from "./pre-commit/documentation.js";
 import { documentation as commitSnapshot } from "./commit-snapshot/documentation.js";
 import { documentation as commitHistory } from "./commit-history/documentation.js";
 import { documentation as userAcceptance } from "./user-acceptance/documentation.js";
+import { flatDocumentation } from "./flat.js";
 export const prerequisiteDocumentation = [
   global,
   repository,
@@ -32,9 +34,9 @@ export const projectDocumentation = [
   ...prerequisiteDocumentation,
   preCommit,
 ] as const;
-export const ideaDocumentation = [
+export const legacyIdeaDocumentation = [
   ...prerequisiteDocumentation,
-  ideaFolder,
+  legacyIdeaFolder,
   requirements,
   research,
   technical,
@@ -43,5 +45,10 @@ export const ideaDocumentation = [
   implementation,
   deployment,
   userAcceptance,
+] as const;
+export const ideaDocumentation = [
+  ...prerequisiteDocumentation,
+  ideaFolder,
+  ...flatDocumentation,
 ] as const;
 export const commitDocumentation = [commitSnapshot, commitHistory] as const;

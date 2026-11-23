@@ -2,7 +2,15 @@ import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { executeCheck, type ReportNode } from "@silvermoon-work/check-task-sdk";
-import { silvermoonCheckpoints } from "../src/check.js";
+import { legacySilvermoonCheckpoints as silvermoonCheckpoints } from "../src/check.js";
+import { silvermoonCheckpoints as flatCheckpoints } from "../src/check.js";
+import { checkpoints, isFlatIdea, reduceFlat } from "../src/flat.js";
+import {
+  flatFiles,
+  flatSigned,
+  flatProject,
+  flatAdd,
+} from "./flat-fixtures.js";
 import { projectCheckpoints } from "../src/project-check.js";
 import { setupCheckpoints } from "../src/setup-check.js";
 import * as repository from "../src/repository.js";
@@ -15,7 +23,7 @@ import {
   idea,
   type State,
 } from "../src/domain.js";
-import { add, cid, event, head, id, scratch } from "./fixtures.js";
+import { add, cid, event, head, id, scratch, legacyIdea } from "./fixtures.js";
 import {
   files,
   signed,
@@ -86,7 +94,13 @@ beforeEach(async () => {
   vi.mocked(repository.observedIdeaState).mockImplementation(
     (_project, selected) =>
       Promise.resolve(
-        reduce(selected, { head, primary: selected, paired: true }),
+        isFlatIdea(selected)
+          ? reduceFlat(selected, { primary: selected })
+          : reduce(legacyIdea(selected), {
+              head,
+              primary: legacyIdea(selected),
+              paired: true,
+            }),
       ),
   );
   vi.mocked(repository.regular).mockResolvedValue(undefined);
@@ -130,6 +144,137 @@ function state(value: Partial<State>) {
 }
 
 describe("ordered checkpoint rules with mocked repository/device observations", () => {
+  it.each([
+    ["identity", "idea-folder-identity-immutable"],
+    ["history", "idea-folder-event-history-append-only"],
+    ["schema-trust", "idea-folder-data-valid"],
+    ["events", "idea-folder-data-valid"],
+  ])(
+    "maps flat data %s failures without inspecting implementation evidence",
+    async (code, expected) => {
+      current = flatProject(root);
+      vi.mocked(repository.readIdeaProject).mockRejectedValueOnce(
+        new SilvermoonError(code, "invalid"),
+      );
+      expect(
+        await executeCheck({
+          checkpoints: flatCheckpoints(cid, { runtime, refresh: false }),
+          target,
+          signal: new AbortController().signal,
+        }),
+      ).toMatchObject({ problems: [{ code: expected }] });
+    },
+  );
+  it.each([new SyntaxError("invalid JSON"), new TypeError("invalid data")])(
+    "reports malformed flat data instead of falling back",
+    async (error) => {
+      vi.mocked(repository.readIdeaProject).mockRejectedValueOnce(error);
+      expect(
+        await executeCheck({
+          checkpoints: flatCheckpoints(cid, { runtime, refresh: false }),
+          target,
+          signal: new AbortController().signal,
+        }),
+      ).toMatchObject({ problems: [{ code: "idea-folder-data-valid" }] });
+    },
+  );
+  it.each(["git-context", "concurrent-edit", "internal", "protocol"])(
+    "propagates flat %s execution faults",
+    async (code) => {
+      const error = new SilvermoonError(code, "execution fault");
+      vi.mocked(repository.readIdeaProject).mockRejectedValueOnce(error);
+      await expect(
+        executeCheck({
+          checkpoints: flatCheckpoints(cid, { runtime, refresh: false }),
+          target,
+          signal: new AbortController().signal,
+        }),
+      ).rejects.toBe(error);
+    },
+  );
+  it("rejects historical flat navigation, abandoned Ideas and unexpected I/O", async () => {
+    const runFlat = () =>
+      executeCheck({
+        checkpoints: flatCheckpoints(cid, { runtime, refresh: false }),
+        target,
+        signal: new AbortController().signal,
+      });
+    await expect(runFlat()).rejects.toThrow(/migration/);
+    current = flatProject(
+      root,
+      flatAdd(flatFiles(), {
+        at: "2026-11-17T16:09:22.408Z",
+        type: "abandon",
+        reason: "stop",
+      }),
+    );
+    expect(await runFlat()).toMatchObject({
+      problems: [{ code: "idea-folder-active" }],
+    });
+    vi.mocked(repository.readIdeaProject).mockRejectedValueOnce(
+      new Error("unexpected I/O"),
+    );
+    await expect(runFlat()).rejects.toThrow(/unexpected I\/O/);
+    current = flatProject(root);
+    vi.mocked(repository.readIdeaProject)
+      .mockResolvedValueOnce(current)
+      .mockResolvedValueOnce(project(root, null));
+    expect(await runFlat()).toMatchObject({
+      problems: [{ code: "idea-folder-identity-immutable" }],
+    });
+  });
+  it("runs the flat lifecycle through all seven event-state gates without evidence predicates", async () => {
+    const runFlat = () =>
+      executeCheck({
+        checkpoints: flatCheckpoints("independent-execution-cid", {
+          runtime,
+          refresh: false,
+        }),
+        target,
+        signal: new AbortController().signal,
+      });
+    let source = flatFiles();
+    for (const [index, object] of checkpoints.entries()) {
+      current = flatProject(root, source);
+      observed = { ...observed, repository: current };
+      expect(await runFlat()).toMatchObject({
+        problems: [{ code: `${object}-submission-current` }],
+      });
+      const selected = current.ideas.get(id)!;
+      if (!isFlatIdea(selected)) throw new Error("Flat fixture required");
+      const tuple = {
+        at: "2026-11-17T16:09:22.408Z",
+        object,
+        revision: selected.revisions[object],
+        upstream: index ? selected.revisions[checkpoints[index - 1]!] : null,
+      };
+      source = flatAdd(source, { ...tuple, type: "submit" });
+      current = flatProject(root, source);
+      expect(await runFlat()).toMatchObject({
+        problems: [{ code: `${object}-acceptance-valid` }],
+      });
+      source = flatAdd(source, { ...tuple, type: "accept", authority: "user" });
+      current = flatProject(root, source);
+      const selectedAccepted = current.ideas.get(id)!;
+      if (!isFlatIdea(selectedAccepted))
+        throw new Error("Flat fixture required");
+      vi.mocked(repository.observedIdeaState).mockResolvedValueOnce({
+        ...reduceFlat(selectedAccepted, { primary: selectedAccepted }),
+        level: object,
+        step: "synchronization",
+      });
+      expect(await runFlat()).toMatchObject({
+        problems: [{ code: `${object}-synchronized` }],
+      });
+    }
+    source.set(
+      "deployment/false-report.txt",
+      Buffer.from("not pass; Check does not decide report truth"),
+    );
+    // Changing material requires a new tuple; fully accepted material may contain any safe bytes.
+    current = flatProject(root, flatSigned(source));
+    expect((await runFlat()).pass).toBe(true);
+  });
   it("runs setup outside Git and project independently of any Idea or scaffold writes", async () => {
     const setup = await executeCheck({
       checkpoints: setupCheckpoints(runtime),

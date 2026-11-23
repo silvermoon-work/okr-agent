@@ -1,76 +1,54 @@
-# Silvermoon lifecycle protocol v1
+# Silvermoon flat-folder lifecycle
 
-The Idea Check owns 13 ordered checkpoints: global, repository, branch,
-silvermoon-folder, idea-folder, requirements, research, technical, test-index,
-test-cases, implementation, deployment and user-acceptance. A failed checkpoint
-stops its successors. The last checkpoint requires explicit acceptance after the
-user actually operates the delivered implementation; Agent self-verification
-does not complete an Idea.
+Standardization checks device, repository, branch, container and selected Idea
+data first. Then the seven actual folders advance in order: requirements,
+research-scope, technical-spec, test-scope, test-spec, implementation,
+deployment. The first owning submit/accept/synchronization gap stops successors.
 
-## Paired standards
+New Ideas contain events.jsonl and these seven flat siblings, with no idea.json.
+created is first/unique and binds immutable idea/at/eventSchemaCid. A bounded
+minimal created reader discovers identity/trust before the entire log, including
+created, is validated against the known immutable self-contained offline Schema.
+Unknown Schema CID fails without fallback. Exact Schema bytes use RFC8785 JCS,
+UTF8, SHA256 and CIDv1 raw/base32; execution Check CID is separate.
 
-Prepare all support within the five existing revision scopes. Record a paired
-submit first, show that exact material and request to the user, and only after
-explicit acceptance append a paired signOff referencing its ID. The chain is
-requirements -> research -> technical -> cases -> tests -> user-acceptance. Each
-submit binds its content revision and one direct predecessor revision, with null
-at the root. Replay captures the original full ancestor context: later requests
-with the same immediate revision cannot silently replace changed ancestors. A
-latest unaccepted request blocks its stage; every request needs its own
-acceptance. An unchanged predecessor content chain can retain downstream
-confirmations after the new predecessor request is accepted and synchronized.
+revision is the actual folder Git TREE ID, upstream the actual direct
+predecessor folder tree ID (root null). No synthetic material/upstream trees or
+dependency closure. Git modes, paths and blobs participate. submit and accept
+match the complete object/revision/upstream tuple; accept adds user/delegate
+authority. No event id/version, signOff, verify or rollback. Identical tuple
+resubmission preserves matching acceptance; changed folders or invalid
+upstream/ancestors naturally invalidate downstream context without rewriting
+history.
 
-Materials, submit and signOff must all reach primary. state.submitted contains
-latest request IDs; state.signed contains current matching signOff IDs.
-state.level is the first unmet phase; synchronization and next identify a
-separate synchronization gap. Later absent signed keys are not independent
-assessments of stages replay has not reached. No event authenticates a user or
-grants operational authority.
+Optional strict checkpointAcceptance defaults test-spec and implementation to
+delegated, others consensus. Consensus recognizes user only; delegated
+recognizes user/delegate. Tightening invalidates delegate acceptance naturally.
+Source is a recorded fact, not authentication or operational authority.
 
-## Verification and delivery
+Check only validates marked state, current tree/direct upstream, policy,
+history/protocol, standardization and synchronization. It does not judge tests,
+CI, reports, case completeness, tested code or declared commit/path bindings.
+Spec.md is a primary material prompt, not an exhaustive template predicate.
 
-Actual reproducible automated implementation tests must pass before recording
-paired verify with phase=implementation and rev=<exact-tested-commit>. No
-implementation report or test-output copy is required. The Check validates that
-commit and its current five standard revisions, not the truth of the Agent's
-claim. Only this Idea's events/evidence metadata may change afterward without
-retesting. Synchronize implementation and verification before deployment.
+Implementation supporting submission material records added/deleted/modified
+TEST CASES and their submitted commit. Agent verifies passing local tests or CI
+including that commit before delegated accept. These are instructions/material,
+not tracked declarations, scope paths or CI machine checks.
 
-Agent manual E2E deployment uses one cumulative
-evidence/deployment/report.jsonl. Append a start row for each round, binding the
-tested implementation, then case rows with actual steps, expected/actual results
-and pass/fail/error/blocked/ not-run. Never edit old failures. Only the latest
-round and last attempt per case count; every approved deployment case must pass.
-Record paired verify with phase=deployment and rev=<raw-report-sha256>. Only the
-latest deployment event must match the whole current report, and it must follow
-the latest implementation verify. A fresh implementation verification requires
-renewed deployment and delivery acceptance. Synchronize the report, necessary
-attachments and events.
+Deployment prompts require Agent self-testing of the actual deployed result,
+followed by explicit USER hands-on acceptance through deployment accept. No
+separate user-acceptance gate or required report/start/case Schema. Reports and
+evidence, when useful, stay in deployment supporting material.
 
-Then submit user-acceptance with the deployment report revision and tests
-predecessor revision, provide the exact delivery for the user to operate, and
-wait for explicit acceptance. Its signOff and submit must synchronize before
-completed. state.implementation is the tested commit; state.deployment is the
-report hash, not another aggregate or an event ID.
+Preserve canonical UTF8/LF event bytes as an exact primary prefix and immutable
+created identity. Logs are bounded to 1 MiB/4096 rows; snapshots 16 MiB/2048
+files. Cancelled/concurrent/unsafe reads do not pass. Synchronize exact
+material/events before completion. Check never stages, commits, pushes, deploys
+or installs.
 
-## Preservation and observation
-
-Keep events and the deployment report as exact append-only UTF-8/LF byte
-prefixes. Events use canonical recursively sorted JSON; both logs have a final
-newline, a 1 MiB bound and at most 4096 records. Deployment rounds have at most
-512 distinct cases. Run check-changes for worktree and staged snapshots before
-ordinary authorized commits, then reobserve check-idea after synchronization.
-
-Historical v1 events retain original bytes and pure historical reduction
-semantics. They do not satisfy this CAR's paired standards or paired
-verification, and v1 signOff/verify cannot be appended after paired begins. No
-upgrade rewrites immutable Idea bootstrap fields, pinned Check CIDs or
-historical CARs.
-
-Documentation is inert, standalone direct-file ContentRef text, not an execution
-hook or authorization. The Host reads it offline with a bounded UTF-8 budget.
-Missing content or observation faults are explicit errors. Problems name their
-checkpoint and Rule; references aggregate one document per failed checkpoint.
-Outputs stay execution-local. Use get-reference for any of the four trusted
-CARs. Never commit secrets or perform publishing, deployment, Git writes or
-cleanup without the relevant independent authorization.
+Historical idea.json/checkCid/id/version and evidence contracts stay
+independently readable/checkable with original semantics and exact historical
+CIDs/bytes. Navigation requires explicit migration; no automatic conversion or
+old event advancement exists. Documentation is inert and cannot grant
+operational rights.

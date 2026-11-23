@@ -30,18 +30,18 @@ Ideas, with explicit `--allow-delete` exceptions for whole deletions.
 through the Engine's IPFS adapter without executing a Task. Events are edited
 directly; no event command is exposed.
 
-Protocol, revision scopes, five signoffs, host trust, evidence, concurrency and
-Git boundaries are documented in the CLI README. They use shared domain logic
-and SDK `createCheckCallback` ordered checkpoints, not a copy of the old
-Potential Guide. Separate Task entries and contracts execute independent Idea,
-setup, project and commit checkpoint lists; the Host selects the appropriate
-CAR, not a Task mode switch. Commit validation never requires device readiness,
-worktree hygiene, upstream synchronization or lifecycle completion. Each CAR
-bundles only its `references/idea`, `references/setup`, `references/project` or
-`references/commit` subtree at `resources/references/`. Checkpoints read prior
-successful outputs through their execution-local context. References are bundled
-once per checkpoint, not per rule. Building never uploads, publishes, links
-global binaries or replaces skills.
+Protocol, actual folder trees, seven submit/accept tuples, host trust,
+concurrency and Git boundaries are documented in the CLI README. They use shared
+domain logic and SDK `createCheckCallback` ordered checkpoints, not a copy of
+the old Potential Guide. Separate Task entries and contracts execute independent
+Idea, setup, project and commit checkpoint lists; the Host selects the
+appropriate CAR, not a Task mode switch. Commit validation never requires device
+readiness, worktree hygiene, upstream synchronization or lifecycle completion.
+Each CAR bundles only its `references/idea`, `references/setup`,
+`references/project` or `references/commit` subtree at `resources/references/`.
+Checkpoints read prior successful outputs through their execution-local context.
+References are bundled once per checkpoint, not per rule. Building never
+uploads, publishes, links global binaries or replaces skills.
 
 Checkpoint implementation and canonical documentation live together under
 `silvermoon/src/checkpoints/`. The shared build helper composes each Task's Spec
@@ -52,16 +52,19 @@ README's checkpoint authoring section for the refresh command. Every delivered
 CAR remains self-contained, including its Task overview and checkpoint files.
 
 The current [Idea Check Spec](../../docs/silvermoon-single-checker.yaml)
-implements paired submit/signOff confirmations, direct predecessor revisions,
-exact implementation commit verification, a cumulative append-only deployment
-report, and a thirteenth user-acceptance checkpoint. The Check never performs
-automated tests, manual E2E operations or user acceptance itself: it validates
-their recorded versions, strict structures, append-only history and
-synchronization. All events and case indexes remain version 1 while unreleased;
-strict fields distinguish the formats. Old inline events remain readable without
-being migrated into paired acceptance.
+implements seven flat folder Git tree revisions and direct predecessor folder
+tree IDs, matching submit/accept tuples, strict consensus/delegated policy and
+created-first immutable offline Schema trust. It has 12 checkpoints and no
+separate user-acceptance gate. It does not judge tests, CI, report truth, case
+completeness, tested code or declared commit/path binding. Agent verification
+and user hands-on deployment acceptance remain instructions, not predicates. New
+events have no id/version or idea.json; historical events/data keep their
+original isolated read-only contract and require explicit migration for
+navigation. Idea and commit CARs contain the exact JCS Schema at
+resources/schemas/events.json; its raw SHA256 CIDv1 is separate from each
+Check's execution CID.
 
-See the [Events guide](../../docs/silvermoon-events.md) for all eight event
+See the [Events guide](../../docs/silvermoon-events.md) for all seven event
 types and current/historical field distinctions. The original
 [design candidate](../../docs/silvermoon-idea-check-candidate.yaml) is archived
 design history, not the generated runtime Spec.

@@ -1,26 +1,18 @@
 import { Command, CommanderError, Option } from "commander";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { currentDevice, deviceLanguage } from "./device.js";
-import {
-  invariant,
-  reduce,
-  SilvermoonError,
-  text,
-  validIdeaId,
-  parseBootstrap,
-} from "./domain.js";
+import { invariant, SilvermoonError, text, validIdeaId } from "./domain.js";
 import { bundledArtifact, getReference, observe, type Report } from "./host.js";
 import {
   discoverRoot,
-  git,
   readProject,
-  readRegular,
-  protectedPath,
+  readIdeaProject,
   localContext,
   localIdeaState,
   selectIdea,
   type Snapshot,
 } from "./repository.js";
+import { isFlatIdea, reduceFlat, checkpoints } from "./flat.js";
 import { createIdea } from "./write.js";
 
 export interface CliIo {
@@ -72,7 +64,7 @@ export async function runCli(
   program
     .name("silvermoon")
     .description(
-      "Check-backed consensus and evidence; archived Ideas are never read.",
+      "Check-backed flat-folder submit/accept lifecycle; historical Ideas are read-only.",
     )
     .version("0.1.0-rc.3")
     .option("--root <directory>", "Select a Git repository root")
@@ -178,7 +170,7 @@ export async function runCli(
   program
     .command("check-idea <idea>")
     .description(
-      "Execute the exact pinned Check; gaps are normal observations.",
+      "Run the current Check with the Idea's trusted event Schema; gaps are normal observations.",
     )
     .action(async (selector: string) => {
       const options = program.opts<Options>();
@@ -190,29 +182,20 @@ export async function runCli(
         "target-context",
         "Idea selectors require a project.",
       );
-      let cid: string | undefined;
       let id: string | undefined;
       if (selector && directory) {
-        if (validIdeaId(selector)) {
-          const path = join(
-            directory,
-            ".silvermoon",
-            "i",
-            selector,
-            "idea.json",
-          );
-          await protectedPath(directory, path);
-          const bootstrap = parseBootstrap(
-            text(await readRegular(path, io.signal)),
-            selector,
-          );
-          cid = bootstrap.checkCid;
-          id = bootstrap.id;
-        } else {
-          const selected = selectIdea(await readProject(directory), selector);
-          cid = selected.bootstrap.checkCid;
-          id = selected.bootstrap.id;
-        }
+        const selected = selectIdea(
+          validIdeaId(selector)
+            ? await readIdeaProject(directory, selector, "worktree", io.signal)
+            : await readProject(directory),
+          selector,
+        );
+        invariant(
+          isFlatIdea(selected),
+          "migration-required",
+          "Historical Idea remains readable/checkable; explicitly migrate before navigation.",
+        );
+        id = selected.bootstrap.id;
       }
       const report = await observe(
         {
@@ -221,7 +204,6 @@ export async function runCli(
           idea: id!,
         },
         {
-          ...(cid ? { cid } : {}),
           ...(io.signal ? { signal: io.signal } : {}),
         },
       );
@@ -288,7 +270,7 @@ export async function runCli(
     );
   program
     .command("create-idea")
-    .description("Create only a new Idea scaffold; never commits or signs off.")
+    .description("Create a flat Idea scaffold; never commits or accepts.")
     .option(
       "--language <tag>",
       "Canonical content-language override (not output locale)",
@@ -315,8 +297,12 @@ export async function runCli(
       const project = await readProject(directory);
       const selected = selectIdea(project, created.id);
       const user = await deviceLanguage(currentDevice());
-      const state = reduce(selected, {
-        head: await git(directory, ["rev-parse", "HEAD"]),
+      invariant(
+        isFlatIdea(selected),
+        "internal",
+        "Creation must produce a flat Idea.",
+      );
+      const state = reduceFlat(selected, {
         ...(project.config.preferredLanguage
           ? { projectLanguage: project.config.preferredLanguage }
           : {}),
@@ -328,7 +314,7 @@ export async function runCli(
         scaffoldLanguage: "en-US",
         scaffoldFallback: state.contentLanguage !== "en-US",
         instruction:
-          "Replace scaffold prompts in the effective content language; signoffs require real semantic review, not merely nonempty files.",
+          "Replace scaffold prompts in the effective content language; submit/accept require real authorized review, not merely nonempty files. Implementation commit/test-case details belong in supporting material, never event bodies.",
       });
     });
   program
@@ -341,6 +327,12 @@ export async function runCli(
       new Option("--state <level>", "Repeatable domain level filter")
         .choices([
           "requirements",
+          ...checkpoints.filter(
+            (id) =>
+              id !== "requirements" &&
+              id !== "implementation" &&
+              id !== "deployment",
+          ),
           "research",
           "technical",
           "cases",
@@ -423,12 +415,14 @@ export async function runCli(
               );
               return {
                 id: selected.bootstrap.id,
-                checkCid: selected.bootstrap.checkCid,
+                ...(isFlatIdea(selected)
+                  ? { eventSchemaCid: selected.bootstrap.eventSchemaCid }
+                  : { checkCid: selected.bootstrap.checkCid }),
                 createdAt: selected.bootstrap.createdAt,
                 state,
-                title: text(selected.files.get("requirements/Spec.md")!).split(
-                  "\n",
-                )[0],
+                title: text(
+                  selected.files.get("requirements/Spec.md") ?? Buffer.from(""),
+                ).split("\n")[0],
               };
             }),
           )

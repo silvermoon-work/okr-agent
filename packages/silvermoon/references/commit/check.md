@@ -9,6 +9,9 @@
 不要求工作区洁净、当前分支关联 upstream、HEAD 与 primary 同步或 Idea 完成，
 也不访问远端。只选择发生变更的 Ideas，但完整核验这些 Ideas 的候选与基线；
 新增 Idea 必须结构有效，已有身份与事件历史必须保留。
+新协议检查七个平级材料文件夹的真实 Git tree/mode、created-first 可信 Schema
+和最小 submit/accept tuple 历史；不检查测试、CI、报告真实性、用例完整性或
+声明 commit/path 绑定。历史 idea.json/用例索引/证据规则仅在原只读契约适用。
 仅在明确授权后，使用可重复的 `--allow-delete <idea-id>` 声明整体删除例外；
 部分删除、保留或不存在的 Idea 不能使用这个例外。
 
