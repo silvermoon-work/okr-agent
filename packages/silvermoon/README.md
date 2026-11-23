@@ -10,8 +10,36 @@ action, not a side effect of checking.
 and `check-project`, sharing readiness checks with Idea navigation and creation.
 Global runtime and personal skill replacement still require separate
 authorization; building or publishing does not switch an existing device. CLI
-readiness tests use a controlled legacy PATH command so a linked development
-installation does not change their expected prerequisites.
+readiness tests mock host/repository boundaries and inspect inert owned PATH
+fixtures, so a linked development installation does not affect prerequisites.
+
+## Test isolation
+
+Default `test`, `test-coverage` and root `pnpm check` never initialize Git
+repositories, stage/commit/push fixture content, launch a child CLI, or execute
+real Task Engine workers in Silvermoon tests. Repository adapter tests use
+prepared Git command output and blob snapshots; checkpoint tests mock repository
+and device observations, while retaining real protocol/history rules. CLI tests
+mock host dispatch, writer tests use controlled primary observations and owned
+filesystem transactions, and host tests use a controlled Engine with actual
+offline CAR/reference reading. No fake Git implementation or live service is
+required. The default setup fails closed on unmocked subprocess/Engine creation.
+Coverage still includes all source and enforces the shared four 90% gates.
+
+The former real-Git/child-CLI/Engine regressions remain under `native-test/`,
+outside the default test discovery pattern, with a separate guarded config.
+After building dependencies, explicitly opt in with:
+
+```sh
+pnpm exec turbo run native-test --filter=@silvermoon-work/silvermoon
+```
+
+This uncached manual action is bounded to ten minutes (individual tests/hooks
+have a 30-second default). It initializes owned repositories/remotes only under
+the package's `.test-work`, checks repository ownership before writes, and
+removes owned fixtures afterward. It is not part of CI's `test`, `test-coverage`
+or `check`, and native compatibility is not certified by mock unit results. Do
+not run the retained config directly or use native fixtures from default tests.
 
 The build sets the generated CLI entry's executable permissions after producing
 the CARs, so rebuilding a linked checkout preserves command usability and Turbo

@@ -215,6 +215,12 @@ silvermoon check-changes --worktree --audience agent
 及对应文档中的规则含义与修复指引，不附带 Task 内部参数 Schema；
 `--json` 和 `get-reference` 保留完整文档。
 
+Silvermoon 的默认 `test` / `test-coverage` / `pnpm check` 不创建真实 Git
+仓库、不执行 Git、子 CLI 或真实 Engine worker。默认测试以准备好的快照／命令输出
+和宿主边界 mock 验证真实协议、历史与检查规则，仍包含全部源码并维持四项 90%
+coverage 门禁。原有真实仓库回归保留为显式、非缓存且限时的 `native-test`，
+不进入默认 CI；详见[测试隔离](packages/silvermoon/README.md#test-isolation)。
+
 ## Preset 来源
 
 本项目派生自

@@ -1,125 +1,146 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 import { executeCheck } from "@silvermoon-work/check-task-sdk";
 import { commitCheckpoints } from "../src/commit-check.js";
-import { bundledArtifact, observe } from "../src/host.js";
-import { git, readProject, selectIdea } from "../src/repository.js";
-import {
-  add,
-  event,
-  id,
-  materialize,
-  repository,
-  scratch,
-  sync,
-} from "./fixtures.js";
+import * as repository from "../src/repository.js";
+import { canonical, SilvermoonError, type Files } from "../src/domain.js";
+import { add, cid, event, files, head, id } from "./fixtures.js";
+import { project, tip } from "./snapshots.js";
+import { report } from "./paired-fixtures.js";
+import { reportPath } from "../src/lifecycle.js";
+import { resolve } from "node:path";
 
-async function setup() {
-  const { root } = await repository();
-  const home = await scratch();
-  const runtime = { entry: "", path: process.env.PATH ?? "" };
-  const target = { userHome: home, repoRoot: root, snapshot: "staged" };
-  const run = (snapshot = "staged") =>
-    executeCheck({
-      checkpoints: commitCheckpoints(runtime),
-      target: { ...target, snapshot },
-      signal: new AbortController().signal,
-    });
-  return { root, home, runtime, target, run };
-}
-describe("independent Silvermoon commit Check Task", () => {
-  it("validates the index without device readiness, clean worktree, upstream or primary synchronization", async () => {
-    const { root, home, runtime, target, run } = await setup();
-    await mkdir(join(home, ".config", "silvermoon"), { recursive: true });
-    await writeFile(
-      join(home, ".config", "silvermoon", "config.yaml"),
-      "not: supported",
-    );
-    await git(root, ["remote", "remove", "origin"]);
-    await git(root, ["switch", "--detach", "HEAD"]);
-    await writeFile(join(root, "untracked.txt"), "not staged\n");
-    await writeFile(
-      join(root, ".silvermoon", "i", id, "events.jsonl"),
-      "invalid unstaged content\n",
-    );
-    expect(await run()).toMatchObject({ pass: true });
-    expect(await run("worktree")).toMatchObject({
-      problems: [
-        { checkpoint: "commit-snapshot", code: "commit-snapshot-valid" },
-      ],
-    });
-    const commit = await bundledArtifact("commit");
-    const idea = await bundledArtifact();
-    expect(commit.cid).not.toBe(idea.cid);
-    const result = await observe(
-      { userHome: home, repoRoot: root },
-      {
-        runtime,
-        operation: { mode: "snapshot", snapshot: "staged" },
-      },
-    );
-    expect(result.checkCid).toBe(commit.cid);
-    expect(result.result.pass).toBe(true);
-    expect(result.target).toEqual(target);
-    expect(await git(root, ["status", "--porcelain"])).toContain(
-      "events.jsonl",
-    );
-    await expect(
-      observe(
-        { userHome: home, repoRoot: root },
-        {
-          runtime,
-          operation: { mode: "snapshot", snapshot: "staged" },
-          artifacts: [idea],
-          cid: idea.cid,
-        },
-      ),
-    ).rejects.toThrow();
-  }, 20_000);
-
-  it("accepts valid staged event additions while unrelated worktree files remain dirty", async () => {
-    const { root, home, runtime, run } = await setup();
-    const original = selectIdea(await readProject(root), id);
-    await materialize(
-      root,
-      add(original.files, event({ type: "setAlias", alias: "new-alias" })),
-    );
-    await git(root, ["add", "--", `.silvermoon/i/${id}/events.jsonl`]);
-    await writeFile(join(root, "source.txt"), "Unstaged deliverable edit\n");
-    expect(await run()).toMatchObject({ pass: true });
-    const report = await observe(
-      { userHome: home, repoRoot: root },
-      { runtime, operation: { mode: "snapshot", snapshot: "staged" } },
-    );
-    expect(report.result.pass).toBe(true);
-    expect(report.checkCid).toBe((await bundledArtifact("commit")).cid);
-    expect(await readFile(join(root, "source.txt"), "utf8")).toBe(
-      "Unstaged deliverable edit\n",
-    );
-    expect(
-      await git(root, ["status", "--porcelain", "--", "source.txt"]),
-    ).toContain("M source.txt");
+vi.mock("../src/repository.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof repository>()),
+  git: vi.fn(),
+  verifyRepositoryRoot: vi.fn(),
+  readProject: vi.fn(),
+}));
+const root = resolve(".test-work", "commit-snapshot");
+const home = resolve(".test-work", "home");
+const runtime = { entry: "", path: process.cwd() };
+let previous: repository.Project;
+let current: repository.Project;
+let revision: string | undefined;
+let changed: string;
+let untracked: string;
+beforeEach(() => {
+  vi.mocked(repository.git).mockReset();
+  vi.mocked(repository.readProject).mockReset();
+  vi.mocked(repository.verifyRepositoryRoot)
+    .mockReset()
+    .mockResolvedValue(undefined);
+  previous = project(root);
+  current = previous;
+  revision = tip;
+  changed = `.silvermoon/i/${id}/events.jsonl\0`;
+  untracked = "";
+  vi.mocked(repository.git).mockImplementation(async (_root, args) => {
+    await Promise.resolve();
+    switch (args[0]) {
+      case "rev-parse":
+        if (args.includes("--quiet") && !revision)
+          throw Object.assign(new Error("unborn"), { code: 1 });
+        return args.includes("--quiet") ? revision! : head;
+      case "rev-list":
+        return `${head}${revision ? ` ${revision}` : ""}`;
+      case "ls-tree":
+        return args.includes("--name-only")
+          ? ".silvermoon/config.yaml"
+          : changed;
+      case "diff":
+        return changed;
+      case "ls-files":
+        return args.includes("--others") ? untracked : changed;
+      case "cat-file":
+        return "commit";
+      default:
+        throw new Error(`Unprepared query: ${args.join(" ")}`);
+    }
   });
+  vi.mocked(repository.readProject).mockImplementation(
+    async (_root, snapshot, _signal, ids) => {
+      await Promise.resolve();
+      const value = snapshot === revision ? previous : current;
+      return {
+        ...value,
+        ideas: new Map([...value.ideas].filter(([id]) => !ids || ids.has(id))),
+      };
+    },
+  );
+});
+function run(snapshot = "staged", allowDelete?: string[]) {
+  return executeCheck({
+    checkpoints: commitCheckpoints(runtime),
+    target: {
+      userHome: home,
+      repoRoot: root,
+      snapshot,
+      ...(allowDelete ? { allowDelete } : {}),
+    },
+    signal: new AbortController().signal,
+  });
+}
+function candidate(source: Files) {
+  current = project(root, source);
+}
 
-  it("rejects a coherent bootstrap and created-event identity rewrite", async () => {
-    const { root, run } = await setup();
-    const artifact = await bundledArtifact();
-    const current = selectIdea(await readProject(root), id);
-    const source = new Map(current.files);
+describe("independent commit rules over prepared index snapshots", () => {
+  it("validates the index independently of device, worktree, upstream and primary readiness", async () => {
+    expect((await run()).pass).toBe(true);
+    const calls = vi.mocked(repository.git).mock.calls.map(([, args]) => args);
+    expect(
+      calls.some(
+        (args) =>
+          args.includes("status") ||
+          args.includes("fetch") ||
+          args.includes("symbolic-ref"),
+      ),
+    ).toBe(false);
+    expect(calls.find((args) => args.includes("diff"))).toContain("--cached");
+    expect(
+      vi
+        .mocked(repository.readProject)
+        .mock.calls.map(([, snapshot]) => snapshot),
+    ).toEqual([tip, "staged"]);
+    expect(vi.mocked(repository.readProject).mock.calls[0]?.[3]).toEqual(
+      new Set([id]),
+    );
+  });
+  it("accepts staged additions with unchanged event prefixes", async () => {
+    candidate(
+      add(
+        previous.ideas.get(id)!.files,
+        event({ type: "setAlias", alias: "new-alias" }),
+      ),
+    );
+    expect((await run()).pass).toBe(true);
+  });
+  it("compares bootstrap values, not JSON formatting", async () => {
+    const source = new Map(previous.ideas.get(id)!.files);
+    source.set(
+      "idea.json",
+      Buffer.from(JSON.stringify(previous.ideas.get(id)!.bootstrap, null, 2)),
+    );
+    candidate(source);
+    expect((await run()).pass).toBe(true);
+  });
+  it("rejects coherent identity changes and attributes immutable identity documentation", async () => {
+    const source = new Map(previous.ideas.get(id)!.files);
     for (const path of ["idea.json", "events.jsonl"])
       source.set(
         path,
         Buffer.from(
           new TextDecoder()
             .decode(source.get(path))
-            .replaceAll(current.bootstrap.checkCid, artifact.cid),
+            .replaceAll(
+              cid,
+              "bafybeibwzifhk4upvphdtzuqyy4gkdns5d4uelnras3exsy7ugmbtlji4m",
+            ),
         ),
       );
-    await materialize(root, source);
-    await git(root, ["add", "--", `.silvermoon/i/${id}`]);
-    const result = await run();
-    expect(result).toMatchObject({
+    candidate(source);
+    expect(await run()).toMatchObject({
+      pass: false,
       problems: [
         {
           checkpoint: "commit-history",
@@ -134,237 +155,158 @@ describe("independent Silvermoon commit Check Task", () => {
       ],
     });
   });
-
-  it("compares immutable bootstrap values without treating JSON formatting as an identity change", async () => {
-    const { root, run } = await setup();
-    const { bootstrap } = selectIdea(await readProject(root), id);
-    await writeFile(
-      join(root, ".silvermoon", "i", id, "idea.json"),
-      JSON.stringify(
-        {
-          version: bootstrap.version,
-          id: bootstrap.id,
-          checkCid: bootstrap.checkCid,
-          createdAt: bootstrap.createdAt,
-        },
-        null,
-        2,
-      ),
-    );
-    await git(root, ["add", "--", `.silvermoon/i/${id}/idea.json`]);
-    expect((await run()).pass).toBe(true);
-  });
-
-  it("rejects validly encoded changes to an already committed event", async () => {
-    const { root, run } = await setup();
-    const current = selectIdea(await readProject(root), id);
-    await materialize(
-      root,
-      add(current.files, event({ type: "setAlias", alias: "before" })),
-    );
-    await sync(root);
-    const path = join(root, ".silvermoon", "i", id, "events.jsonl");
-    await writeFile(
-      path,
-      (await readFile(path, "utf8")).replace(
-        '"alias":"before"',
-        '"alias":"after"',
-      ),
-    );
-    await git(root, ["add", "--", path]);
-    expect(await run()).toMatchObject({
-      problems: [
-        {
-          checkpoint: "commit-history",
-          code: "commit-history-event-history-append-only",
-        },
-      ],
-    });
-  });
-
-  it("protects the original event bytes even when UTF-8 decoding hides a BOM insertion", async () => {
-    const { root, run } = await setup();
-    const path = join(root, ".silvermoon", "i", id, "events.jsonl");
-    await writeFile(
-      path,
-      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), await readFile(path)]),
-    );
-    await git(root, ["add", "--", path]);
-    expect(await run()).toMatchObject({
-      problems: [
-        {
-          checkpoint: "commit-history",
-          code: "commit-history-event-history-append-only",
-        },
-      ],
-    });
-  });
-
-  it("rejects deleting an established Idea without requiring remote refs", async () => {
-    const { root, run } = await setup();
-    await git(root, ["remote", "remove", "origin"]);
-    await rm(join(root, ".silvermoon", "i", id), { recursive: true });
-    await git(root, ["add", "-A"]);
-    expect(await run()).toMatchObject({
-      problems: [
-        {
-          checkpoint: "commit-history",
-          code: "commit-history-idea-identity-immutable",
-        },
-      ],
-    });
-  });
-
-  it("allows only explicitly named whole deletions in the index and the real Task", async () => {
-    const { root, home, runtime, target } = await setup();
-    await rm(join(root, ".silvermoon", "i", id), { recursive: true });
-    await git(root, ["add", "-A"]);
-    expect(
-      await executeCheck({
-        checkpoints: commitCheckpoints(runtime),
-        target: { ...target, allowDelete: [id] },
-        signal: new AbortController().signal,
-      }),
-    ).toMatchObject({ pass: true });
-    expect(
-      (
-        await observe(
-          { userHome: home, repoRoot: root },
-          {
-            runtime,
-            operation: {
-              mode: "snapshot",
-              snapshot: "staged",
-              allowDelete: [id],
-            },
-          },
-        )
-      ).result.pass,
-    ).toBe(true);
-    await expect(
-      observe(
-        { userHome: home, repoRoot: root },
-        {
-          runtime,
-          operation: {
-            mode: "snapshot",
-            snapshot: "staged",
-            allowDelete: ["not-an-id"],
-          },
-        },
-      ),
-    ).rejects.toThrow();
-  });
-
-  it("rejects deletion exceptions for retained Ideas and partial deletions", async () => {
-    const { root, runtime, target } = await setup();
-    const run = () =>
-      executeCheck({
-        checkpoints: commitCheckpoints(runtime),
-        target: { ...target, allowDelete: [id] },
-        signal: new AbortController().signal,
-      });
-    expect((await run()).pass).toBe(false);
-    await rm(join(root, ".silvermoon", "i", id, "events.jsonl"));
-    await git(root, ["add", "-A"]);
-    expect((await run()).pass).toBe(false);
-  });
-
-  it("does not parse unchanged Ideas, but fully validates changed and untracked Ideas", async () => {
-    const { root, run } = await setup();
-    const path = join(root, ".silvermoon", "i", id, "events.jsonl");
-    await writeFile(path, "historical invalid data\n");
-    await git(root, ["add", "-A"]);
-    await git(root, ["commit", "-m", "Unchanged historical fixture"]);
-    await writeFile(join(root, "source.txt"), "Deliverable only\n");
-    expect((await run("worktree")).pass).toBe(true);
-    expect((await run("staged")).pass).toBe(true);
-    await writeFile(
-      join(root, ".silvermoon", "i", id, "requirements", "Spec.md"),
-      "Changed requirements\n",
-    );
-    expect((await run("worktree")).pass).toBe(false);
-    const newId = "202611191608abcd";
-    await mkdir(join(root, ".silvermoon", "i", newId), { recursive: true });
-    await writeFile(
-      join(root, ".silvermoon", "i", newId, "events.jsonl"),
-      "invalid new Idea\n",
-    );
-    await git(root, [
-      "restore",
-      "--worktree",
-      "--",
-      `.silvermoon/i/${id}/requirements/Spec.md`,
-    ]);
-    expect((await run("worktree")).pass).toBe(false);
-    expect((await run("staged")).pass).toBe(true);
-  });
-
-  it.each(["unborn", "adoption"] as const)(
-    "accepts an initial staged Silvermoon snapshot for %s",
+  it.each(["rewrite", "bom"] as const)(
+    "rejects committed event byte %s",
     async (mode) => {
-      const root = await scratch();
-      await git(root, ["init", "--initial-branch=main"]);
-      if (mode === "adoption") {
-        await git(root, ["config", "user.email", "fixture@example.invalid"]);
-        await git(root, ["config", "user.name", "Fixture"]);
-        await writeFile(join(root, "source.txt"), "Existing repository\n");
-        await git(root, ["add", "source.txt"]);
-        await git(root, ["commit", "-m", "Existing project"]);
-      }
-      await mkdir(join(root, ".silvermoon"), { recursive: true });
-      await writeFile(
-        join(root, ".silvermoon", "config.yaml"),
-        "version: 2\nprimaryRepository: example/project\nprimaryBranch: main\n",
+      const source = add(files(), event({ type: "setAlias", alias: "before" }));
+      previous = project(root, source);
+      const updated = new Map(source);
+      updated.set(
+        "events.jsonl",
+        mode === "bom"
+          ? Buffer.concat([
+              Buffer.from([0xef, 0xbb, 0xbf]),
+              Buffer.from(source.get("events.jsonl")!),
+            ])
+          : Buffer.from(
+              new TextDecoder()
+                .decode(source.get("events.jsonl"))
+                .replace('"alias":"before"', '"alias":"after"'),
+            ),
       );
-      await materialize(root);
-      await git(root, ["add", "--all"]);
-      const result = await executeCheck({
-        checkpoints: commitCheckpoints({
-          entry: "",
-          path: process.env.PATH ?? "",
-        }),
-        target: {
-          userHome: await scratch(),
-          repoRoot: root,
-          snapshot: "staged",
-        },
-        signal: new AbortController().signal,
+      candidate(updated);
+      expect(await run()).toMatchObject({
+        problems: [{ code: "commit-history-event-history-append-only" }],
       });
-      expect(result.pass).toBe(true);
     },
   );
-
-  it("rejects unsupported snapshot selectors instead of passing them as Git options", async () => {
-    const { run } = await setup();
-    expect(await run("--all")).toMatchObject({
-      problems: [
-        { checkpoint: "commit-snapshot", code: "commit-snapshot-valid" },
-      ],
+  it("rejects whole deletion unless explicitly authorized and rejects retained/partial exceptions", async () => {
+    current = project(root, null);
+    expect(await run()).toMatchObject({
+      problems: [{ code: "commit-history-idea-identity-immutable" }],
+    });
+    expect((await run("staged", [id])).pass).toBe(true);
+    current = previous;
+    expect((await run("staged", [id])).pass).toBe(false);
+    vi.mocked(repository.readProject).mockRejectedValueOnce(
+      new SilvermoonError("events", "Partial deletion"),
+    );
+    expect((await run("staged", [id])).pass).toBe(false);
+  });
+  it("protects deployment report prefixes while allowing append-only retries", async () => {
+    const source = files();
+    source.set(reportPath, Buffer.from(report(head)));
+    previous = project(root, source);
+    source.set(reportPath, Buffer.from(report(head, "fail")));
+    candidate(source);
+    expect(await run()).toMatchObject({
+      problems: [{ code: "commit-history-deployment-report-append-only" }],
+    });
+    source.set(reportPath, Buffer.from(report(head) + report(head, "fail")));
+    candidate(source);
+    expect((await run()).pass).toBe(true);
+  });
+  it("does not parse unchanged Ideas, and includes untracked Ideas only in worktree checks", async () => {
+    changed = "";
+    expect((await run()).pass).toBe(true);
+    expect(vi.mocked(repository.readProject).mock.calls[0]?.[3]).toEqual(
+      new Set(),
+    );
+    untracked = `.silvermoon/i/${id}/requirements/Spec.md\0`;
+    await run("worktree");
+    expect(vi.mocked(repository.readProject).mock.calls.at(-1)?.[3]).toEqual(
+      new Set([id]),
+    );
+    await run("staged");
+    expect(vi.mocked(repository.readProject).mock.calls.at(-1)?.[3]).toEqual(
+      new Set(),
+    );
+  });
+  it.each(["unborn", "adoption"] as const)(
+    "accepts initial metadata for %s",
+    async (mode) => {
+      revision = mode === "unborn" ? undefined : tip;
+      if (mode === "adoption") {
+        const normal = vi.mocked(repository.git).getMockImplementation()!;
+        vi.mocked(repository.git).mockImplementation((root, args, signal) =>
+          args[0] === "ls-tree"
+            ? Promise.resolve("")
+            : normal(root, args, signal),
+        );
+      }
+      expect((await run()).pass).toBe(true);
+    },
+  );
+  it("resolves committed snapshots against their first parent, never current worktree", async () => {
+    expect((await run("HEAD")).pass).toBe(true);
+    expect(
+      vi
+        .mocked(repository.readProject)
+        .mock.calls.map(([, snapshot]) => snapshot),
+    ).toEqual([tip, head]);
+    expect(
+      vi
+        .mocked(repository.git)
+        .mock.calls.find(([, args]) => args[0] === "diff")?.[1],
+    ).toContain(head);
+    await run(head);
+  });
+  it.each(["--all", ".silvermoon/i/bad/file"] as const)(
+    "rejects invalid selector/layout %s",
+    async (value) => {
+      if (value.startsWith(".")) changed = value;
+      expect((await run(value.startsWith(".") ? "staged" : value)).pass).toBe(
+        false,
+      );
+    },
+  );
+  it.each(["git-context", "concurrent-edit", "internal", "protocol"] as const)(
+    "propagates %s execution errors",
+    async (code) => {
+      vi.mocked(repository.verifyRepositoryRoot).mockRejectedValueOnce(
+        new SilvermoonError(code, "execution fault"),
+      );
+      await expect(run()).rejects.toThrow(/execution fault/);
+    },
+  );
+  it.each([
+    new SyntaxError("invalid"),
+    new TypeError("invalid"),
+    Object.assign(new Error("invalid"), { code: 128 }),
+  ])("reports invalid candidates, not success", async (error) => {
+    vi.mocked(repository.readProject).mockRejectedValueOnce(error);
+    expect(await run()).toMatchObject({
+      problems: [{ code: "commit-snapshot-valid" }],
     });
   });
-
-  it("keeps unavailable Git execution context distinct from an invalid candidate", async () => {
-    const { target } = await setup();
+  it("preserves unexpected adapter faults and rejects missing host executable context", async () => {
+    vi.mocked(repository.readProject).mockRejectedValueOnce(
+      new Error("transport"),
+    );
+    await expect(run()).rejects.toThrow(/transport/);
     await expect(
       executeCheck({
         checkpoints: commitCheckpoints({ entry: "", path: "" }),
-        target,
+        target: { userHome: home, repoRoot: root, snapshot: "staged" },
         signal: new AbortController().signal,
       }),
     ).rejects.toThrow(/Git requires/);
   });
-
-  it("checks a committed snapshot against its parent, not the current worktree", async () => {
-    const { root, run } = await setup();
-    expect((await run("HEAD")).pass).toBe(true);
-    const current = selectIdea(await readProject(root), id);
-    await materialize(
-      root,
-      add(current.files, event({ type: "setAlias", alias: "committed" })),
+  it("validates implementation rev object kind", async () => {
+    const { signed, pairedEvent } = await import("./paired-fixtures.js");
+    candidate(
+      add(
+        signed(),
+        pairedEvent({ type: "verify", phase: "implementation", rev: head }),
+      ),
     );
-    await sync(root);
-    await writeFile(join(root, ".silvermoon", "i", id, "idea.json"), "{");
-    expect((await run("HEAD")).pass).toBe(true);
+    const normal = vi.mocked(repository.git).getMockImplementation()!;
+    vi.mocked(repository.git).mockImplementation((root, args, signal) =>
+      args[0] === "cat-file"
+        ? Promise.resolve("blob")
+        : normal(root, args, signal),
+    );
+    expect((await run()).pass).toBe(false);
+    expect(canonical(current.config)).toContain("primaryRepository");
   });
 });

@@ -1,7 +1,12 @@
 import { defineConfig } from "vitest/config";
+import { basename, resolve } from "node:path";
 
 export default defineConfig({
   test: {
+    setupFiles:
+      basename(process.cwd()) === "silvermoon"
+        ? [resolve("test", "no-native.ts")]
+        : [],
     coverage: {
       autoAttachSubprocess: true,
       include: ["src/**/*.{ts,tsx}"],

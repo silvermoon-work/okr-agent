@@ -70,6 +70,7 @@
     "generate-specs": "tsc --project tsconfig.build.json && node scripts/generate-specs.mjs",
     "lint": "eslint . --max-warnings=0",
     "lint-package": "publint --strict",
+    "native-test": "node scripts/native-test.mjs",
     "prepublishOnly": "publish-gate check",
     "test": "vitest run --root . --config ../../vitest.config.ts",
     "test-coverage": "vitest run --root . --config ../../vitest.config.ts --coverage",

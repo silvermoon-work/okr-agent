@@ -218,6 +218,15 @@
 - Default toolchain tests use controlled tools and isolated configuration, not
   ambient npm/pnpm/nrm installations. Real installed-tool checks are explicit
   `native-test`/`smoke` actions and the manual cross-platform native workflow.
+- Default Silvermoon tests must not initialize real Git repositories or launch
+  Git, child CLI processes or Task Engine workers. Use prepared command/blob
+  snapshots at process adapters, repository/device observations at checkpoints,
+  and controlled host/Engine boundaries; keep actual protocol/history
+  validation. `test/no-native.ts` guards unmocked process and Engine execution.
+  Retained native regressions live in `native-test/` with explicit opt-in,
+  fixture ownership checks and a ten-minute outer bound. Run them only through
+  the package's uncached `native-test` action after building dependencies, never
+  as part of default `test`, `test-coverage` or root `check`.
 - Coverage thresholds are project-owned policy, not a universal Check minimum.
   Global thresholds are 90% for branches, functions, lines and statements in
   every code workspace, enforced by the shared Vitest configuration. Keep

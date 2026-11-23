@@ -15,7 +15,6 @@ import {
   type Gate,
   type Idea,
 } from "../src/domain.js";
-import { git } from "../src/repository.js";
 
 export const cid =
   "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3thv36wjgksq4bqppj6bfk3sa";
@@ -146,41 +145,4 @@ export async function materialize(
     await mkdir(join(target, ".."), { recursive: true });
     await writeFile(target, bytes);
   }
-}
-export async function repository(
-  options: { idea?: boolean } = {},
-): Promise<{ root: string; remote: string }> {
-  const directory = await scratch();
-  const root = join(directory, "work");
-  const remote = join(directory, "primary.git");
-  await mkdir(root);
-  await mkdir(remote);
-  await git(remote, ["init", "--bare", "--initial-branch=main"]);
-  await git(root, ["init", "--initial-branch=main"]);
-  await git(root, ["config", "user.email", "fixture@example.invalid"]);
-  await git(root, ["config", "user.name", "Fixture"]);
-  await git(root, ["config", "core.autocrlf", "false"]);
-  await writeFile(
-    join(root, ".git", "hooks", "pre-commit"),
-    "#!/bin/sh\n" +
-      "# BEGIN Silvermoon check-changes\n" +
-      "silvermoon check-changes --staged --audience agent || exit $?\n" +
-      "# END Silvermoon check-changes\n",
-    { mode: 0o755 },
-  );
-  await git(root, ["remote", "add", "origin", remote]);
-  await mkdir(join(root, ".silvermoon"));
-  await writeFile(
-    join(root, ".silvermoon", "config.yaml"),
-    "version: 2\nprimaryRepository: example/project\nprimaryBranch: main\npreferredLanguage: zh-CN\n",
-  );
-  await writeFile(join(root, "source.txt"), "Deliverable source v1\n");
-  if (options.idea !== false) await materialize(root);
-  await sync(root);
-  return { root, remote };
-}
-export async function sync(root: string): Promise<void> {
-  await git(root, ["add", "--all"]);
-  await git(root, ["commit", "--allow-empty", "-m", "Fixture candidate"]);
-  await git(root, ["push", "--set-upstream", "origin", "main"]);
 }

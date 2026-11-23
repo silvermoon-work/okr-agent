@@ -39,6 +39,16 @@ or run the toolchain workspace's `native-test` and `smoke` actions after
 building it. Do not remove native compatibility coverage or turn unknown tools
 into success to make the default gate pass.
 
+Silvermoon's default tests also forbid real Git subprocesses, child CLI
+execution and real Task Engine workers. They cover repository/process adapters
+with prepared snapshot output and host/checkpoint/CLI boundaries with mocks.
+Retained real-repository regressions are an explicit, uncached
+`pnpm exec turbo run native-test --filter=@silvermoon-work/silvermoon` action,
+not default CI. See the package's
+[test isolation](packages/silvermoon/README.md#test-isolation) for the ownership
+guards and bounded native run. Do not move native fixtures back into the default
+suite or lower the four coverage gates.
+
 Project-specific agent guidance is in
 [docs/agent-project.md](docs/agent-project.md), including the explicitly
 approved conflict between direct engineering commands and the older fixed-entry
