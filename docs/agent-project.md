@@ -66,6 +66,11 @@
   not restore copied command/delivery libraries in every member. The installed
   published gate replaces the copied publisher, its predicates/delivery parser,
   root release wrappers and publisher-only root dependencies.
+- There is no root pnpm subprocess helper. The viewer compiles with a direct
+  `tsc && node scripts/build.mjs` chain before generating its artifacts.
+  Toolchain `native-test` invokes Vitest directly with a member configuration
+  that reuses the shared configuration and explicitly enables native tests.
+  Default test and coverage commands remain isolated from installed tools.
 - Silvermoon's existing build script explicitly restores its generated CLI
   entry's executable permissions after CAR generation. This is a user-approved
   scoped fix, not a new package-wide build convention. Shared package build

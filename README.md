@@ -177,7 +177,17 @@ hook，配置须保留原逻辑并尊重 `core.hooksPath`。`check-setup`
 upstream 就绪或 Idea 完成。新 Idea 仅位于 `.silvermoon/i`，使用五个准确版本的
 配对 submit/signOff、配对 验证及最终用户验收。实现记录准确自动化测试提交，
 部署记录固定 append-only
-JSONL 手工报告；详见[Events 定义](docs/silvermoon-events.md)。
+JSONL 手工报告；详见[Events 设计](docs/silvermoon-events.md)。
+继续 review 使用[最新 Idea Check 设计 Spec](docs/silvermoon-idea-check-design.yaml)；
+[生成的运行时 Spec](docs/silvermoon-single-checker.yaml)与原设计候选保持各自原语义。
+本轮 Events review 提议取消事件 id/version、按 object + revision 确认，
+相同内容及依赖的 submit 幂等归并；文档包含统一 JSON Schema 和 TypeScript 类型。
+目标模型另以 eventSchemaCid 固定数据契约，按 RFC 8785 → SHA-256 → CIDv1
+生成 Schema 身份；Checker 执行身份单独记录，不混同于事件格式。
+当前运行时仍要求 id 和 `version: 1`，并以 submit ID 配对确认；
+created 仍以 checkCid 固定 Check Bundle；目标模型示例仅供设计讨论，
+尚不能写入现有日志。
+旧 v1 历史保持只读语义，不自动满足新标准。
 旧版 `.silvermoon/ideas` 已从工作树移除，文档与验收记录仅保留在 Git 历史中，
 不迁移、不补 CID，也不自动满足新标准。
 候选构建和验证不会替换当前全局旧 CLI 或个人 skill；正式发布、安装及
@@ -274,6 +284,10 @@ verified.
   `127.0.0.1:4173` with strict port selection. Custom scripts remain for builds
   with artifact-generation logic and integration harnesses. Publishing uses a
   pinned registry gate and standard pnpm lifecycle commands.
+- The viewer runs TypeScript compilation before its artifact-generation script
+  in a fail-fast command chain. Toolchain `native-test` calls Vitest directly
+  with a member configuration that reuses the shared test settings and enables
+  installed-tool tests. Neither action needs a root pnpm subprocess wrapper.
 
 Add a dependency from the repository root:
 
