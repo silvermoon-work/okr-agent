@@ -92,6 +92,9 @@ pnpm --filter @silvermoon-work/check.nodejs-toolchain test-coverage
 验证通过与不通过；不是实际设备或平台兼容性证明。普通测试不依赖个人工具和配置。
 macOS/Linux 的 nrm 夹具在重写入口后显式设置执行权限，再建立软链接。
 `native-test` 仍显式保留真实已安装工具的原生适配回归，CI 的 smoke 使用受控环境。
+该命令直接运行 Vitest；`vitest.native.config.ts` 复用共享配置，仅选择
+`test/inspect.test.ts` 并设置
+`TOOLCHAIN_NATIVE_TESTS=1`，不影响默认测试与覆盖率命令。
 
 ## 文档、历史与制品
 

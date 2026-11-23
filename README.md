@@ -267,6 +267,10 @@ verified.
   `127.0.0.1:4173` with strict port selection. Custom scripts remain for builds
   with artifact-generation logic and integration harnesses. Publishing uses a
   pinned registry gate and standard pnpm lifecycle commands.
+- The viewer runs TypeScript compilation before its artifact-generation script
+  in a fail-fast command chain. Toolchain `native-test` calls Vitest directly
+  with a member configuration that reuses the shared test settings and enables
+  installed-tool tests. Neither action needs a root pnpm subprocess wrapper.
 
 Add a dependency from the repository root:
 
