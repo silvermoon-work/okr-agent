@@ -1,7 +1,16 @@
-import { runCheck, type CheckContext } from "@silvermoon-work/check-task-sdk";
-import contract, { type Input } from "./contract.js";
-import { toolchainRegistry } from "./inspect.js";
+import { runTask } from "@silvermoon-work/task-sdk";
+import { createCheckCallback } from "@silvermoon-work/check-task-sdk";
+import contract from "./contract.js";
+import { withDevice } from "./device.js";
+import { toolchainCheckpoints } from "./inspect.js";
+import { resolvePolicy } from "./policy.js";
 
-const registry = (context: CheckContext, input: Input) =>
-  toolchainRegistry(input, context.signal);
-runCheck(contract, { registry, root: "toolchain" });
+runTask(async (input, context) => {
+  const policy = resolvePolicy(input);
+  return withDevice(context.signal, async (device) => {
+    const callback = createCheckCallback(contract, {
+      checkpoints: toolchainCheckpoints(policy.input, context.signal, device),
+    });
+    return callback(policy.input, context);
+  });
+});

@@ -154,14 +154,10 @@ export async function createIdea(
                   {
                     id: "I-01",
                     phase: "implementation",
-                    environment: "local",
-                    subject: "git-head",
                   },
                   {
                     id: "D-01",
                     phase: "deployment",
-                    environment: "deployment",
-                    subject: "implementation",
                   },
                 ],
               }) + "\n",
@@ -173,7 +169,6 @@ export async function createIdea(
             "requirements",
             "technical",
             "tests",
-            "evidence/implementation",
             "evidence/deployment",
           ])
             await mkdir(join(path, directory), { recursive: true });
@@ -268,7 +263,9 @@ export async function appendEvent(
       );
       if (event.type === "verify")
         invariant(
-          event.batch.subject === observed.head,
+          "batch" in event
+            ? event.batch.subject === observed.head
+            : event.phase !== "implementation" || event.rev === observed.head,
           "evidence",
           "A new batch must bind the current exact Git HEAD.",
         );

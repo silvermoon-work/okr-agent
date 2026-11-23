@@ -11,54 +11,53 @@ import { ContentRefSchema } from "@silvermoon-work/task-protocol";
 import { parseTaskDocument } from "../src/document.js";
 import { loadBrowserTask, TaskInvocation } from "../src/task.js";
 import { startPreview } from "../src/preview.js";
-import { fixtureDirectory, rendererFixture } from "./helpers.js";
-
-export async function taskFixture(
-  script = "export default async (parameters) => parameters.text;",
-  result: unknown = { type: "string" },
-  runtime: { type: "browser" } | { type: "node"; minVersion: string } = {
-    type: "browser",
-  },
-) {
-  const tree = await buildTaskBundle(
-    memoryTree(
-      new Map([
-        ["main.js", Buffer.from(script)],
-        ["note.txt", Buffer.from("actual bundled resource")],
-      ]),
-    ),
-    {
-      name: "browser acceptance",
-      runtime,
-      source: {
-        entry: "main.js",
-        mode: "explicit",
-        contract: {
-          parameters: {
-            type: "object",
-            properties: { text: { type: "string" } },
-            required: ["text"],
-            additionalProperties: false,
-          },
-          result,
-          message: false,
-        },
-      },
-      include: [{ from: "note.txt", to: "resources/" }],
-    },
-  );
-  const encoded = await encodeTaskBundleCar(tree);
-  try {
-    return {
-      cid: encoded.cid,
-      car: new Uint8Array(await new Response(encoded.stream).arrayBuffer()),
-    };
-  } finally {
-    await encoded.close();
-  }
-}
+import { fixtureDirectory, rendererFixture, taskFixture } from "./helpers.js";
 
 describe("real standard browser Task", () => {
+  it("validates the JSONL records envelope against the selected Viewer's real input contract", async () => {
+    const fixture = await taskFixture(
+      "export default async (parameters) => parameters.records.length;",
+      { type: "integer" },
+      { type: "browser" },
+      {
+        type: "object",
+        properties: {
+          records: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { id: { type: "integer" } },
+              required: ["id"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["records"],
+        additionalProperties: false,
+      },
+    );
+    const shared = IpfsStore.fromClient({
+      block: { get: () => Promise.reject(new Error("offline")) },
+    });
+    const task = await loadBrowserTask(shared, { car: fixture.car });
+    try {
+      const parsed = parseTaskDocument(
+        Buffer.from('{"id":2}\n{"id":1}\n'),
+        ".jsonl",
+      );
+      expect(task.parameters(parsed).data).toEqual({
+        records: [{ id: 2 }, { id: 1 }],
+      });
+      expect(() =>
+        task.parameters(
+          parseTaskDocument(Buffer.from('{"id":"wrong"}\n'), ".jsonl"),
+        ),
+      ).toThrow();
+    } finally {
+      await task.close();
+      await shared.close();
+    }
+  });
   it("parses raw document values without imposing the legacy schema selector", () => {
     expect(parseTaskDocument(Buffer.from("text: hello"), ".yaml")).toEqual({
       text: "hello",
@@ -382,7 +381,7 @@ describe("real standard browser Task", () => {
       await shared.close();
     }
   });
-  it("serves authenticated Task startup and updates separately from HTTP listening, cancellation and app close", async () => {
+  it("serves credential-free first-party Task startup separately from HTTP listening, cancellation and app close", async () => {
     const fixture = await taskFixture();
     const directory = await fixtureDirectory();
     const path = join(directory.directory, "raw.yaml");
@@ -399,8 +398,7 @@ describe("real standard browser Task", () => {
     const preview = await startPreview({
       path,
       store: shared,
-      configuration: { version: 1, renderers: {} },
-      task: { car: fixture.car },
+      viewer: { car: fixture.car },
       signal: abort.signal,
       diagnostic: (message) => {
         logs.push(message);
@@ -408,11 +406,10 @@ describe("real standard browser Task", () => {
       pollMs: 10,
     });
     const url = new URL(preview.url);
-    const token = url.hash.slice(1);
     const session = randomUUID();
     const response = await fetch(new URL("/events", url), {
       headers: {
-        Authorization: `Bearer ${token}`,
+        "X-IPFSAW-Client": "browser",
         "X-IPFSAW-Session": session,
       },
     });
@@ -443,7 +440,7 @@ describe("real standard browser Task", () => {
       const result = await fetch(new URL("/call", url), {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
+          "X-IPFSAW-Client": "browser",
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ operation, session, revision, ...extra }),
@@ -456,6 +453,7 @@ describe("real standard browser Task", () => {
     };
     try {
       expect(preview.bundleCid).toBe(fixture.cid);
+      expect(preview.url).toBe(url.origin + "/");
       expect(logs.join(" ")).not.toContain("startup completed");
       expect(
         (await fetch(new URL("/call", url), { method: "POST" })).status,
@@ -463,18 +461,40 @@ describe("real standard browser Task", () => {
       expect(
         (
           await fetch(new URL("/events", url), {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { "X-IPFSAW-Client": "browser" },
           })
         ).status,
       ).toBe(403);
-      expect(
-        (
-          await fetch(new URL("/call", url), {
-            method: "POST",
-            headers: { Origin: "null", Authorization: `Bearer ${token}` },
-          })
-        ).status,
-      ).toBe(403);
+      for (const origin of ["null", "https://evil.test"]) {
+        const headers = {
+          Origin: origin,
+          "X-IPFSAW-Client": "browser",
+          "Content-Type": "application/json",
+        };
+        expect(
+          (
+            await fetch(new URL("/call", url), {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                operation: "start",
+                session,
+                revision: 1,
+              }),
+            })
+          ).status,
+        ).toBe(403);
+        const preflight = await fetch(new URL("/call", url), {
+          method: "OPTIONS",
+          headers: {
+            Origin: origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "X-IPFSAW-Client, Content-Type",
+          },
+        });
+        expect(preflight.status).toBe(403);
+        expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
+      }
       expect((await fetch(new URL("/task-runtime.js", url))).status).toBe(200);
       expect(
         (
@@ -485,8 +505,9 @@ describe("real standard browser Task", () => {
       ).toBe(200);
       const page = await (await fetch(url.origin)).text();
       expect(page).not.toContain("first");
-      expect(page).not.toContain(token);
-      expect(page).toContain("Cancel startup");
+      expect(page).not.toContain('id="cancel"');
+      expect(page).not.toContain('id="close"');
+      expect(page).not.toContain("<header");
       const frame = await fetch(new URL("/frame", url));
       expect(frame.headers.get("content-security-policy")).toContain(
         "style-src 'nonce-",

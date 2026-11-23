@@ -1,5 +1,5 @@
 import { runCheck } from "@silvermoon-work/check-task-sdk";
 import contract from "./contract.js";
-import { registry } from "./registry.js";
+import { checkpoints } from "./checkpoints.js";
 
-runCheck(contract, { registry, root: "project" }, { assets: true });
+runCheck(contract, { checkpoints }, { assets: true });

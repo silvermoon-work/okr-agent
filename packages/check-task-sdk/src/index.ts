@@ -1,41 +1,30 @@
-import type { TaskContext } from "@silvermoon-work/task-sdk";
-
 export { createCheckContract } from "./contracts.js";
 export type { CheckContract } from "./contracts.js";
-export type { JsonObject, JsonValue } from "./canonical.js";
-export { defineChecker, mergeCheckerRegistries, failed } from "./checker.js";
+export { defineCheckpoint, failed } from "./checkpoint.js";
+export {
+  validateCheckpointRules,
+  validateOutputDocumentation,
+  renderCheckpointDocumentation,
+} from "./documentation.js";
 export type {
-  CheckerDefinition,
-  Checker,
-  CheckerRegistry,
-  CheckItem,
-  CheckerResult,
+  OutputDocumentation,
+  CheckpointDocumentation,
+} from "./documentation.js";
+export type {
+  Rule,
+  RuleFailure,
   Problem,
-  ProblemSource,
-} from "./checker.js";
-export { executeCheck } from "./graph.js";
-export type { CheckLimits, CheckOptions } from "./graph.js";
-export { validateCheckReport } from "./report.js";
-export type { CheckReport, ReportNode, ReportProblem } from "./report.js";
-export { checkerFromBundle } from "./bundle.js";
-export type { CheckExecutionPort } from "./bundle.js";
+  CheckpointResult,
+  CheckpointDefinition,
+  CheckpointContext,
+} from "./checkpoint.js";
+export { executeCheck } from "./pipeline.js";
+export type { CheckOptions, CheckpointLog, ReportNode } from "./pipeline.js";
+export type { CheckReport, ReportProblem, CheckReference } from "./report.js";
 export { createCheckCallback, runCheck } from "./task.js";
-export type { CheckTaskResult } from "./task.js";
-
-export interface CheckContext {
-  readonly signal: TaskContext["signal"];
-  readonly log: TaskContext["log"];
-  readonly progress: TaskContext["progress"];
-  readonly bundle: TaskContext["bundle"];
-  readonly readContent: TaskContext["readContent"];
-  readonly resolveContent: TaskContext["resolveContent"];
-  readonly putContent: TaskContext["putContent"];
-  readonly invokeTask: TaskContext["invokeTask"];
-}
-export type ProblemReporter<Code extends string> = (
-  code: Code,
-  brief: string,
-) => void;
-export interface CheckOutputOptions {
-  readonly assets?: boolean;
-}
+export type { CheckTaskResult, CheckTaskOptions } from "./task.js";
+export type {
+  CheckContext,
+  CheckOutputOptions,
+  ProblemReporter,
+} from "./legacy.js";

@@ -73,8 +73,5 @@ applications or aggregate roots.
   not proof that a version is absent.
 - Use npm Trusted Publishing with an explicit environment and id-token
   permission, never stored npm tokens.
-- Explicitly build the selected package and dependencies, pack the selected
-  package once with lifecycle hooks disabled, validate its exact name/version
-  and publish that same tarball. Never mutate the tarball after validation.
 - Manual workflow dispatch is dry-run only. Do not publish, move release tags,
   change dist-tags or upload artifacts remotely without explicit authorization.

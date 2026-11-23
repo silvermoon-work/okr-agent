@@ -2,24 +2,31 @@ import { execFile } from "node:child_process";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
+import { gitEnvironment } from "./git-context.js";
 import {
   SilvermoonError,
+  canonical,
   digest,
   idea,
   ideaFacts,
+  isPairedEvent,
+  isPairedIndex,
   invariant,
   language,
   maxBytes,
   projectConfig,
   requiredText,
+  repositoryIdentity,
   reduce,
   safeRelative,
+  text,
   validIdeaId,
   type Files,
   type Idea,
   type ProjectConfig,
   type State,
 } from "./domain.js";
+import { reportPath } from "./lifecycle.js";
 
 const execute = promisify(execFile);
 export type Snapshot = string;
@@ -29,9 +36,32 @@ export interface Project {
   readonly config: ProjectConfig;
   readonly ideas: ReadonlyMap<string, Idea>;
 }
+export type Repository = Pick<Project, "root" | "config">;
 export async function git(
   root: string,
   args: readonly string[],
+  signal?: AbortSignal,
+): Promise<string> {
+  return executeGit(root, args, true, signal);
+}
+export async function preCommitHookPath(
+  root: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  return join(
+    await executeGit(
+      root,
+      ["rev-parse", "--path-format=absolute", "--git-path", "hooks"],
+      false,
+      signal,
+    ),
+    "pre-commit",
+  );
+}
+async function executeGit(
+  root: string,
+  args: readonly string[],
+  disableHooks: boolean,
   signal?: AbortSignal,
 ): Promise<string> {
   const { stdout } = await execute(
@@ -42,8 +72,12 @@ export async function git(
       "core.quotepath=false",
       "-c",
       "core.fsmonitor=false",
-      "-c",
-      `core.hooksPath=${process.platform === "win32" ? "NUL" : "/dev/null"}`,
+      ...(disableHooks
+        ? [
+            "-c",
+            `core.hooksPath=${process.platform === "win32" ? "NUL" : "/dev/null"}`,
+          ]
+        : []),
       "-c",
       "diff.external=",
       "-c",
@@ -61,11 +95,7 @@ export async function git(
       encoding: "utf8",
       maxBuffer: maxBytes,
       timeout: 30_000,
-      env: {
-        ...process.env,
-        GIT_TERMINAL_PROMPT: "0",
-        GIT_OPTIONAL_LOCKS: "0",
-      },
+      env: gitEnvironment(),
       ...(signal ? { signal } : {}),
     },
   );
@@ -138,7 +168,11 @@ export async function readRegular(
     await handle.close();
   }
 }
-async function worktree(root: string, signal?: AbortSignal): Promise<Files> {
+async function worktree(
+  root: string,
+  signal?: AbortSignal,
+  ids?: ReadonlySet<string>,
+): Promise<Files> {
   const files = new Map<string, Uint8Array>();
   const config = join(root, ".silvermoon", "config.yaml");
   await protectedPath(root, config);
@@ -170,13 +204,23 @@ async function worktree(root: string, signal?: AbortSignal): Promise<Files> {
       }
     }
   };
-  await walk(base, ".silvermoon/i");
+  if (ids) {
+    for (const id of ids) {
+      invariant(validIdeaId(id), "layout", `Invalid Idea ID: ${id}`);
+      const selected = join(base, id);
+      if (!(await absent(selected))) {
+        await regular(selected, true);
+        await walk(selected, `.silvermoon/i/${id}`);
+      }
+    }
+  } else await walk(base, ".silvermoon/i");
   return files;
 }
 async function gitSnapshot(
   root: string,
   snapshot: string,
   signal?: AbortSignal,
+  paths: readonly string[] = [".silvermoon/config.yaml", ".silvermoon/i"],
 ): Promise<Files> {
   invariant(
     snapshot === "staged" ||
@@ -187,23 +231,8 @@ async function gitSnapshot(
   );
   const args =
     snapshot === "staged"
-      ? [
-          "ls-files",
-          "--stage",
-          "-z",
-          "--",
-          ".silvermoon/config.yaml",
-          ".silvermoon/i",
-        ]
-      : [
-          "ls-tree",
-          "-r",
-          "-z",
-          snapshot,
-          "--",
-          ".silvermoon/config.yaml",
-          ".silvermoon/i",
-        ];
+      ? ["ls-files", "--stage", "-z", "--", ...paths]
+      : ["ls-tree", "-r", "-z", snapshot, "--", ...paths];
   const entries = (await git(root, args, signal)).split("\0").filter(Boolean);
   invariant(entries.length <= 2048, "capacity", "Snapshot exceeds 2048 files.");
   const files = new Map<string, Uint8Array>();
@@ -236,11 +265,10 @@ async function gitSnapshot(
   }
   return files;
 }
-export async function readProject(
+export async function verifyRepositoryRoot(
   root: string,
-  snapshot: Snapshot = "worktree",
   signal?: AbortSignal,
-): Promise<Project> {
+): Promise<void> {
   invariant(
     isAbsolute(root) && resolve(root) === root,
     "root",
@@ -258,10 +286,30 @@ export async function readProject(
     "root",
     "Select the repository root, not a subdirectory.",
   );
-  const files =
-    snapshot === "worktree"
-      ? await worktree(root, signal)
-      : await gitSnapshot(root, snapshot, signal);
+}
+export async function readRepository(
+  root: string,
+  snapshot: Snapshot = "worktree",
+  signal?: AbortSignal,
+): Promise<Repository> {
+  await verifyRepositoryRoot(root, signal);
+  let source: Uint8Array;
+  if (snapshot === "worktree") {
+    const path = join(root, ".silvermoon", "config.yaml");
+    await protectedPath(root, path);
+    source = await readRegular(path, signal);
+  } else {
+    const files = await gitSnapshot(root, snapshot, signal, [
+      ".silvermoon/config.yaml",
+    ]);
+    return {
+      root,
+      config: projectConfig(requiredText(files, ".silvermoon/config.yaml")),
+    };
+  }
+  return { root, config: projectConfig(text(source)) };
+}
+function projectFiles(root: string, files: Files): Project {
   const config = projectConfig(requiredText(files, ".silvermoon/config.yaml"));
   const grouped = new Map<string, Map<string, Uint8Array>>();
   for (const [path, bytes] of files) {
@@ -293,6 +341,49 @@ export async function readProject(
   );
   return { root, files, config, ideas };
 }
+export async function readProject(
+  root: string,
+  snapshot: Snapshot = "worktree",
+  signal?: AbortSignal,
+  ids?: ReadonlySet<string>,
+): Promise<Project> {
+  await verifyRepositoryRoot(root, signal);
+  const files =
+    snapshot === "worktree"
+      ? await worktree(root, signal, ids)
+      : await gitSnapshot(
+          root,
+          snapshot,
+          signal,
+          ids
+            ? [
+                ".silvermoon/config.yaml",
+                ...[...ids].map((id) => `.silvermoon/i/${id}`),
+              ]
+            : undefined,
+        );
+  return projectFiles(root, files);
+}
+export async function readIdeaProject(
+  root: string,
+  selector: string,
+  snapshot: Snapshot = "worktree",
+  signal?: AbortSignal,
+): Promise<Project> {
+  const id = validIdeaId(selector)
+    ? selector
+    : selectIdea(await readProject(root, snapshot, signal), selector).bootstrap
+        .id;
+  await verifyRepositoryRoot(root, signal);
+  const files =
+    snapshot === "worktree"
+      ? await worktree(root, signal, new Set([id]))
+      : await gitSnapshot(root, snapshot, signal, [
+          ".silvermoon/config.yaml",
+          `.silvermoon/i/${id}`,
+        ]);
+  return projectFiles(root, files);
+}
 export function selectIdea(project: Project, selector: string): Idea {
   const found =
     project.ideas.get(selector) ??
@@ -322,17 +413,19 @@ export interface Primary {
   readonly project: Project;
   readonly changes: readonly string[];
 }
-function repositoryIdentity(url: string): string | undefined {
-  const match =
-    /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(
-      url,
-    );
-  return match?.[1];
+export interface PrimaryOptions {
+  readonly fetch?: boolean;
+  readonly signal?: AbortSignal;
+  readonly localRemote?: string;
+  readonly checkBranch?: boolean;
 }
-export async function primary(
-  project: Project,
-  options: { fetch?: boolean; signal?: AbortSignal; localRemote?: string } = {},
-): Promise<Primary> {
+export interface RepositoryObservation extends Omit<Primary, "project"> {
+  readonly repository: Repository;
+}
+export async function observeRepository(
+  project: Repository,
+  options: PrimaryOptions = {},
+): Promise<RepositoryObservation> {
   const { root, config } = project;
   const signal = options.signal;
   const head = await git(root, ["rev-parse", "--verify", "HEAD"], signal);
@@ -362,6 +455,30 @@ export async function primary(
     "primary",
     "Upstream remote does not identify configured primaryRepository.",
   );
+  if (options.fetch && options.checkBranch) {
+    try {
+      await git(
+        root,
+        [
+          "ls-remote",
+          "--exit-code",
+          "--heads",
+          "--",
+          remote,
+          `refs/heads/${config.primaryBranch}`,
+        ],
+        signal,
+      );
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (error instanceof Error && "code" in error && error.code === 2)
+        throw new SilvermoonError(
+          "primary-branch-missing",
+          "The configured remote primary branch does not exist.",
+        );
+      throw error;
+    }
+  }
   if (options.fetch)
     await git(
       root,
@@ -383,24 +500,13 @@ export async function primary(
     ],
     signal,
   );
-  await git(root, ["merge-base", "--is-ancestor", tip, head], signal);
-  const committed = await readProject(root, tip, signal);
+  const committed = await readRepository(root, tip, signal);
   invariant(
     project.config.primaryRepository === committed.config.primaryRepository &&
       project.config.primaryBranch === committed.config.primaryBranch,
     "primary",
     "Primary configuration changes require explicit review outside this protocol.",
   );
-  for (const [id, past] of committed.ideas) {
-    const current = project.ideas.get(id);
-    invariant(
-      current &&
-        JSON.stringify(current.bootstrap) === JSON.stringify(past.bootstrap) &&
-        current.eventSource.startsWith(past.eventSource),
-      "history",
-      "Primary Idea identity/history must be preserved as an exact append-only prefix.",
-    );
-  }
   const status = await git(
     root,
     ["status", "--porcelain=v1", "-z", "--untracked-files=all"],
@@ -417,7 +523,67 @@ export async function primary(
     "Renames, conflicts or unmerged paths require explicit repair.",
   );
   const changes = records.map((entry) => entry.slice(3).replaceAll("\\", "/"));
-  return { head, tip, remote, project: committed, changes };
+  return { head, tip, remote, repository: committed, changes };
+}
+function eventPrefix(current: Idea, previous: Idea): boolean {
+  const after = current.files.get("events.jsonl")!;
+  const before = previous.files.get("events.jsonl")!;
+  return (
+    after.byteLength >= before.byteLength &&
+    Buffer.from(after.buffer, after.byteOffset, before.byteLength).equals(
+      before,
+    )
+  );
+}
+export function verifyIdeaHistory(
+  current: Idea | undefined,
+  previous: Idea,
+): void {
+  invariant(
+    current && canonical(current.bootstrap) === canonical(previous.bootstrap),
+    "identity",
+    "Primary Idea identity/history must be preserved as an exact append-only prefix.",
+  );
+  invariant(
+    eventPrefix(current, previous),
+    "history",
+    "Primary Idea identity/history must be preserved as an exact append-only prefix.",
+  );
+  const before = previous.files.get(reportPath);
+  const after = current.files.get(reportPath);
+  invariant(
+    !before ||
+      (after &&
+        after.byteLength >= before.byteLength &&
+        Buffer.from(after.subarray(0, before.byteLength)).equals(before)),
+    "report-history",
+    "Deployment report must preserve its exact existing byte prefix.",
+  );
+}
+export async function primary(
+  project: Project,
+  options: PrimaryOptions = {},
+): Promise<Primary> {
+  const observed = await observeRepository(project, options);
+  await git(
+    project.root,
+    ["merge-base", "--is-ancestor", observed.tip, observed.head],
+    options.signal,
+  );
+  const committed = await readProject(
+    project.root,
+    observed.tip,
+    options.signal,
+  );
+  for (const [id, previous] of committed.ideas)
+    verifyIdeaHistory(project.ideas.get(id), previous);
+  return {
+    head: observed.head,
+    tip: observed.tip,
+    remote: observed.remote,
+    changes: observed.changes,
+    project: committed,
+  };
 }
 export async function validSubjects(
   root: string,
@@ -428,18 +594,33 @@ export async function validSubjects(
   const subjects = [
     ...new Set(
       current.events.flatMap((event) =>
-        event.type === "verify" ? [event.batch.subject] : [],
+        event.type === "verify"
+          ? "batch" in event
+            ? [event.batch.subject]
+            : event.phase === "implementation"
+              ? [event.rev]
+              : []
+          : [],
       ),
     ),
   ];
   invariant(
-    subjects.length <= 64,
+    subjects.length <= (current.events.some(isPairedEvent) ? 4096 : 64),
     "capacity",
     "Evidence history exceeds 64 distinct subjects.",
   );
-  const accepted: string[] = [head];
+  const paired =
+    current.events.some(isPairedEvent) || isPairedIndex(current.cases);
+  const accepted: string[] = paired ? [] : [head];
   for (const subject of subjects) {
     if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(subject)) continue;
+    if (paired) {
+      invariant(
+        (await git(root, ["cat-file", "-t", subject], signal)) === "commit",
+        "evidence",
+        "Implementation rev must identify an existing exact commit.",
+      );
+    }
     try {
       await git(root, ["merge-base", "--is-ancestor", subject, head], signal);
       const diff = await git(
@@ -451,14 +632,41 @@ export async function validSubjects(
           head,
           "--",
           ".",
-          `:(exclude).silvermoon/i/${current.bootstrap.id}/**`,
+          ...(paired
+            ? [
+                `:(exclude).silvermoon/i/${current.bootstrap.id}/events.jsonl`,
+                `:(exclude).silvermoon/i/${current.bootstrap.id}/evidence/**`,
+              ]
+            : [`:(exclude).silvermoon/i/${current.bootstrap.id}/**`]),
         ],
         signal,
       );
-      if (!diff) accepted.push(subject);
+      if (!diff) {
+        if (paired) {
+          const snapshot = await readIdeaProject(
+            root,
+            current.bootstrap.id,
+            subject,
+            signal,
+          );
+          const previous = snapshot.ideas.get(current.bootstrap.id);
+          if (
+            !previous ||
+            canonical(previous.revisions) !== canonical(current.revisions)
+          )
+            continue;
+        }
+        accepted.push(subject);
+      }
     } catch (error) {
       signal?.throwIfAborted();
       if (error instanceof SilvermoonError) throw error;
+      if (!(
+        error instanceof Error &&
+        "code" in error &&
+        [1, 128].includes(Number(error.code))
+      ))
+        throw error;
     }
   }
   return accepted;
@@ -466,7 +674,11 @@ export async function validSubjects(
 export async function observedIdeaState(
   project: Project,
   current: Idea,
-  context: { readonly head: string; readonly primary: Project },
+  context: {
+    readonly head: string;
+    readonly primary: Project;
+    readonly paired?: boolean;
+  },
   preference?: string,
   signal?: AbortSignal,
 ): Promise<State> {
@@ -479,6 +691,7 @@ export async function observedIdeaState(
       : {}),
     ...(preference ? { userLanguage: language(preference) } : {}),
     subjects: await validSubjects(project.root, current, context.head, signal),
+    ...(context.paired ? { paired: context.paired } : {}),
   });
 }
 export type LocalState =
@@ -648,10 +861,9 @@ export async function snapshotHistory(
     if (!current && historical) continue;
     invariant(
       current &&
-        JSON.stringify(current.bootstrap) ===
-          JSON.stringify(before.bootstrap) &&
-        (current.eventSource.startsWith(before.eventSource) ||
-          (historical && before.eventSource.startsWith(current.eventSource))),
+        canonical(current.bootstrap) === canonical(before.bootstrap) &&
+        (eventPrefix(current, before) ||
+          (historical && eventPrefix(before, current))),
       "history",
       "Snapshot rewrites primary Idea identity or append-only event history.",
     );
@@ -712,6 +924,7 @@ export function draftChanges(
     synchronization: ["requirements/", "technical/", "tests/"],
     implementation: ["evidence/implementation/"],
     deployment: ["evidence/implementation/", "evidence/deployment/"],
+    "user-acceptance": ["evidence/deployment/"],
     completed: ["evidence/implementation/", "evidence/deployment/"],
     abandoned: [],
   };

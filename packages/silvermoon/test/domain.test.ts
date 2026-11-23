@@ -59,6 +59,21 @@ describe("IDs, config and bounded domain inputs", () => {
       /calendar/,
     );
   });
+  it.each([
+    "https://github.com/example/project.git",
+    "https://github.com/example/project/",
+    "git@github.com:example/project.git",
+    "ssh://git@github.com/example/project.git",
+  ])(
+    "normalizes legacy primary URL %s without Git or network transport",
+    (primary) => {
+      expect(
+        projectConfig(
+          `version: 2\nprimaryRepository: ${primary}\nprimaryBranch: main`,
+        ).primaryRepository,
+      ).toBe("example/project");
+    },
+  );
   it("retains config v2 fields without accepting credentials, unknown fields or invalid languages", () => {
     expect(
       projectConfig(
@@ -70,6 +85,16 @@ describe("IDs, config and bounded domain inputs", () => {
       "version: 2\nversion: 2",
       "[]",
       "version: 2\nprimaryRepository: https://secret@github.com/a/b\nprimaryBranch: main",
+      ...[
+        "https://github.com.evil/a/b",
+        "https://github.com/a/b?token=secret",
+        "https://github.com/a/b#fragment",
+        "https://github.com/a/b/extra",
+        "ssh://other@github.com/a/b",
+      ].map(
+        (primary) =>
+          `version: 2\nprimaryRepository: "${primary}"\nprimaryBranch: main`,
+      ),
       "version: 2\nprimaryRepository: a/b.git\nprimaryBranch: main",
       "version: 2\nprimaryRepository: a/b\nprimaryBranch: -bad",
       "version: 2\nprimaryRepository: a/b\nprimaryBranch: main\nunknown: 1",
@@ -236,7 +261,6 @@ describe("five exact signoffs and evidence", () => {
       object: "technical",
       revision: current.revisions.technical,
       upstream: vectorAt(current.revisions, "technical"),
-      decision: "confirmed",
     });
     expect(() => idea(add(current.files, invalid), id)).toThrow(/invent/);
     expect(() => {
@@ -247,7 +271,6 @@ describe("five exact signoffs and evidence", () => {
       object: "requirements",
       revision: current.revisions.requirements,
       upstream: {},
-      decision: "confirmed",
     });
     expect(() => {
       validateAppend(current, first, reduce(current, { head }), false);
@@ -260,6 +283,37 @@ describe("five exact signoffs and evidence", () => {
     expect(() => {
       validateAppend(current, claim, reduce(current, { head }), false);
     }).toThrow(/signed/);
+  });
+  it("reduces simplified and historical signoffs identically without normalizing history", () => {
+    const current = idea(files(), id);
+    const signoff = event({
+      type: "signOff",
+      object: "requirements",
+      revision: current.revisions.requirements,
+      upstream: {},
+    });
+    const legacy = { ...signoff, decision: "confirmed" as const };
+    const historicalSource = add(current.files, legacy);
+    const historical = idea(historicalSource, id);
+    const simplified = idea(add(current.files, signoff), id);
+    expect(historical.eventSource).toBe(
+      text(historicalSource.get("events.jsonl")!),
+    );
+    expect(historical.events.at(-1)).toEqual(legacy);
+    expect(simplified.events.at(-1)).not.toHaveProperty("decision");
+    const reduced = reduce(simplified, { primary: simplified, head });
+    expect(reduced.level).toBe("research");
+    expect(reduce(historical, { primary: historical, head })).toEqual(reduced);
+    expect(() => {
+      validateAppend(current, legacy, reduce(current, { head }), true);
+    }).toThrow(/omit.*decision/);
+    for (const decision of ["rejected", null])
+      expect(() =>
+        parseEvents(
+          current.eventSource + canonical({ ...signoff, decision }) + "\n",
+          current.bootstrap,
+        ),
+      ).toThrow(/event schema/);
   });
   it("requires nonempty, exact-case, subject/environment/revision/hash evidence and invalidates dependent deployment", () => {
     let source = signed();
@@ -496,7 +550,6 @@ describe("five exact signoffs and evidence", () => {
             object: "requirements",
             revision: current.revisions.requirements,
             upstream: {},
-            decision: "confirmed",
           }),
           upstream: { tests: digest("extra") },
         }) +

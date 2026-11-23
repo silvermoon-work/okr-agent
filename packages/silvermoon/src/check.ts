@@ -1,151 +1,52 @@
-import {
-  defineChecker,
-  type CheckerResult,
-} from "@silvermoon-work/check-task-sdk";
-import { Input } from "./contract.js";
-import { inspectDevice, deviceLanguage } from "./device.js";
-import { canonical, digest, invariant, type State } from "./domain.js";
-import {
-  draftChanges,
-  primary,
-  observedIdeaState,
-  readProject,
-  selectIdea,
-  snapshotHistory,
-  type Primary,
-  type Project,
-} from "./repository.js";
+import { Target } from "./contract.js";
+import type { ProjectTarget } from "./project-contract.js";
+import { gates } from "./domain.js";
+import { environmentCheckpoint } from "./checkpoints/global/check.js";
+import { repositoryCheckpoint } from "./checkpoints/repository/check.js";
+import { branchCheckpoint } from "./checkpoints/branch/check.js";
+import { layoutCheckpoint } from "./checkpoints/silvermoon-folder/check.js";
+import { ideaCheckpoint } from "./checkpoints/idea-folder/check.js";
+import { consensusCheckpoint } from "./checkpoints/consensus.js";
+import { implementationCheckpoint } from "./checkpoints/implementation/check.js";
+import { deploymentCheckpoint } from "./checkpoints/deployment/check.js";
+import { userAcceptanceCheckpoint } from "./checkpoints/user-acceptance/check.js";
+import type { CheckExecution } from "./checkpoints/shared.js";
 
-type SilvermoonResult = CheckerResult<{
-  readonly checker: "device" | "project" | "idea";
-  readonly target: Input;
-}>;
-function failure(code: string, error: unknown): SilvermoonResult {
-  return {
-    pass: false,
-    problems: [
-      { code, brief: error instanceof Error ? error.message : String(error) },
-    ],
-  };
+export { environmentCheckpoint } from "./checkpoints/global/check.js";
+export type { CheckExecution } from "./checkpoints/shared.js";
+export { Target } from "./contract.js";
+
+export function prerequisiteCheckpoints(
+  execution: CheckExecution,
+  targetSchema: typeof Target | typeof ProjectTarget,
+) {
+  const environment = environmentCheckpoint(execution.runtime, targetSchema);
+  const repository = repositoryCheckpoint(execution, targetSchema, environment);
+  const branch = branchCheckpoint(execution, targetSchema, repository);
+  const layout = layoutCheckpoint(targetSchema, repository, branch);
+  return [environment, repository, branch, layout] as const;
 }
-export function silvermoonRegistry(bundleCid: string) {
-  let project: Project | undefined;
-  let observed: Primary | undefined;
-  let state: State | undefined;
-  return {
-    device: defineChecker({
-      target: Input,
-      check: async (target, signal): Promise<SilvermoonResult> => {
-        signal.throwIfAborted();
-        if (target.mode === "snapshot")
-          return { pass: true, children: [{ checker: "project", target }] };
-        try {
-          await inspectDevice(target.device);
-        } catch (error) {
-          signal.throwIfAborted();
-          return failure("device", error);
-        }
-        return {
-          pass: true,
-          children: target.root ? [{ checker: "project", target }] : [],
-        };
-      },
-    }),
-    project: defineChecker({
-      target: Input,
-      check: async (target, signal): Promise<SilvermoonResult> => {
-        try {
-          invariant(target.root, "project", "Select a Git repository root.");
-          project = await readProject(
-            target.root,
-            target.mode === "snapshot"
-              ? (target.snapshot ?? "HEAD")
-              : "worktree",
-            signal,
-          );
-          if (target.mode === "snapshot") {
-            await snapshotHistory(project, target.snapshot ?? "HEAD", signal);
-            return { pass: true, children: [] };
-          }
-        } catch (error) {
-          signal.throwIfAborted();
-          return failure(
-            target.mode === "snapshot" ? "snapshot" : "project",
-            error,
-          );
-        }
-        try {
-          observed = await primary(project, {
-            fetch: target.refresh ?? true,
-            signal,
-          });
-          if (!target.idea) {
-            invariant(
-              !observed.changes.length && observed.head === observed.tip,
-              "repository",
-              "Commit/synchronize local content to the configured primary; no automatic Git writes are performed.",
-            );
-            return { pass: true, children: [] };
-          }
-          const current = selectIdea(project, target.idea);
-          invariant(
-            current.bootstrap.checkCid === bundleCid,
-            "check-identity",
-            "The executing Check CID does not match the Idea's immutable bootstrap.",
-          );
-          state = await observedIdeaState(
-            project,
-            current,
-            {
-              head: observed.head,
-              primary: observed.project,
-            },
-            await deviceLanguage(target.device),
-            signal,
-          );
-          invariant(
-            draftChanges(observed.changes, current.bootstrap.id, state.level),
-            "repository",
-            "Unrelated or mixed worktree changes block Idea routing. Preserve them; never auto-clean/stage/commit.",
-          );
-        } catch (error) {
-          signal.throwIfAborted();
-          return failure("repository", error);
-        }
-        return { pass: true, children: [{ checker: "idea", target }] };
-      },
-    }),
-    idea: defineChecker({
-      target: Input,
-      check: (target, signal): Promise<SilvermoonResult> =>
-        Promise.resolve().then((): SilvermoonResult => {
-          signal.throwIfAborted();
-          invariant(
-            project && observed && state && target.idea,
-            "internal",
-            "Idea requires its Project prerequisite.",
-          );
-          const current = selectIdea(project, target.idea);
-          if (state.level === "completed") {
-            if (observed.changes.length || observed.head !== observed.tip)
-              return failure(
-                "repository",
-                "Synchronize current evidence and events to primary before completion.",
-              );
-            return { pass: true, children: [] };
-          }
-          return failure(
-            state.level,
-            canonical({
-              idea: current.bootstrap.id,
-              ...state,
-              eventDigest: digest(current.eventSource),
-              primary: observed.tip,
-              subject: observed.head,
-            }),
-          );
-        }),
-    }),
-  };
+
+export function silvermoonCheckpoints(
+  bundleCid: string,
+  execution: CheckExecution,
+) {
+  const prerequisites = prerequisiteCheckpoints(execution, Target);
+  const [environment, , branch, layout] = prerequisites;
+  const observation = ideaCheckpoint(
+    bundleCid,
+    execution,
+    environment,
+    branch,
+    layout,
+  );
+  const deployment = deploymentCheckpoint(execution, observation, branch);
+  return [
+    ...prerequisites,
+    observation,
+    ...gates.map((gate) => consensusCheckpoint(gate, observation)),
+    implementationCheckpoint(execution, observation, branch),
+    deployment,
+    userAcceptanceCheckpoint(execution, observation, branch, deployment),
+  ] as const;
 }
-export { Input } from "./contract.js";

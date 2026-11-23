@@ -90,7 +90,11 @@ try {
   await writeFile("dist/check-task.cid", car.cid + "\n");
   await writeFile(
     "dist/check-task.json",
-    JSON.stringify(typescriptProjectDesignSpec, null, 2) + "\n",
+    JSON.stringify(
+      { $schema: "urn:ipfsaw:check-bundle:1", ...typescriptProjectDesignSpec },
+      null,
+      2,
+    ) + "\n",
   );
 } finally {
   await car.close();

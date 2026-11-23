@@ -93,6 +93,7 @@ it("builds a real CAR and independently verifies Engine pass/fail plus linked Ch
       [
         "scripts/smoke.mjs",
         join(owned, "bundle.car"),
+        "--legacy",
         good,
         bad,
         npm,

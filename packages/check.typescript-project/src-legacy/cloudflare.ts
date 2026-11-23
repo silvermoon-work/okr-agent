@@ -1,5 +1,5 @@
 import { satisfies, valid, validRange } from "semver";
-import type { ProblemReporter } from "@silvermoon-work/check-task-sdk";
+import type { ProblemReporter } from "@silvermoon-work/check-task-sdk/legacy";
 import type { Project } from "./commands.js";
 import type { ProblemCode } from "./contract.js";
 import {

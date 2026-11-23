@@ -27,6 +27,7 @@ import {
   newId,
 } from "@silvermoon-work/task-engine";
 import { readBytes } from "@silvermoon-work/task-builder/tree";
+import { buildTaskBundle } from "@silvermoon-work/task-builder";
 import { parse, stringify } from "yaml";
 import {
   buildCheckBundle,
@@ -42,7 +43,7 @@ import {
   defineChecker,
   executeCheck,
   type CheckExecutionPort,
-} from "@silvermoon-work/check-task-sdk";
+} from "@silvermoon-work/check-task-sdk/legacy";
 
 const root = resolve("../..");
 const scratch = join(root, ".check-tests");
@@ -108,14 +109,115 @@ function logical(directory: string) {
 }
 
 describe("Check tree transformation", () => {
-  it("composes the v2 leaf adapter with a public Engine port and awaits in-flight cancellation cleanup", async () => {
+  it("builds Spec-derived references in a virtual overlay with custom references and no authored docs", async () => {
     const directory = await project();
+    const configPath = join(directory, "check.build.yaml");
+    const config = parse(await readFile(configPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    await writeFile(
+      configPath,
+      stringify({
+        ...config,
+        references: "references/idea",
+        spec: "./task-spec.yaml",
+      }),
+    );
+    await writeFile(
+      join(directory, "task-spec.yaml"),
+      stringify({
+        $schema: "urn:ipfsaw:check-bundle:1",
+        specVersion: "1.0",
+        name: "Text task",
+        description: "Compare caller-selected text to the bundled standard.",
+        parameter: {
+          schema: { type: "object", properties: { text: { type: "string" } } },
+        },
+        checkpoints: [
+          {
+            id: "text",
+            title: "Text standard",
+            description: "Compare supplied text to the bundled standard.",
+            instructions:
+              "Read both texts and report differences without modifying either.",
+            rules: [
+              {
+                code: "text-matches-standard",
+                description: "Text must match the bundled standard.",
+              },
+            ],
+            output: { description: "Undefined; no additional Context value." },
+          },
+        ],
+      }),
+    );
+    const bundle = await buildCheckBundle(
+      await directoryTree(root),
+      logical(directory),
+    );
+    const contents = async (path: string) =>
+      Buffer.from(await readBytes(bundle, path, 65_536)).toString();
+    expect(await contents("resources/references/check.md")).toContain(
+      "Compare caller\\-selected text to the bundled standard",
+    );
+    expect(
+      await contents("resources/references/checkpoints/text.md"),
+    ).toContain("Successful Context output");
+    expect(await readdir(join(directory, "references"))).not.toContain("idea");
+    const archive = await encodeTaskBundleCar(bundle);
+    await archive.close();
+    await mkdir(join(directory, "references", "idea", "checkpoints"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(directory, "references", "idea", "checkpoints", "undeclared.md"),
+      "Extra checkpoint.",
+    );
+    await expect(
+      buildCheckBundle(await directoryTree(root), logical(directory)),
+    ).rejects.toThrow(/Undeclared checkpoint Markdown/);
+    await rm(
+      join(directory, "references", "idea", "checkpoints", "undeclared.md"),
+    );
+    const specPath = join(directory, "task-spec.yaml");
+    const spec = parse(await readFile(specPath, "utf8")) as {
+      checkpoints: { id: string; rules: { code: string }[] }[];
+    };
+    spec.checkpoints[0]!.id = "foreign";
+    await writeFile(specPath, stringify(spec));
+    await expect(
+      buildCheckBundle(await directoryTree(root), logical(directory)),
+    ).rejects.toThrow(/checkpoint order\/IDs/);
+    spec.checkpoints[0]!.id = "text";
+    spec.checkpoints[0]!.rules[0]!.code = "foreign-rule";
+    await writeFile(specPath, stringify(spec));
+    await expect(
+      buildCheckBundle(await directoryTree(root), logical(directory)),
+    ).rejects.toThrow(/rule membership/);
+  }, 30_000);
+
+  it("preserves the archived v2 adapter and real Engine cancellation cleanup", async () => {
+    const directory = await project();
+    await mkdir(join(directory, "references", "problems"));
+    await writeFile(
+      join(directory, "references", "problems", "text-mismatch.md"),
+      "# Text mismatch\n\nArchived v2 finding documentation.\n",
+    );
+    await writeFile(
+      join(directory, "src", "contract.ts"),
+      `import { Type } from "@sinclair/typebox";
+import { createCheckContract } from "@silvermoon-work/check-task-sdk/legacy-contracts";
+export const Input = Type.Object({ text: Type.String() });
+export default createCheckContract(Input, Type.Literal("text-mismatch"));
+`,
+    );
     await writeFile(
       join(directory, "src", "main.ts"),
       `
 import { writeFile } from "node:fs/promises";
 import { setTimeout } from "node:timers/promises";
-import { runCheck, defineChecker } from "@silvermoon-work/check-task-sdk";
+import { runCheck, defineChecker } from "@silvermoon-work/check-task-sdk/legacy";
 import contract, { Input } from "./contract.js";
 runCheck(contract, {root: "text", registry: {
   text: defineChecker({target: Input, check: async (input, signal) => {
@@ -132,10 +234,11 @@ runCheck(contract, {root: "text", registry: {
 }});
 `,
     );
-    const bundle = await buildCheckBundle(
+    const archived = await transformCheckTree(
       await directoryTree(root),
       logical(directory),
     );
+    const bundle = await buildTaskBundle(archived.tree, archived.options);
     const encoded = await encodeTaskBundleCar(bundle);
     const car = await readTaskBundleCar(encoded.stream);
     const store = new MemoryStore();
@@ -416,16 +519,91 @@ runCheck(contract, {root: "text", registry: {
     expect(await readdir(directory)).not.toContain(".check");
   }, 30_000);
 
+  it("maps only the selected config-relative references subtree and validates its documents", async () => {
+    const directory = await project();
+    await mkdir(join(directory, "standards"));
+    await rename(
+      join(directory, "references"),
+      join(directory, "standards", "idea"),
+    );
+    await mkdir(join(directory, "standards", "commit"));
+    await writeFile(
+      join(directory, "standards", "commit", ".unselected.md"),
+      "Not part of this Check.",
+    );
+    const file = join(directory, "check.build.yaml");
+    const config = parse(await readFile(file, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    await writeFile(
+      file,
+      stringify({ ...config, references: "standards/idea" }),
+    );
+    const input = await directoryTree(root);
+    const definition = await transformCheckTree(input, logical(directory));
+    expect(definition.references).toBe(
+      `${logical(directory).replace("/check.build.yaml", "")}/standards/idea`,
+    );
+    expect(definition.options.include).toContainEqual({
+      from: `${definition.references}/**`,
+      to: "resources/references/",
+    });
+    const bundle = await buildCheckBundle(input, logical(directory));
+    expect(
+      Buffer.from(
+        await readBytes(
+          bundle,
+          "resources/references/assets/standard.txt",
+          100,
+        ),
+      ).toString(),
+    ).toContain("Ancillary standard resource");
+    await expect(
+      readBytes(bundle, "resources/references/.unselected.md", 100),
+    ).rejects.toThrow();
+    const archive = await encodeTaskBundleCar(bundle);
+    await archive.close();
+    await rm(join(directory, "standards", "idea", "checkpoints", "text.md"));
+    await expect(
+      buildCheckBundle(await directoryTree(root), logical(directory)),
+    ).rejects.toThrow(/reference/i);
+  }, 30_000);
+
+  it.each([
+    "",
+    ".",
+    "..",
+    "../references",
+    "/references",
+    "C:\\references",
+    "references\\idea",
+    "references/../idea",
+    "references/**",
+    null,
+    42,
+  ])(
+    "rejects unsafe references directory %j before compiling",
+    async (references) => {
+      const directory = await project();
+      const file = join(directory, "check.build.yaml");
+      const config = parse(await readFile(file, "utf8")) as Record<
+        string,
+        unknown
+      >;
+      await writeFile(file, stringify({ ...config, references }));
+      await expect(
+        transformCheckTree(await directoryTree(root), logical(directory)),
+      ).rejects.toThrow();
+      expect(await readdir(directory)).not.toContain("dist");
+    },
+  );
+
   it.each(["missing", "extra", "empty", "utf8", "hidden", "case"])(
     "rejects %s reference documentation before delivery",
     async (mode) => {
       const directory = await project();
-      const path = join(
-        directory,
-        "references",
-        "problems",
-        "text-mismatch.md",
-      );
+      const path = join(directory, "references", "checkpoints", "text.md");
       if (mode === "missing") await rm(path);
       if (mode === "extra")
         await writeFile(join(dirname(path), "undeclared.md"), "Unexpected");
@@ -461,7 +639,7 @@ runCheck(contract, {root: "text", registry: {
     >;
     await writeFile(
       file,
-      stringify({ ...config, problemCodes: ["text-mismatch"] }),
+      stringify({ ...config, problemCodes: ["text-matches-standard"] }),
     );
     await expect(
       transformCheckTree(await directoryTree(root), logical(directory)),
@@ -480,6 +658,76 @@ runCheck(contract, {root: "text", registry: {
     await expect(
       transformCheckTree(await directoryTree(root), logical(directory)),
     ).rejects.toThrow("only accepts");
+  });
+
+  it.each([
+    ["Type.String()", 'Type.Literal("text")'],
+    ['Type.Literal("con")', 'Type.Literal("text")'],
+    [
+      'Type.Union([Type.Literal("same"), Type.Literal("same")])',
+      'Type.Literal("text")',
+    ],
+    ['Type.Literal("text-matches-standard")', 'Type.Literal("../text")'],
+  ])(
+    "rejects malformed shared rule or checkpoint schemas: %s / %s",
+    async (code, checkpoint) => {
+      const directory = await project();
+      await writeFile(
+        join(directory, "src", "contract.ts"),
+        `import { Type } from "@sinclair/typebox";
+export const Input = Type.Object({text: Type.String()});
+export default {
+  parameters: Input,
+  result: Type.Unknown(),
+  message: Type.Never(),
+  schemas: {"check-rule-code": ${code}, "check-checkpoint-id": ${checkpoint}}
+};
+`,
+      );
+      await expect(
+        buildCheckBundle(await directoryTree(root), logical(directory)),
+      ).rejects.toThrow();
+    },
+  );
+
+  it("rejects per-rule documentation and nested undeclared checkpoint Markdown", async () => {
+    const directory = await project();
+    await mkdir(join(directory, "references", "checkpoints", "nested"));
+    await writeFile(
+      join(directory, "references", "checkpoints", "nested", "extra.MD"),
+      "Extra",
+    );
+    await expect(
+      buildCheckBundle(await directoryTree(root), logical(directory)),
+    ).rejects.toThrow("Undeclared checkpoint");
+    await rm(join(directory, "references", "checkpoints", "nested"), {
+      recursive: true,
+    });
+    await mkdir(join(directory, "references", "problems"));
+    await writeFile(
+      join(directory, "references", "problems", "text-matches-standard.md"),
+      "Old",
+    );
+    await expect(
+      buildCheckBundle(await directoryTree(root), logical(directory)),
+    ).rejects.toThrow("Per-code");
+  });
+
+  it("allows an empty declared checkpoint list without inventing documentation", async () => {
+    const directory = await project();
+    const contract = join(directory, "src", "contract.ts");
+    await writeFile(
+      contract,
+      (await readFile(contract, "utf8")).replace('["text"]', "[]"),
+    );
+    await rm(join(directory, "references", "checkpoints"), { recursive: true });
+    const bundle = await buildCheckBundle(
+      await directoryTree(root),
+      logical(directory),
+    );
+    expect(
+      await readBytes(bundle, "resources/references/check.md", 4096),
+    ).toBeInstanceOf(Uint8Array);
   });
 });
 
@@ -621,10 +869,10 @@ describe("CLI and actual published Engine", () => {
       );
       await writeFile(
         join(parentDirectory, "src", "main.ts"),
-        `import { runCheck, defineChecker } from "@silvermoon-work/check-task-sdk";
+        `import { runCheck, defineCheckpoint } from "@silvermoon-work/check-task-sdk";
 import contract, { Input } from "./contract.js";
-runCheck(contract, {root: "text", registry: (context) => ({
-text: defineChecker({target: Input, check: async (input, signal) => {
+runCheck(contract, {checkpoints: (context) => [
+defineCheckpoint({id: "text", target: Input, description: "Child text standard", rules: [{code: "text-matches-standard", description: "Text matches"}], check: async (input, {signal}) => {
   const result = await context.invokeTask({
     key: "text",
     bundle: context.bundle,
@@ -636,9 +884,9 @@ text: defineChecker({target: Input, check: async (input, signal) => {
       typeof result.pass !== "boolean") throw new Error("Invalid child result.");
   signal.throwIfAborted();
   return result.pass
-    ? {pass: true, children: []}
-    : {pass: false, problems: [{code: "text-mismatch", brief: "The child check did not pass."}]};
-}})})});
+    ? {pass: true, output: undefined}
+    : {pass: false, problems: [{code: "text-matches-standard", brief: "The child check did not pass."}]};
+}})]});
 `,
       );
       const definition = await transformCheckTree(
@@ -744,11 +992,17 @@ text: defineChecker({target: Input, check: async (input, signal) => {
           expect.objectContaining({
             pass: false,
             documentation: expect.any(String) as unknown,
+            references: [
+              {
+                checkpoint: "text",
+                documentation: expect.any(String) as unknown,
+              },
+            ],
             problems: [
               expect.objectContaining({
-                code: "text-mismatch",
+                code: "text-matches-standard",
                 brief: "The child check did not pass.",
-                documentation: expect.any(String) as unknown,
+                checkpoint: "text",
               }),
             ],
           }),
@@ -909,7 +1163,7 @@ text: defineChecker({target: Input, check: async (input, signal) => {
       source,
       (await readFile(source, "utf8")).replace(
         "  const node =",
-        '  reportProblem("text-mismatch", "Reported before execution fault.");\n  throw new Error("Cannot finish check.");\n  const node =',
+        '  const problems = [{code: "text-matches-standard", brief: "Collected before execution fault."}];\n  throw new Error("Cannot finish check: " + problems[0].brief);\n  const node =',
       ),
     );
     const result = await cli(["build", "--no-car"], directory);

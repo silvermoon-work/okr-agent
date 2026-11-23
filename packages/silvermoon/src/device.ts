@@ -19,7 +19,7 @@ export function currentDevice(): Device {
   };
 }
 export async function deviceLanguage(
-  device: Device,
+  device: Pick<Device, "home">,
 ): Promise<string | undefined> {
   const config = join(device.home, ".config", "silvermoon", "config.yaml");
   return (await absent(config))
@@ -32,6 +32,10 @@ export async function deviceLanguage(
 }
 export async function inspectDevice(device: Device): Promise<void> {
   await deviceLanguage(device);
+  const root = await inspectInstallation(device);
+  await inspectPersonalSkill(device, root);
+}
+export async function inspectInstallation(device: Device): Promise<string> {
   const entry = await realpath(device.entry);
   const root = resolve(dirname(entry), "..");
   const manifest: unknown = JSON.parse(
@@ -52,23 +56,6 @@ export async function inspectDevice(device: Device): Promise<void> {
     entry === join(root, "dist", "bin.js"),
     "device",
     "Runtime entry is not the installed canonical bin.",
-  );
-  const canonicalSkill = await realpath(join(root, "skills", "silvermoon"));
-  let skillReady = false;
-  for (const host of [".agents", ".copilot"]) {
-    const skill = join(device.home, host, "skills", "silvermoon");
-    if (await absent(skill)) continue;
-    invariant(
-      (await lstat(skill)).isSymbolicLink(),
-      "device",
-      "Personal skill must link to the current installation, not be a copy.",
-    );
-    if ((await realpath(skill)) === canonicalSkill) skillReady = true;
-  }
-  invariant(
-    skillReady,
-    "device",
-    "Link the installation's canonical skills/silvermoon at a personal discovery path.",
   );
   const suffixes =
     process.platform === "win32" ? [".cmd", ".ps1", ".exe", ""] : [""];
@@ -120,5 +107,28 @@ export async function inspectDevice(device: Device): Promise<void> {
     runtimeReady,
     "device",
     "PATH must resolve silvermoon to this exact installation, not the legacy tool.",
+  );
+  return root;
+}
+export async function inspectPersonalSkill(
+  device: Device,
+  root: string,
+): Promise<void> {
+  const canonicalSkill = await realpath(join(root, "skills", "silvermoon"));
+  let skillReady = false;
+  for (const host of [".agents", ".copilot"]) {
+    const skill = join(device.home, host, "skills", "silvermoon");
+    if (await absent(skill)) continue;
+    invariant(
+      (await lstat(skill)).isSymbolicLink(),
+      "device",
+      "Personal skill must link to the current installation, not be a copy.",
+    );
+    if ((await realpath(skill)) === canonicalSkill) skillReady = true;
+  }
+  invariant(
+    skillReady,
+    "device",
+    "Link the installation's canonical skills/silvermoon at a personal discovery path.",
   );
 }

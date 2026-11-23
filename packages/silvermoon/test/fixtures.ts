@@ -10,6 +10,7 @@ import {
   vectorAt,
   type Batch,
   type Event,
+  type LegacyEvent,
   type Files,
   type Gate,
   type Idea,
@@ -21,9 +22,9 @@ export const cid =
 export const id = "2026111716097a2f";
 export const date = "2026-11-17T16:09:22.408Z";
 export const head = "a".repeat(40);
-export function event<const T extends Omit<Event, "id" | "at" | "version">>(
-  value: T,
-): T & { id: string; at: string; version: 1 } {
+export function event<
+  const T extends Omit<LegacyEvent, "id" | "at" | "version">,
+>(value: T): T & { id: string; at: string; version: 1 } {
   return {
     ...value,
     id: randomBytes(16).toString("hex"),
@@ -96,7 +97,6 @@ export function sign(source: Files, gate: Gate): Map<string, Uint8Array> {
       object: gate,
       revision: current.revisions[gate],
       upstream: vectorAt(current.revisions, gate),
-      decision: "confirmed",
     }),
   );
 }
@@ -160,6 +160,14 @@ export async function repository(
   await git(root, ["config", "user.email", "fixture@example.invalid"]);
   await git(root, ["config", "user.name", "Fixture"]);
   await git(root, ["config", "core.autocrlf", "false"]);
+  await writeFile(
+    join(root, ".git", "hooks", "pre-commit"),
+    "#!/bin/sh\n" +
+      "# BEGIN Silvermoon check-changes\n" +
+      "silvermoon check-changes --staged --audience agent || exit $?\n" +
+      "# END Silvermoon check-changes\n",
+    { mode: 0o755 },
+  );
   await git(root, ["remote", "add", "origin", remote]);
   await mkdir(join(root, ".silvermoon"));
   await writeFile(

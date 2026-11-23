@@ -11,7 +11,7 @@ async function events(url: string) {
   const parsed = new URL(url);
   const abort = new AbortController();
   const response = await fetch(new URL("/events", parsed), {
-    headers: { Authorization: `Bearer ${parsed.hash.slice(1)}` },
+    headers: { "X-IPFSAW-Client": "browser" },
     signal: abort.signal,
   });
   const reader = response
@@ -50,8 +50,71 @@ async function events(url: string) {
   };
 }
 
-describe("loopback preview, authorization, watching and owned lifetime", () => {
-  it("serves only approved assets and authorized revisions with strict HTTP boundaries", async () => {
+describe("loopback preview, first-party access, watching and owned lifetime", () => {
+  it("waits for the final page to disconnect, allows reloads and cancels pending idle shutdown on close", async () => {
+    const directory = await fixtureDirectory();
+    const renderer = await rendererFixture();
+    const path = join(directory.directory, "doc.json");
+    await writeFile(path, '{"$schema":"urn:fixture:1"}');
+    const abort = new AbortController();
+    const onNoClients = vi.fn();
+    const preview = await startPreview({
+      path,
+      store: renderer.store,
+      viewer: { cid: renderer.cid },
+      signal: abort.signal,
+      diagnostic: () => {},
+      onNoClients,
+    });
+    const streams: Awaited<ReturnType<typeof events>>[] = [];
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await vi.advanceTimersByTimeAsync(3001);
+      expect(onNoClients).not.toHaveBeenCalled();
+      const first = await events(preview.url);
+      const second = await events(preview.url);
+      streams.push(first, second);
+      await first.next();
+      await second.next();
+      first.close();
+      await delay(20);
+      await vi.advanceTimersByTimeAsync(3001);
+      expect(onNoClients).not.toHaveBeenCalled();
+      second.close();
+      await delay(20);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(onNoClients).not.toHaveBeenCalled();
+      const reloaded = await events(preview.url);
+      streams.push(reloaded);
+      await reloaded.next();
+      await vi.advanceTimersByTimeAsync(3001);
+      expect(onNoClients).not.toHaveBeenCalled();
+      reloaded.close();
+      await delay(20);
+      await vi.advanceTimersByTimeAsync(2999);
+      expect(onNoClients).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(onNoClients).toHaveBeenCalledOnce();
+      const final = await events(preview.url);
+      streams.push(final);
+      await final.next();
+      final.close();
+      await delay(20);
+      abort.abort();
+      await preview.close();
+      await vi.advanceTimersByTimeAsync(3001);
+      expect(onNoClients).toHaveBeenCalledOnce();
+    } finally {
+      for (const stream of streams) stream.close();
+      abort.abort();
+      await preview.close();
+      vi.useRealTimers();
+      await renderer.store.close();
+      await directory.cleanup();
+    }
+  });
+
+  it("opens a bare URL without credentials while keeping strict HTTP and asset boundaries", async () => {
     const directory = await fixtureDirectory();
     const renderer = await rendererFixture(
       undefined,
@@ -65,7 +128,7 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
     );
     const preview = await startPreview({
       path,
-      configuration: { version: 1, renderers: { "urn:one:1": renderer.cid } },
+      viewer: { cid: renderer.cid },
       store: renderer.store,
       signal: abort.signal,
       diagnostic: () => {},
@@ -74,6 +137,7 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
     const origin = new URL(preview.url).origin;
     const stream = await events(preview.url);
     try {
+      expect(preview.url).toBe(origin + "/");
       expect((await stream.next()).type).toBe("document");
       const home = await fetch(origin);
       expect(home.status).toBe(200);
@@ -93,7 +157,7 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
       expect(
         (
           await fetch(origin + "/events", {
-            headers: { Authorization: "Bearer wrong" },
+            headers: { "X-IPFSAW-Client": "wrong" },
           })
         ).status,
       ).toBe(403);
@@ -103,12 +167,22 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
             await fetch(origin + "/events", {
               headers: {
                 Origin: originHeader,
-                Authorization: `Bearer ${new URL(preview.url).hash.slice(1)}`,
+                "X-IPFSAW-Client": "browser",
               },
             })
           ).status,
         ).toBe(403);
       }
+      const preflight = await fetch(origin + "/events", {
+        method: "OPTIONS",
+        headers: {
+          Origin: "https://evil.test",
+          "Access-Control-Request-Method": "GET",
+          "Access-Control-Request-Headers": "X-IPFSAW-Client",
+        },
+      });
+      expect(preflight.status).toBe(403);
+      expect(preflight.headers.get("access-control-allow-origin")).toBeNull();
       expect(
         (await fetch(origin, { headers: { Origin: "null" } })).status,
       ).toBe(403);
@@ -177,7 +251,7 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
     }
     await expect(fetch(origin)).rejects.toThrow();
   });
-  it("survives save/atomic replace/missing/invalid and schema changes using the startup snapshot", async () => {
+  it("survives saves, replacement and invalid input without changing the explicit Viewer when $schema changes", async () => {
     const directory = await fixtureDirectory();
     const one = await rendererFixture();
     const two = await rendererFixture(
@@ -190,13 +264,9 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
     const diagnostic = vi.fn<(message: string) => void>();
     await write("first");
     const abort = new AbortController();
-    const configuration = {
-      version: 1 as const,
-      renderers: { "urn:one:1": one.cid, "urn:two:1": two.cid },
-    };
     const preview = await startPreview({
       path,
-      configuration,
+      viewer: { cid: one.cid },
       store: one.store,
       signal: abort.signal,
       diagnostic,
@@ -232,12 +302,10 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
       );
       await write("new schema", "urn:two:1");
       const changed = await stream.until("document", missing.revision + 1);
-      expect(changed.type === "document" && changed.cid).toBe(two.cid);
+      expect(changed.type === "document" && changed.cid).toBe(one.cid);
       await write("unmapped", "urn:missing:1");
-      const unmapped = await stream.until("error", changed.revision + 1);
-      expect(unmapped.type === "error" && unmapped.message).toContain(
-        "registry add",
-      );
+      const unmapped = await stream.until("document", changed.revision + 1);
+      expect(unmapped.type === "document" && unmapped.cid).toBe(one.cid);
       await Promise.all([write("fast1"), write("fast2")]);
       await write("last");
       const last = await stream.until("document", unmapped.revision + 1);
@@ -257,7 +325,7 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
     const path = join(directory.directory, "doc.json");
     const base = {
       path,
-      configuration: { version: 1 as const, renderers: {} },
+      viewer: { cid: renderer.cid },
       store: renderer.store,
       signal: new AbortController().signal,
       diagnostic: () => {},
@@ -265,7 +333,9 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
     try {
       await expect(startPreview(base)).rejects.toThrow("Cannot read");
       await writeFile(path, '{"$schema":"urn:missing:1"}');
-      await expect(startPreview(base)).rejects.toThrow("No renderer");
+      await expect(
+        startPreview({ ...base, viewer: { cid: "invalid" } }),
+      ).rejects.toThrow("root CID");
       const abort = new AbortController();
       abort.abort();
       await expect(
@@ -278,7 +348,7 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
       await directory.cleanup();
     }
   });
-  it("bounds authorized SSE connections and supports a near-limit document update without disconnecting", async () => {
+  it("bounds first-party SSE connections and supports a near-limit document update without disconnecting", async () => {
     const directory = await fixtureDirectory();
     const renderer = await rendererFixture();
     const path = join(directory.directory, "doc.json");
@@ -288,10 +358,7 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
     const abort = new AbortController();
     const preview = await startPreview({
       path,
-      configuration: {
-        version: 1,
-        renderers: { "urn:fixture:1": renderer.cid },
-      },
+      viewer: { cid: renderer.cid },
       store: renderer.store,
       signal: abort.signal,
       diagnostic: () => {},
@@ -305,7 +372,7 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
       expect(
         (
           await fetch(new URL("/events", parsed), {
-            headers: { Authorization: `Bearer ${parsed.hash.slice(1)}` },
+            headers: { "X-IPFSAW-Client": "browser" },
           })
         ).status,
       ).toBe(429);
@@ -334,56 +401,56 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
       writeFile(path, JSON.stringify({ $schema: schema, title }));
     await write("first");
     const abort = new AbortController();
-    const preview = await startPreview({
+    const original = one.store.scope.bind(one.store);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let waiting = false;
+    vi.spyOn(one.store, "scope").mockImplementation((limits) => {
+      const reader = original(limits);
+      const prepare = reader.prepare.bind(reader);
+      reader.prepare = async (...args) => {
+        waiting = true;
+        await gate;
+        return prepare(...args);
+      };
+      return reader;
+    });
+    const starting = startPreview({
       path,
-      configuration: {
-        version: 1,
-        renderers: { "urn:one:1": one.cid, "urn:two:1": two.cid },
-      },
+      viewer: { cid: one.cid },
       store: one.store,
       signal: abort.signal,
       diagnostic: () => {},
       pollMs: 10,
     });
-    const stream = await events(preview.url);
+    let preview: Awaited<ReturnType<typeof startPreview>> | undefined;
+    let stream: Awaited<ReturnType<typeof events>> | undefined;
     try {
-      await stream.next();
-      const original = one.store.scope.bind(one.store);
-      let release!: () => void;
-      const gate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      let waiting = false;
-      vi.spyOn(one.store, "scope").mockImplementation((limits) => {
-        const reader = original(limits);
-        const prepare = reader.prepare.bind(reader);
-        reader.prepare = async (...args) => {
-          waiting = true;
-          await gate;
-          return prepare(...args);
-        };
-        return reader;
-      });
-      await write("obsolete", "urn:two:1");
       await vi.waitFor(() => {
         expect(waiting).toBe(true);
       });
       await write("latest", "urn:two:1");
       release();
-      const current = await stream.until("document", 2);
+      preview = await starting;
+      stream = await events(preview.url);
+      const current = await stream.next();
       expect(current.type === "document" && current.document.title).toBe(
         "latest",
       );
     } finally {
-      stream.close();
+      release();
+      stream?.close();
       abort.abort();
-      await preview.close();
+      await preview?.close();
       await one.store.close();
       await two.store.close();
       await directory.cleanup();
+      vi.restoreAllMocks();
     }
   });
-  it("awaits in-flight content cancellation even when the backend rejects with an ordinary Error, and still closes HTTP", async () => {
+  it("awaits in-flight Viewer startup cancellation even when the backend rejects with an ordinary Error, preserving the caller Store", async () => {
     const directory = await fixtureDirectory();
     const renderer = await rendererFixture();
     const path = join(directory.directory, "doc.json");
@@ -391,57 +458,46 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
       writeFile(path, JSON.stringify({ $schema: schema }));
     await write("urn:one:1");
     const abort = new AbortController();
-    const preview = await startPreview({
+    const original = renderer.store.scope.bind(renderer.store);
+    let waiting = false,
+      cancelled = false;
+    vi.spyOn(renderer.store, "scope").mockImplementation((limits) => {
+      const reader = original(limits);
+      reader.prepare = (_root, options) =>
+        new Promise((_resolve, reject) => {
+          waiting = true;
+          options!.signal!.addEventListener(
+            "abort",
+            () => {
+              cancelled = true;
+              reject(new Error("Backend cancelled"));
+            },
+            { once: true },
+          );
+        });
+      return reader;
+    });
+    const starting = startPreview({
       path,
-      configuration: {
-        version: 1,
-        renderers: {
-          "urn:one:1": renderer.cid,
-          "urn:two:1":
-            "bafybeicnnadrvyiqs3tedkt2nnnp3euon4ox5xfnaszg762ztj4qrchw3u",
-        },
-      },
+      viewer: { cid: renderer.cid },
       store: renderer.store,
       signal: abort.signal,
       diagnostic: () => {},
       pollMs: 10,
     });
-    const origin = new URL(preview.url).origin;
-    const stream = await events(preview.url);
+    const rejected = expect(starting).rejects.toThrow("Backend cancelled");
     try {
-      await stream.next();
-      const original = renderer.store.scope.bind(renderer.store);
-      let waiting = false,
-        cancelled = false;
-      vi.spyOn(renderer.store, "scope").mockImplementation((limits) => {
-        const reader = original(limits);
-        reader.prepare = (_root, options) =>
-          new Promise((_resolve, reject) => {
-            waiting = true;
-            options!.signal!.addEventListener(
-              "abort",
-              () => {
-                cancelled = true;
-                reject(new Error("Backend cancelled"));
-              },
-              { once: true },
-            );
-          });
-        return reader;
-      });
-      await write("urn:two:1");
       await vi.waitFor(() => {
         expect(waiting).toBe(true);
       });
       abort.abort();
-      await expect(preview.close()).resolves.toBeUndefined();
+      await rejected;
       expect(cancelled).toBe(true);
-      await expect(fetch(origin)).rejects.toThrow();
+      vi.restoreAllMocks();
       expect((await renderer.store.read(renderer.cid)).type).toBe("directory");
     } finally {
-      stream.close();
       abort.abort();
-      await preview.close();
+      await rejected;
       await renderer.store.close();
       await directory.cleanup();
       vi.restoreAllMocks();
@@ -455,7 +511,9 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
     );
     const path = join(directory.directory, "doc.json");
     const content = (schema: string) =>
-      JSON.stringify({ $schema: schema, title: "controlled" });
+      schema === "invalid-json"
+        ? '{"secret-token":'
+        : JSON.stringify({ $schema: schema, title: "controlled" });
     // Saves are atomic replacements. An in-place truncate+write can be observed
     // mid-write by the poller as a transient identity with final content, which
     // is a different input than the stable unchanged one this test verifies.
@@ -469,10 +527,7 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
     const diagnostic = vi.fn<(message: string) => void>();
     const preview = await startPreview({
       path,
-      configuration: {
-        version: 1,
-        renderers: { "urn:one:1": one.cid, "urn:missing:1": two.cid },
-      },
+      viewer: { cid: one.cid },
       store: one.store,
       signal: abort.signal,
       diagnostic,
@@ -491,7 +546,7 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
     try {
       await stream.next();
       diagnostic.mockClear();
-      await write("urn:unmapped:1");
+      await write("invalid-json");
       const unmapped = await stream.until("error", 2);
       await delay(80);
       expect(await snapshot()).toEqual(unmapped);
@@ -499,34 +554,27 @@ describe("loopback preview, authorization, watching and owned lifetime", () => {
       expect(scopes).not.toHaveBeenCalled();
 
       diagnostic.mockClear();
-      await write("urn:missing:1");
-      const missing = await stream.until("error", unmapped.revision + 1);
-      await delay(80);
-      expect(await snapshot()).toEqual(missing);
-      expect(diagnostic).toHaveBeenCalledOnce();
-      expect(scopes).toHaveBeenCalledOnce();
-
       for (const [cid, bytes] of two.blocks) one.blocks.set(cid, bytes);
       await delay(50);
-      expect(await snapshot()).toEqual(missing);
-      expect(scopes).toHaveBeenCalledOnce();
+      expect(await snapshot()).toEqual(unmapped);
+      expect(scopes).not.toHaveBeenCalled();
       const replacement = join(directory.directory, "saved.json");
       await writeFile(replacement, content("urn:missing:1"));
       await rename(replacement, path);
-      const recovered = await stream.until("document", missing.revision + 1);
-      expect(recovered.type === "document" && recovered.cid).toBe(two.cid);
-      expect(scopes).toHaveBeenCalledTimes(2);
+      const recovered = await stream.until("document", unmapped.revision + 1);
+      expect(recovered.type === "document" && recovered.cid).toBe(one.cid);
+      expect(scopes).not.toHaveBeenCalled();
 
       diagnostic.mockClear();
       await write("not-a-uri");
-      const malformed = await stream.until("error", recovered.revision + 1);
-      expect(malformed.type === "error" && malformed.message).toContain(
-        "Schema must be a complete",
+      const malformed = await stream.until("document", recovered.revision + 1);
+      expect(malformed.type === "document" && malformed.document.$schema).toBe(
+        "not-a-uri",
       );
       await delay(60);
       expect(await snapshot()).toEqual(malformed);
       expect(diagnostic).toHaveBeenCalledOnce();
-      expect(scopes).toHaveBeenCalledTimes(2);
+      expect(scopes).not.toHaveBeenCalled();
       await write("urn:one:1");
       const corrected = await stream.until("document", malformed.revision + 1);
       expect(corrected.type === "document" && corrected.cid).toBe(one.cid);

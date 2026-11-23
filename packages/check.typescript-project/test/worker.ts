@@ -1,4 +1,4 @@
-import { runCheck } from "@silvermoon-work/check-task-sdk";
+import { runCheck } from "@silvermoon-work/check-task-sdk/legacy";
 import contract from "../src-legacy/contract.js";
 import { projectCheck } from "../src-legacy/callback.js";
 import type { Metadata } from "../src-legacy/metadata.js";

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { main, openBrowser } from "../src/cli.js";
 import { fixtureDirectory, rendererFixture } from "./helpers.js";
 import { configPath, readConfiguration } from "../src/configuration.js";
+import type { PreviewOptions } from "../src/preview.js";
 
 const mocks = vi.hoisted(() => ({
   content: vi.fn(),
@@ -52,17 +53,76 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe("public main(argv) interface", () => {
+  it("exits the Viewer successfully after the last page leaves and awaits owned cleanup", async () => {
+    const fixture = await fixtureDirectory();
+    const renderer = await rendererFixture();
+    const order: string[] = [];
+    let disconnect!: () => void;
+    let finish!: () => void;
+    const cleanup = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    mocks.content.mockResolvedValue({
+      close: () => {
+        order.push("store");
+        return Promise.resolve();
+      },
+    });
+    mocks.preview.mockImplementation((options: PreviewOptions) => {
+      disconnect = options.onNoClients!;
+      return Promise.resolve({
+        url: "http://127.0.0.1:1234/",
+        close: async () => {
+          await cleanup;
+          order.push("preview");
+        },
+      });
+    });
+    const output = streams();
+    let running: Promise<number> | undefined;
+    try {
+      let completed = false;
+      running = main([
+        "view",
+        renderer.cid,
+        "doc.json",
+        "--data-dir",
+        fixture.directory,
+        "--no-open",
+      ]).then((code) => {
+        completed = true;
+        return code;
+      });
+      await vi.waitFor(() => {
+        expect(output.result().data?.state).toBe("listening");
+      });
+      disconnect();
+      await Promise.resolve();
+      expect(completed).toBe(false);
+      finish();
+      expect(await running).toBe(0);
+      expect(order).toEqual(["preview", "store"]);
+      expect(output.err).toContain("All preview pages disconnected");
+      expect(output.out.trim().split("\n")).toHaveLength(1);
+    } finally {
+      finish();
+      await running;
+      await renderer.store.close();
+      await fixture.cleanup();
+    }
+  });
+
   it("has no import side effects and prints help/version to stdout with no network", async () => {
     for (const args of [
       [],
       ["--help"],
       ["-h"],
-      ["registry"],
-      ["registry", "--help"],
-      ["registry", "add", "-h"],
-      ["registry", "list", "--help"],
-      ["registry", "remove", "--help"],
-      ["run", "--help"],
+      ["alias"],
+      ["alias", "--help"],
+      ["alias", "add", "-h"],
+      ["alias", "list", "--help"],
+      ["alias", "remove", "--help"],
+      ["view", "--help"],
       ["--version"],
     ]) {
       const output = streams();
@@ -75,23 +135,25 @@ describe("public main(argv) interface", () => {
   });
   it.each([
     ["--unknown"],
-    ["registry", "wat"],
-    ["registry", "add"],
-    ["registry", "remove"],
-    ["registry", "list", "--replace"],
-    ["registry", "add", "bad", "bad"],
-    ["registry", "remove", "bad"],
-    ["registry", "add", "urn:x:1", "bad"],
+    ["alias", "wat"],
+    ["alias", "add"],
+    ["alias", "remove"],
+    ["alias", "list", "--replace"],
+    ["alias", "add", "bad", "bad"],
+    ["alias", "remove", "urn:x:1"],
+    ["alias", "add", "urn:x:1", "bad"],
     ["-"],
     ["a.json", "b.json"],
-    ["registry", "list", "--json"],
+    ["alias", "list", "--json"],
     ["renderer", "list"],
     ["--config", "config.json"],
     ["--content-gateway", "http://local.invalid"],
-    ["registry", "list", "--data-dir", ""],
-    ["registry", "list", "--ipfs-gateway", "http://local.invalid"],
-    ["registry", "--content-data-dir", "ignored"],
-    ["--no-open", "registry", "remove", "urn:x:1"],
+    ["alias", "list", "--data-dir", ""],
+    ["alias", "list", "--ipfs-gateway", "http://local.invalid"],
+    ["alias", "--content-data-dir", "ignored"],
+    ["--no-open", "alias", "remove", "events"],
+    ["registry", "list"],
+    ["run", "viewer", "doc.json"],
   ])(
     "returns one safe ARGUMENT_INVALID JSON envelope and failure 1 for %j",
     async (...args) => {
@@ -121,17 +183,121 @@ describe("public main(argv) interface", () => {
       process.listenerCount("SIGTERM"),
     ]).toEqual(before);
   });
+  it.each(["events", "constructor", "toString"])(
+    "rejects unknown alias %s without opening a Store or falling back to a document schema",
+    async (alias) => {
+      const fixture = await fixtureDirectory();
+      const output = streams();
+      try {
+        expect(
+          await main([
+            "view",
+            alias,
+            "events.jsonl",
+            "--data-dir",
+            fixture.directory,
+          ]),
+        ).toBe(1);
+        expect(output.result().error?.code).toBe("ALIAS_NOT_FOUND");
+        expect(mocks.content).not.toHaveBeenCalled();
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+  );
+  it.each(["cid", "car"] as const)(
+    "resolves a registered %s alias to an explicit Viewer source",
+    async (kind) => {
+      const fixture = await fixtureDirectory();
+      const renderer = await rendererFixture();
+      const path = join(fixture.directory, "viewer.car");
+      await writeFile(path, Uint8Array.of(1, 2, 3));
+      const registered = streams();
+      expect(
+        await main([
+          "alias",
+          "add",
+          "events",
+          kind === "cid" ? renderer.cid : path,
+          "--data-dir",
+          fixture.directory,
+        ]),
+      ).toBe(0);
+      expect(registered.result().ok).toBe(true);
+      expect(mocks.content).not.toHaveBeenCalled();
+      vi.restoreAllMocks();
+      mocks.content.mockResolvedValue({ close: () => Promise.resolve() });
+      mocks.preview.mockResolvedValue({
+        url: "http://127.0.0.1:1234/",
+        rendererCid: renderer.cid,
+        close: () => Promise.resolve(),
+      });
+      const output = streams();
+      let running: Promise<number> | undefined;
+      try {
+        running = main([
+          "view",
+          "events",
+          "events.jsonl",
+          "--data-dir",
+          fixture.directory,
+          "--no-open",
+        ]);
+        await vi.waitFor(() => {
+          expect(output.result().data?.state).toBe("listening");
+        });
+        expect(mocks.preview).toHaveBeenCalledWith(
+          expect.objectContaining({
+            viewer:
+              kind === "cid"
+                ? { cid: renderer.cid }
+                : { car: Buffer.from([1, 2, 3]) },
+          }),
+        );
+        process.emit("SIGTERM");
+        expect(await running).toBe(143);
+      } finally {
+        process.emit("SIGTERM");
+        await running;
+        await renderer.store.close();
+        await fixture.cleanup();
+      }
+    },
+  );
+  it("rejects legacy schema configuration even when an explicit Viewer is provided, preserving its bytes", async () => {
+    const fixture = await fixtureDirectory();
+    const path = configPath(fixture.directory);
+    const original = '{"version":1,"renderers":{"urn:test:1":"old"}}';
+    await writeFile(path, original);
+    const output = streams();
+    try {
+      expect(
+        await main([
+          "view",
+          "QmYwAPJzv5CZsnAzt8auVTLg8KEq4AaKjY6LYnkJqnwSev",
+          "doc.json",
+          "--data-dir",
+          fixture.directory,
+        ]),
+      ).toBe(1);
+      expect(output.result().error?.code).toBe("CONFIGURATION_INVALID");
+      expect(await readFile(path, "utf8")).toBe(original);
+      expect(mocks.content).not.toHaveBeenCalled();
+    } finally {
+      await fixture.cleanup();
+    }
+  });
   it.each([
-    ["run", "--document", "doc.json"],
-    ["run", "--cid", "bad", "--document", "doc.json"],
-    ["run", "--car", "a.car", "--cid", "bad", "--document", "doc.json"],
-    ["run", "--cid", "bad"],
-    ["run", "--document", "a.json", "--document", "b.json", "--cid", "bad"],
-    ["run", "--cid", "one", "--cid", "two", "--document", "doc.json"],
-    ["run", "--car", "one", "--car", "two", "--document", "doc.json"],
-    ["run", "--car", "", "--document", "doc.json"],
+    ["view"],
+    ["view", "events"],
+    ["view", "events", "doc.json", "extra.json"],
+    ["view", "events", "doc.json", "--schema", "urn:test:1"],
+    ["view", "events", "doc.json", "--cid", "bad"],
+    ["view", "", "doc.json"],
+    ["view", "events", "doc.txt"],
+    ["view", "../viewer", "-"],
   ])(
-    "rejects invalid new Task source selection before opening content: %j",
+    "rejects invalid positional Viewer selection before opening content: %j",
     async (...args) => {
       const output = streams();
       expect(await main(args)).toBe(1);
@@ -141,7 +307,7 @@ describe("public main(argv) interface", () => {
     },
   );
   it.each(["cid", "car"] as const)(
-    "runs the explicit %s path without registry bindings and emits HTTP listening only",
+    "views the explicit %s path without aliases and emits HTTP listening only",
     async (source) => {
       const fixture = await fixtureDirectory();
       const renderer = await rendererFixture();
@@ -150,7 +316,7 @@ describe("public main(argv) interface", () => {
       const storeClose = vi.fn().mockResolvedValue(undefined);
       mocks.content.mockResolvedValue({ close: storeClose });
       mocks.preview.mockResolvedValue({
-        url: "http://127.0.0.1:1234/#PRIVATE",
+        url: "http://127.0.0.1:1234/",
         bundleCid: renderer.cid,
         close,
       });
@@ -159,10 +325,8 @@ describe("public main(argv) interface", () => {
       let running: Promise<number> | undefined;
       try {
         running = main([
-          "run",
-          source === "cid" ? "--cid" : "--car",
+          "view",
           source === "cid" ? renderer.cid : car,
-          "--document",
           join(fixture.directory, "raw.yaml"),
           "--data-dir",
           fixture.directory,
@@ -177,9 +341,8 @@ describe("public main(argv) interface", () => {
         });
         expect(output.result().data).toEqual({
           state: "listening",
-          url: "http://127.0.0.1:1234/#PRIVATE",
-          bundleCid: renderer.cid,
-          runtime: "browser",
+          url: "http://127.0.0.1:1234/",
+          viewerCid: renderer.cid,
         });
         expect(output.err).toContain("startup is pending");
         expect(output.err).not.toContain("PRIVATE");
@@ -189,11 +352,10 @@ describe("public main(argv) interface", () => {
         });
         expect(mocks.preview).toHaveBeenCalledWith(
           expect.objectContaining({
-            task:
+            viewer:
               source === "cid"
                 ? { cid: renderer.cid }
                 : { car: Buffer.from([1, 2, 3]) },
-            configuration: { version: 1, renderers: {} },
           }),
         );
         process.emit("SIGINT");
@@ -227,7 +389,7 @@ describe("public main(argv) interface", () => {
         mocks.preview.mockRejectedValue(new Error("secret source"));
       else
         mocks.preview.mockResolvedValue({
-          url: "http://127.0.0.1:1234/#SECRET",
+          url: "http://127.0.0.1:1234/",
           bundleCid: renderer.cid,
           close,
         });
@@ -241,10 +403,8 @@ describe("public main(argv) interface", () => {
       let running: Promise<number> | undefined;
       try {
         running = main([
-          "run",
-          "--cid",
+          "view",
           renderer.cid,
-          "--document",
           "raw.json",
           "--data-dir",
           fixture.directory,
@@ -284,7 +444,7 @@ describe("public main(argv) interface", () => {
       const code = await main([
         "--data-dir",
         fixture.directory,
-        "registry",
+        "alias",
         ...args,
       ]);
       vi.restoreAllMocks();
@@ -298,40 +458,37 @@ describe("public main(argv) interface", () => {
     try {
       expect((await invoke(["list"])).result).toEqual({
         ok: true,
-        data: { version: 1, renderers: [] },
+        data: { version: 1, aliases: [] },
       });
-      expect((await invoke(["add", "urn:z:1", one.cid])).result.data).toEqual({
-        schema: "urn:z:1",
+      expect((await invoke(["add", "z", one.cid])).result.data).toEqual({
+        alias: "z",
         cid: one.cid,
         changed: true,
       });
-      expect(
-        (await invoke(["add", "urn:z:1", one.cid])).result.data?.changed,
-      ).toBe(false);
-      const before = await readFile(path, "utf8");
-      expect(
-        (await invoke(["add", "urn:z:1", two.cid])).result.error?.code,
-      ).toBe("REGISTRY_CONFLICT");
-      expect(await readFile(path, "utf8")).toBe(before);
-      expect(
-        (await invoke(["add", "urn:z:1", two.cid, "--replace"])).result.data
-          ?.changed,
-      ).toBe(true);
-      expect((await invoke(["add", "urn:a:1", one.cid])).code).toBe(0);
-      expect((await invoke(["list"])).result.data).toEqual({
-        version: 1,
-        renderers: [
-          { schema: "urn:a:1", cid: one.cid },
-          { schema: "urn:z:1", cid: two.cid },
-        ],
-      });
-      expect((await invoke(["remove", "urn:z:1"])).result.data).toEqual({
-        schema: "urn:z:1",
-        removed: true,
-      });
-      expect((await invoke(["remove", "urn:z:1"])).result.data?.removed).toBe(
+      expect((await invoke(["add", "z", one.cid])).result.data?.changed).toBe(
         false,
       );
+      const before = await readFile(path, "utf8");
+      expect((await invoke(["add", "z", two.cid])).result.error?.code).toBe(
+        "ALIAS_CONFLICT",
+      );
+      expect(await readFile(path, "utf8")).toBe(before);
+      expect(
+        (await invoke(["add", "z", two.cid, "--replace"])).result.data?.changed,
+      ).toBe(true);
+      expect((await invoke(["add", "a", one.cid])).code).toBe(0);
+      expect((await invoke(["list"])).result.data).toEqual({
+        version: 1,
+        aliases: [
+          { alias: "a", cid: one.cid },
+          { alias: "z", cid: two.cid },
+        ],
+      });
+      expect((await invoke(["remove", "z"])).result.data).toEqual({
+        alias: "z",
+        removed: true,
+      });
+      expect((await invoke(["remove", "z"])).result.data?.removed).toBe(false);
       await writeFile(path, "{bad-secret-content");
       expect((await invoke(["list"])).result.error?.code).toBe(
         "CONFIGURATION_INVALID",
@@ -349,14 +506,14 @@ describe("public main(argv) interface", () => {
     const renderer = await rendererFixture();
     try {
       const path = configPath(fixture.directory);
-      await writeFile(path, '{"version":1,"openBrowser":false,"renderers":{}}');
+      await writeFile(path, '{"version":1,"openBrowser":false,"aliases":{}}');
       vi.stubEnv("IPFSAW_DATA_DIR", join(fixture.directory, "must-not-use"));
       streams();
       expect(
         await main([
-          "registry",
+          "alias",
           "add",
-          "urn:x:1",
+          "events",
           renderer.cid,
           "--data-dir",
           fixture.directory,
@@ -365,14 +522,14 @@ describe("public main(argv) interface", () => {
       expect((await readConfiguration(path)).openBrowser).toBe(false);
       expect(
         await main([
-          "registry",
+          "alias",
           "--data-dir",
           fixture.directory,
           "remove",
-          "urn:x:1",
+          "events",
         ]),
       ).toBe(0);
-      expect((await readConfiguration(path)).renderers).toEqual({});
+      expect((await readConfiguration(path)).aliases).toEqual({});
     } finally {
       await renderer.store.close();
       await fixture.cleanup();
@@ -384,7 +541,7 @@ describe("public main(argv) interface", () => {
       const fixture = await fixtureDirectory();
       await writeFile(
         configPath(fixture.directory),
-        '{"version":1,"openBrowser":false,"renderers":{}}',
+        '{"version":1,"openBrowser":false,"aliases":{}}',
       );
       let finish!: () => void;
       const closed = new Promise<void>((resolve) => {
@@ -401,8 +558,7 @@ describe("public main(argv) interface", () => {
       });
       mocks.content.mockResolvedValue({ close: closeStore });
       mocks.preview.mockResolvedValue({
-        url: "http://127.0.0.1:1234/#SECRET",
-        schema: "urn:fixture:1",
+        url: "http://127.0.0.1:1234/",
         rendererCid: "fixture-cid",
         close: closePreview,
       });
@@ -411,6 +567,8 @@ describe("public main(argv) interface", () => {
         let completed = false;
         const contentDirectory = join(fixture.directory, "content");
         const running = main([
+          "view",
+          "QmYwAPJzv5CZsnAzt8auVTLg8KEq4AaKjY6LYnkJqnwSev",
           "doc.json",
           "--data-dir",
           fixture.directory,
@@ -427,9 +585,8 @@ describe("public main(argv) interface", () => {
         });
         expect(output.result().data).toEqual({
           state: "listening",
-          url: "http://127.0.0.1:1234/#SECRET",
-          schema: "urn:fixture:1",
-          rendererCid: "fixture-cid",
+          url: "http://127.0.0.1:1234/",
+          viewerCid: "fixture-cid",
         });
         process.emit(signal);
         await vi.waitFor(() => {
@@ -462,7 +619,14 @@ describe("public main(argv) interface", () => {
     const output = streams();
     try {
       expect(
-        await main(["doc.json", "--data-dir", fixture.directory, "--no-open"]),
+        await main([
+          "view",
+          "QmYwAPJzv5CZsnAzt8auVTLg8KEq4AaKjY6LYnkJqnwSev",
+          "doc.json",
+          "--data-dir",
+          fixture.directory,
+          "--no-open",
+        ]),
       ).toBe(1);
       expect(close).toHaveBeenCalledOnce();
       expect(output.result().error?.code).toBe("CLEANUP_FAILED");
@@ -478,7 +642,15 @@ describe("public main(argv) interface", () => {
     mocks.content.mockRejectedValue(new Error("SECRET shared configuration"));
     const output = streams();
     try {
-      expect(await main(["doc.json", "--data-dir", fixture.directory])).toBe(1);
+      expect(
+        await main([
+          "view",
+          "QmYwAPJzv5CZsnAzt8auVTLg8KEq4AaKjY6LYnkJqnwSev",
+          "doc.json",
+          "--data-dir",
+          fixture.directory,
+        ]),
+      ).toBe(1);
       expect(output.result().error?.code).toBe("OPERATION_FAILED");
       expect(output.out + output.err).not.toContain("SECRET");
     } finally {
@@ -489,7 +661,7 @@ describe("public main(argv) interface", () => {
     const fixture = await fixtureDirectory();
     mocks.content.mockResolvedValue({ close: () => Promise.resolve() });
     mocks.preview.mockResolvedValue({
-      url: "http://127.0.0.1:1234/#SECRET",
+      url: "http://127.0.0.1:1234/",
       close: () => Promise.resolve(),
     });
     mocks.spawn.mockImplementation(() => {
@@ -502,7 +674,13 @@ describe("public main(argv) interface", () => {
     });
     const output = streams();
     try {
-      const running = main(["doc.json", "--data-dir", fixture.directory]);
+      const running = main([
+        "view",
+        "QmYwAPJzv5CZsnAzt8auVTLg8KEq4AaKjY6LYnkJqnwSev",
+        "doc.json",
+        "--data-dir",
+        fixture.directory,
+      ]);
       await vi.waitFor(() => {
         expect(output.err).toContain("Warning:");
       });
@@ -672,12 +850,14 @@ describe("public main(argv) interface", () => {
     const fixture = await fixtureDirectory();
     mocks.content.mockResolvedValue({ close: () => Promise.resolve() });
     mocks.preview.mockResolvedValue({
-      url: "http://127.0.0.1:1234/#SECRET",
+      url: "http://127.0.0.1:1234/",
       close: () => Promise.reject(new Error("SECRET cleanup")),
     });
     const output = streams();
     try {
       const running = main([
+        "view",
+        "QmYwAPJzv5CZsnAzt8auVTLg8KEq4AaKjY6LYnkJqnwSev",
         "doc.json",
         "--data-dir",
         fixture.directory,

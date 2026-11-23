@@ -4,17 +4,13 @@ import { Command, CommanderError } from "commander";
 import { createConfiguredContent } from "@silvermoon-work/ipfs-store/node";
 import {
   ConfigurationError,
+  aliasName,
   configPath,
   readConfiguration,
-  rootCid,
+  viewerLocation,
   writeConfiguration,
 } from "./configuration.js";
-import {
-  boundedRead,
-  DocumentError,
-  InputError,
-  schemaUri,
-} from "./document.js";
+import { boundedRead, DocumentError, InputError } from "./document.js";
 import { startPreview } from "./preview.js";
 import { taskBundleLimits } from "@silvermoon-work/task-protocol";
 
@@ -115,15 +111,18 @@ export async function main(
   const diagnostic = (message: string) => {
     process.stderr.write(`${message}\n`);
   };
+  const onNoClients = () => {
+    diagnostic("All preview pages disconnected. Closing the local host.");
+    lifetime.abort();
+  };
   const command = new Command()
     .name("ipfsaw")
     .description(
-      "Run a browser Task with a local document, or preview using a legacy renderer binding.",
+      "View a local document using an explicit immutable Viewer or a registered alias.",
     )
-    .argument("[document]", ".yaml, .yml or .json file to watch")
     .option(
       "--data-dir <path>",
-      "ipfsaw mapping/state directory (not the IPFS content directory)",
+      "ipfsaw alias/state directory (not the IPFS content directory)",
     )
     .option("--no-open", "Print the ready result without opening a browser")
     .option(
@@ -146,18 +145,55 @@ export async function main(
     })
     .addHelpText(
       "after",
-      "\nExamples:\n  ipfsaw run --car .\\check.car --document .\\check.yaml --no-open\n  ipfsaw .\\check.yaml --no-open\n  ipfsaw registry list --data-dir .\\preview-state\n\nrun uses genuine browser Tasks; the root document/registry path retains the legacy renderer ABI.\nBusiness output is one JSON envelope; logs use stderr.\nApp directory: --data-dir > IPFSAW_DATA_DIR > ~/.silvermoon.work/ipfsaw.\nBindings are a startup snapshot. IPFS configuration is shared with Task.\n",
+      "\nExamples:\n  ipfsaw view .\\check.car .\\check.yaml --no-open\n  ipfsaw view events .\\events.jsonl\n  ipfsaw alias add events <viewerCID>\n  ipfsaw alias list --data-dir .\\preview-state\n\nViewers are selected explicitly, never from a document's $schema.\nBusiness output is one JSON envelope; logs use stderr.\nApp directory: --data-dir > IPFSAW_DATA_DIR > ~/.silvermoon.work/ipfsaw.\nAliases are a startup snapshot. IPFS configuration is shared with Task.\n",
     )
-    .action(async (document: string | undefined, flags: Flags) => {
-      if (document === undefined) {
-        command.outputHelp();
-        return;
-      }
-      if (![".yaml", ".yml", ".json"].includes(extname(document).toLowerCase()))
+    .action(() => {
+      command.outputHelp();
+    });
+  const view = command
+    .command("view")
+    .configureHelp({ showGlobalOptions: true })
+    .description(
+      "View a JSON/YAML/JSONL file using a Viewer CID, CAR path or alias.",
+    )
+    .argument("<viewer>", "Viewer root CID, CAR path or registered alias")
+    .argument("<document>", "Local JSON, YAML or JSONL file to watch")
+    .addHelpText(
+      "after",
+      "\nCID selectors are immutable. CAR paths contain a path separator or end in .car.\nOther selectors are exact, case-sensitive aliases. No $schema lookup occurs.\nJSONL is passed as {records:[...]} in file order; invalid lines are not skipped.\nHTTP listening does not mean the browser Viewer completed startup.\nExamples:\n  ipfsaw view <viewerCID> .\\document.yaml\n  ipfsaw view .\\check.car .\\check.json --no-open\n",
+    )
+    .action(async (selector: string, document: string) => {
+      const flags = view.optsWithGlobals<Flags>();
+      if (
+        ![".yaml", ".yml", ".json", ".jsonl"].includes(
+          extname(document).toLowerCase(),
+        )
+      )
         throw new InputError(
-          "Pass a .yaml/.yml/.json file; stdin and unknown commands are not supported.",
+          "Pass a .yaml/.yml/.json/.jsonl file; stdin is not supported.",
         );
       const configuration = await readConfiguration(configPath(flags.dataDir));
+      const direct = viewerLocation(selector);
+      const name = direct ? undefined : aliasName(selector);
+      const location =
+        direct ??
+        (name && Object.hasOwn(configuration.aliases, name)
+          ? configuration.aliases[name]
+          : undefined);
+      if (!location)
+        throw new OperationError(
+          "Viewer alias is not registered. Use ipfsaw alias add <alias> <viewer>.",
+          "ALIAS_NOT_FOUND",
+        );
+      const source =
+        "cid" in location
+          ? location
+          : {
+              car: await boundedRead(
+                location.car,
+                taskBundleLimits.archiveBytes,
+              ),
+            };
       const store = await createConfiguredContent({
         ...(flags.ipfsGateway !== undefined
           ? { gateway: flags.ipfsGateway }
@@ -171,132 +207,19 @@ export async function main(
       try {
         preview = await startPreview({
           path: resolve(document),
-          configuration,
           store,
+          viewer: source,
           signal: lifetime.signal,
           diagnostic,
+          onNoClients,
         });
         success({
           state: "listening",
           url: preview.url,
-          schema: preview.schema,
-          rendererCid: preview.rendererCid,
+          viewerCid: preview.bundleCid ?? preview.rendererCid,
         });
         diagnostic(
-          "Loopback preview is ready. Waiting for document changes; press Ctrl+C to stop.",
-        );
-        if (flags.open !== false && configuration.openBrowser !== false) {
-          try {
-            await openBrowser(preview.url, lifetime.signal);
-          } catch {
-            if (!lifetime.signal.aborted)
-              diagnostic(
-                "Warning: could not open a browser. Open data.url from the result printed on stdout.",
-              );
-          }
-        }
-        if (!lifetime.signal.aborted)
-          await new Promise<void>((resolve) => {
-            lifetime.signal.addEventListener(
-              "abort",
-              () => {
-                resolve();
-              },
-              { once: true },
-            );
-          });
-      } catch (error) {
-        failure = error;
-      }
-      const failures: unknown[] = [];
-      try {
-        await preview?.close();
-      } catch (error) {
-        failures.push(error);
-      }
-      try {
-        await store.close();
-      } catch (error) {
-        failures.push(error);
-      }
-      if (failures.length)
-        throw new OperationError("Preview cleanup failed.", "CLEANUP_FAILED", {
-          cause: new AggregateError(failures),
-        });
-      if (failure)
-        throw failure instanceof Error
-          ? failure
-          : new OperationError("Preview failed.");
-    });
-  const once = (value: string, previous: unknown): string => {
-    if (previous !== undefined)
-      throw new InputError("Pass each source/document option once.");
-    if (!value) throw new InputError("Option values must not be empty.");
-    return value;
-  };
-  const run = command
-    .command("run")
-    .configureHelp({ showGlobalOptions: true })
-    .description(
-      "Launch a standard browser Task; saving replaces the app and resets its state/router.",
-    )
-    .option("--cid <cid>", "Immutable browser Task Bundle root CID", once)
-    .option(
-      "--car <path>",
-      "Complete local standard Task CAR (no upload)",
-      once,
-    )
-    .requiredOption(
-      "--document <path>",
-      "Local YAML/JSON Task parameters, without an implicit envelope",
-      once,
-    )
-    .addHelpText(
-      "after",
-      "\nChoose exactly one of --cid or --car. No registry binding is required.\nHTTP listening does not mean the browser startup Task completed.\nExamples:\n  ipfsaw run --cid <bundleCID> --document .\\document.yaml\n  ipfsaw run --car .\\check.car --document .\\check.json --no-open\n",
-    )
-    .action(async () => {
-      const flags = run.optsWithGlobals<
-        Flags & { cid?: string; car?: string; document: string }
-      >();
-      if (!!flags.cid === !!flags.car)
-        throw new InputError("Choose exactly one of --cid or --car.");
-      const source = flags.cid
-        ? { cid: rootCid(flags.cid) }
-        : {
-            car: await boundedRead(
-              resolve(flags.car!),
-              taskBundleLimits.archiveBytes,
-            ),
-          };
-      const configuration = await readConfiguration(configPath(flags.dataDir));
-      const store = await createConfiguredContent({
-        ...(flags.ipfsGateway !== undefined
-          ? { gateway: flags.ipfsGateway }
-          : {}),
-        ...(flags.contentDataDir !== undefined
-          ? { dataDir: resolve(flags.contentDataDir) }
-          : {}),
-      });
-      let preview: Awaited<ReturnType<typeof startPreview>> | undefined;
-      let failure: unknown;
-      try {
-        preview = await startPreview({
-          path: resolve(flags.document),
-          store,
-          configuration,
-          task: source,
-          signal: lifetime.signal,
-          diagnostic,
-        });
-        success({
-          state: "listening",
-          url: preview.url,
-          bundleCid: preview.bundleCid,
-          runtime: "browser",
-        });
-        diagnostic(
-          "HTTP listening; browser startup is pending. Saving resets app/router state. Ctrl+C closes the host/apps.",
+          "HTTP listening; Viewer startup is pending. Ctrl+C closes the local preview.",
         );
         if (flags.open !== false && configuration.openBrowser !== false) {
           try {
@@ -333,25 +256,23 @@ export async function main(
         failures.push(error);
       }
       if (failures.length)
-        throw new OperationError(
-          "Browser host cleanup failed.",
-          "CLEANUP_FAILED",
-          { cause: new AggregateError(failures) },
-        );
+        throw new OperationError("Preview cleanup failed.", "CLEANUP_FAILED", {
+          cause: new AggregateError(failures),
+        });
       if (failure)
         throw failure instanceof Error
           ? failure
-          : new OperationError("Browser host failed.");
+          : new OperationError("Viewer host failed.");
     });
-  const registry = command
-    .command("registry")
+  const aliases = command
+    .command("alias")
     .description(
-      "Manage exact schema URI / renderer CID bindings without accessing IPFS.",
+      "Manage exact Viewer aliases without fetching or executing their content.",
     )
-    .option("--data-dir <path>", "Choose ipfsaw mapping/state directory")
+    .option("--data-dir <path>", "Choose ipfsaw alias/state directory")
     .action(() => {
       rejectPreviewFlags();
-      registry.outputHelp();
+      aliases.outputHelp();
     });
   const rejectPreviewFlags = () => {
     if (
@@ -360,7 +281,7 @@ export async function main(
       )
     )
       throw new InputError(
-        "Registry commands do not accept preview-only options. Run ipfsaw registry --help.",
+        "Alias commands do not accept preview-only options. Run ipfsaw alias --help.",
       );
   };
   const selectedConfig = (child: Command): string => {
@@ -368,41 +289,43 @@ export async function main(
     return configPath(child.optsWithGlobals<{ dataDir?: string }>().dataDir);
   };
   const child = (name: string, description: string) =>
-    registry
+    aliases
       .command(name)
       .description(description)
-      .option("--data-dir <path>", "Choose ipfsaw mapping/state directory")
+      .option("--data-dir <path>", "Choose ipfsaw alias/state directory")
       .addHelpText(
         "after",
-        `\nExample: ipfsaw registry ${name === "list" ? "list" : name === "add" ? "add urn:example:note:1 <cid>" : "remove urn:example:note:1"}\n`,
+        `\nExample: ipfsaw alias ${name === "list" ? "list" : name === "add" ? "add events <viewerCID>" : "remove events"}\n`,
       );
-  const add = child("add", "Authorize a schema URI / root CID binding.")
-    .argument("<schema-uri>")
-    .argument("<cid>")
-    .option("--replace", "Explicitly replace a different existing CID")
+  const add = child("add", "Register a Viewer CID or CAR path under an alias.")
+    .argument("<alias>")
+    .argument("<viewer>")
+    .option("--replace", "Explicitly replace a different existing Viewer")
     .action(
-      async (
-        schema: string,
-        cidValue: string,
-        flags: { replace?: boolean },
-      ) => {
+      async (name: string, selector: string, flags: { replace?: boolean }) => {
         const path = selectedConfig(add);
-        schemaUri(schema);
-        const cid = rootCid(cidValue);
+        aliasName(name);
+        const location = viewerLocation(selector);
+        if (!location)
+          throw new InputError(
+            "Register a Viewer CID or CAR path, not another alias.",
+          );
         const config = await readConfiguration(path);
-        const previous = config.renderers[schema];
-        if (previous === cid) {
-          success({ schema, cid, changed: false });
+        const previous = Object.hasOwn(config.aliases, name)
+          ? config.aliases[name]
+          : undefined;
+        if (JSON.stringify(previous) === JSON.stringify(location)) {
+          success({ alias: name, ...location, changed: false });
           return;
         }
         if (previous && !flags.replace)
           throw new OperationError(
-            "Binding exists. Use --replace to authorize a different CID.",
-            "REGISTRY_CONFLICT",
+            "Alias exists. Use --replace to authorize a different Viewer.",
+            "ALIAS_CONFLICT",
           );
-        config.renderers[schema] = cid;
+        config.aliases[name] = location;
         await writeConfiguration(path, config, lifetime.signal);
-        success({ schema, cid, changed: true });
+        success({ alias: name, ...location, changed: true });
       },
     );
   const list = child(
@@ -410,27 +333,27 @@ export async function main(
     "List bindings from the selected local configuration.",
   ).action(async () => {
     const config = await readConfiguration(selectedConfig(list));
-    const renderers = Object.entries(config.renderers)
+    const entries = Object.entries(config.aliases)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([schema, cid]) => ({ schema, cid }));
-    success({ version: 1, renderers });
+      .map(([alias, location]) => ({ alias, ...location }));
+    success({ version: 1, aliases: entries });
   });
   const remove = child(
     "remove",
-    "Remove one binding without deleting shared content.",
+    "Remove one alias without deleting Viewer content.",
   )
-    .argument("<schema-uri>")
-    .action(async (schema: string) => {
+    .argument("<alias>")
+    .action(async (name: string) => {
       const path = selectedConfig(remove);
-      schemaUri(schema);
+      aliasName(name);
       const config = await readConfiguration(path);
-      if (!Object.hasOwn(config.renderers, schema)) {
-        success({ schema, removed: false });
+      if (!Object.hasOwn(config.aliases, name)) {
+        success({ alias: name, removed: false });
         return;
       }
-      delete config.renderers[schema];
+      delete config.aliases[name];
       await writeConfiguration(path, config, lifetime.signal);
-      success({ schema, removed: true });
+      success({ alias: name, removed: true });
     });
   try {
     await command.parseAsync([...argv], { from: "user" });
@@ -449,7 +372,7 @@ export async function main(
                 : "OPERATION_FAILED";
       const message =
         error instanceof CommanderError
-          ? "Invalid command usage. Run ipfsaw --help (or ipfsaw registry <command> --help)."
+          ? "Invalid command usage. Run ipfsaw --help (or ipfsaw alias <command> --help)."
           : error instanceof InputError ||
               error instanceof DocumentError ||
               error instanceof ConfigurationError ||

@@ -1,13 +1,18 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { ContractDetails } from "./details.js";
-import { createOutline } from "./outline.js";
-import type { OutlineNode } from "./outline.js";
+import { ContractDetails, TaskOverview } from "./details.js";
 import { validateCheckBundleSpec } from "./spec.js";
 import type { CheckBundleSpec } from "./spec.js";
+import { useCheckpointNavigation } from "./navigation.js";
 
 const mobileQuery = "(max-width: 650px)";
 
-export function CheckBundleViewer({ spec }: { spec: unknown }) {
+export function CheckBundleViewer({
+  spec,
+  navigation = false,
+}: {
+  spec: unknown;
+  navigation?: boolean;
+}) {
   const result = validateCheckBundleSpec(spec);
   if (!result.valid)
     return (
@@ -17,7 +22,10 @@ export function CheckBundleViewer({ spec }: { spec: unknown }) {
         aria-label="Spec 校验错误"
       >
         <h2>无法展示此定义</h2>
-        <p>修正以下结构或引用问题后再载入。校验不会执行任何检查。</p>
+        <p>
+          仅支持当前 Spec v1
+          有序检查点格式；修正以下结构问题后再载入。校验不会执行任何检查。
+        </p>
         <ul>
           {result.issues.map((issue, index) => (
             <li key={index}>
@@ -27,36 +35,38 @@ export function CheckBundleViewer({ spec }: { spec: unknown }) {
         </ul>
       </section>
     );
-  return <Definition key={JSON.stringify(result.spec)} spec={result.spec} />;
+  return (
+    <Definition
+      key={JSON.stringify(result.spec)}
+      spec={result.spec}
+      navigation={navigation}
+    />
+  );
 }
 
-function Definition({ spec }: { spec: CheckBundleSpec }) {
+function Definition({
+  spec,
+  navigation,
+}: {
+  spec: CheckBundleSpec;
+  navigation: boolean;
+}) {
   const prefix = useId();
-  const [outline] = useState(() => createOutline(spec));
-  const [selected, setSelected] = useState(spec.root);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const { selected, select } = useCheckpointNavigation(spec, navigation);
   const [mobile, setMobile] = useState(
     () =>
       typeof window !== "undefined" && window.matchMedia(mobileQuery).matches,
   );
   const [navigationOpen, setNavigationOpen] = useState(false);
-  const controls = useRef(new Map<string, HTMLButtonElement>());
+  const [sidebarWidth, setSidebarWidth] = useState(30);
+  const layout = useRef<HTMLDivElement>(null);
+  const controls = useRef(new Map<string | null, HTMLButtonElement>());
   const detailsHeading = useRef<HTMLHeadingElement>(null);
   const detailsPane = useRef<HTMLElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const navigationToggle = useRef<HTMLButtonElement>(null);
   const navigationRoot = useRef<HTMLElement>(null);
-  const locations = new Map<string, { id: string; ancestors: string[] }>();
-  const collect = (nodes: OutlineNode[], ancestors: string[]) => {
-    for (const node of nodes) {
-      if (!node.reference) {
-        locations.set(node.checker, { id: node.id, ancestors });
-        collect(node.children, [...ancestors, node.id]);
-      }
-    }
-  };
-  collect(outline, []);
-  const selectedLocation = locations.get(selected)!;
+  const checkpoint = spec.checkpoints.find(({ id }) => id === selected);
 
   useEffect(() => {
     const media = window.matchMedia(mobileQuery);
@@ -72,7 +82,7 @@ function Definition({ spec }: { spec: CheckBundleSpec }) {
       if (wasOpen || hadNavigationFocus)
         requestAnimationFrame(() => {
           if (media.matches) detailsHeading.current?.focus();
-          else controls.current.get(selectedLocation.id)?.focus();
+          else controls.current.get(selected)?.focus();
         });
     };
     media.addEventListener("change", change);
@@ -81,138 +91,84 @@ function Definition({ spec }: { spec: CheckBundleSpec }) {
       media.removeEventListener("change", change);
       activeDialog?.close();
     };
-  }, [selectedLocation.id, mobile]);
+  }, [selected, mobile]);
 
   const closeNavigation = () => {
     dialog.current?.close();
     setNavigationOpen(false);
     navigationToggle.current?.focus();
   };
-  const navigate = (name: string, focusTree = false) => {
-    const location = locations.get(name)!;
-    setSelected(name);
-    setCollapsed(
-      new Set([...collapsed].filter((id) => !location.ancestors.includes(id))),
-    );
+  const navigate = (id: string | null) => {
+    select(id);
     dialog.current?.close();
     setNavigationOpen(false);
     requestAnimationFrame(() => {
-      const target =
-        focusTree && !mobile
-          ? controls.current.get(location.id)
-          : detailsHeading.current;
+      const target = detailsHeading.current;
       target?.focus();
       target?.scrollIntoView({ block: "nearest" });
       if (detailsPane.current) detailsPane.current.scrollTop = 0;
     });
   };
-  const renderNode = (node: OutlineNode) => {
-    const definition = spec.checkers[node.checker]!;
-    const closed = collapsed.has(node.id);
-    return (
-      <li key={node.id}>
-        {node.detached && !node.edge && (
-          <p className="cbv-detached">未从入口引用</p>
-        )}
-        <div
-          className={`cbv-row${selectedLocation.id === node.id ? " cbv-row-selected" : ""}`}
-        >
-          {node.children.length > 0 ? (
-            <button
-              type="button"
-              className="cbv-toggle"
-              aria-expanded={!closed}
-              aria-controls={`${prefix}-${node.id}-children`}
-              aria-label={`${closed ? "展开" : "折叠"} ${definition.title}`}
-              onClick={() => {
-                const next = new Set(collapsed);
-                if (closed) next.delete(node.id);
-                else next.add(node.id);
-                setCollapsed(next);
-              }}
-            >
-              {closed ? "▸" : "▾"}
-            </button>
-          ) : (
-            <span className="cbv-spacer" />
-          )}
-          <button
-            type="button"
-            id={`${prefix}-${node.id}`}
-            className="cbv-select"
-            title={definition.title}
-            aria-current={selectedLocation.id === node.id ? "true" : undefined}
-            ref={(element) => {
-              if (element) controls.current.set(node.id, element);
-              else controls.current.delete(node.id);
-            }}
-            onClick={() => {
-              navigate(node.checker);
-            }}
-          >
-            {definition.title}
-          </button>
-          {node.edge && node.id.split("-").length === 2 && (
-            <span className="cbv-tag">分支</span>
-          )}
-          {node.edge?.forEach && (
-            <span className="cbv-tag" aria-label="按对象展开">
-              × N
-            </span>
-          )}
-          {node.reference && (
-            <button
-              type="button"
-              className="cbv-reference"
-              aria-label={`跳转到 ${definition.title} 定义`}
-              onClick={() => {
-                navigate(node.checker, true);
-              }}
-            >
-              ↗
-            </button>
-          )}
-        </div>
-        {node.children.length > 0 && (
-          <ul id={`${prefix}-${node.id}-children`} hidden={closed}>
-            {node.children.map(renderNode)}
-          </ul>
-        )}
-      </li>
-    );
-  };
   const sidebar = (
-    <aside className="cbv-sidebar" aria-label="检查脉络" ref={navigationRoot}>
-      <div className="cbv-tree-toolbar">
-        <strong id={`${prefix}-navigation-title`}>检查脉络</strong>
-        <button
-          type="button"
-          className="cbv-quiet"
-          onClick={() => {
-            setCollapsed(new Set([...locations.values()].map(({ id }) => id)));
-          }}
-        >
-          收起分支
-        </button>
+    <aside className="cbv-sidebar" aria-label="检查点" ref={navigationRoot}>
+      <div className="cbv-list-toolbar">
+        <strong id={`${prefix}-navigation-title`}>有序检查点</strong>
         {mobile && (
           <button
             type="button"
             className="cbv-quiet"
-            aria-label="关闭检查脉络"
+            aria-label="关闭检查点"
             onClick={closeNavigation}
           >
             关闭
           </button>
         )}
       </div>
-      <nav className="cbv-outline" aria-label="Checker 定义脉络">
-        <ul>{outline.map(renderNode)}</ul>
+      <button
+        type="button"
+        className="cbv-select cbv-overview"
+        title="任务总览"
+        aria-current={selected === null ? "page" : undefined}
+        ref={(element) => {
+          if (element) controls.current.set(null, element);
+          else controls.current.delete(null);
+        }}
+        onClick={() => {
+          navigate(null);
+        }}
+      >
+        任务总览
+      </button>
+      <nav className="cbv-outline" aria-label="Checkpoint 顺序">
+        <ol>
+          {spec.checkpoints.map((item, index) => (
+            <li
+              key={item.id}
+              className={`cbv-row${selected === item.id ? " cbv-row-selected" : ""}`}
+            >
+              <span className="cbv-order" aria-hidden="true">
+                {index + 1}
+              </span>
+              <button
+                type="button"
+                id={`${prefix}-${item.id}`}
+                className="cbv-select"
+                title={item.title}
+                aria-current={selected === item.id ? "step" : undefined}
+                ref={(element) => {
+                  if (element) controls.current.set(item.id, element);
+                  else controls.current.delete(item.id);
+                }}
+                onClick={() => {
+                  navigate(item.id);
+                }}
+              >
+                {item.title}
+              </button>
+            </li>
+          ))}
+        </ol>
       </nav>
-      <div className="cbv-tree-legend">
-        <span>× N 按对象展开</span>
-        <span>↗ 共享定义</span>
-        <span>DAG · 无环</span>
-      </div>
     </aside>
   );
   return (
@@ -221,7 +177,7 @@ function Definition({ spec }: { spec: CheckBundleSpec }) {
         <div>
           <h2>{spec.name}</h2>
           <p className="cbv-caption">
-            定义 v{spec.specVersion} / 同级不代表固定执行顺序
+            定义 v{spec.specVersion} / 按顺序检查，通过继续，不通过即停止
           </p>
         </div>
         <span className="cbv-label">仅定义，未执行</span>
@@ -236,46 +192,94 @@ function Definition({ spec }: { spec: CheckBundleSpec }) {
             onClick={() => {
               dialog.current!.showModal();
               setNavigationOpen(true);
-              setCollapsed(
-                new Set(
-                  [...collapsed].filter(
-                    (id) => !selectedLocation.ancestors.includes(id),
-                  ),
-                ),
-              );
               requestAnimationFrame(() => {
-                controls.current.get(selectedLocation.id)?.focus();
+                controls.current.get(selected)?.focus();
               });
             }}
           >
-            检查脉络
+            检查点
           </button>
         )}
       </header>
-      <div className="cbv-layout">
+      <div
+        className="cbv-layout"
+        ref={layout}
+        style={{
+          gridTemplateColumns: `minmax(180px, ${String(sidebarWidth)}fr) 6px minmax(240px, ${String(100 - sidebarWidth)}fr)`,
+        }}
+      >
         {!mobile && sidebar}
+        {!mobile && (
+          <div
+            className="cbv-resizer"
+            role="separator"
+            tabIndex={0}
+            aria-label="调整检查点宽度"
+            aria-orientation="vertical"
+            aria-valuemin={20}
+            aria-valuemax={80}
+            aria-valuenow={sidebarWidth}
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerMove={(event) => {
+              if (!event.currentTarget.hasPointerCapture(event.pointerId))
+                return;
+              const bounds = layout.current!.getBoundingClientRect();
+              setSidebarWidth(
+                Math.min(
+                  80,
+                  Math.max(
+                    20,
+                    Math.round(
+                      ((event.clientX - bounds.left) / bounds.width) * 100,
+                    ),
+                  ),
+                ),
+              );
+            }}
+            onPointerUp={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId))
+                event.currentTarget.releasePointerCapture(event.pointerId);
+            }}
+            onKeyDown={(event) => {
+              const widths: Readonly<Record<string, number>> = {
+                ArrowLeft: sidebarWidth - 2,
+                ArrowRight: sidebarWidth + 2,
+                Home: 20,
+                End: 80,
+              };
+              const next = widths[event.key];
+              if (next === undefined) return;
+              event.preventDefault();
+              setSidebarWidth(Math.min(80, Math.max(20, next)));
+            }}
+          />
+        )}
         <article
           className="cbv-details"
-          aria-label="Checker 详情"
+          aria-label={checkpoint ? "Checkpoint 详情" : "Task 总览"}
           ref={detailsPane}
         >
           <div className="cbv-identity">
             <h3 tabIndex={-1} ref={detailsHeading}>
-              {spec.checkers[selected]!.title}
+              {checkpoint ? checkpoint.title : "任务总览"}
             </h3>
-            <code>{selected}</code>
-            {selected === spec.root && (
-              <span className="cbv-caption">入口 checker</span>
-            )}
+            {checkpoint && <code>{checkpoint.id}</code>}
           </div>
-          <ContractDetails
-            spec={spec}
-            selected={selected}
-            navigate={navigate}
-          />
+          {checkpoint ? (
+            <ContractDetails checkpoint={checkpoint} />
+          ) : (
+            <TaskOverview
+              description={spec.description}
+              parameter={spec.parameter}
+            />
+          )}
           <p className="cbv-footnote">
-            Schema
-            合法不等于语义前置条件成立。根节点由调用方保证；父节点代码先检验子节点声明的前置条件，再构造参数。文档表达式不求值。
+            所有检查点共享 Check Task Target；任务检查范围与参数见任务总览。
+            此处仅展示定义，不执行检查或说明表达式。
           </p>
         </article>
       </div>

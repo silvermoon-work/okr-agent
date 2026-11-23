@@ -34,7 +34,8 @@ assert.equal(
 );
 const packageDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const carPath = resolve(
-  process.argv[2] ?? join(packageDirectory, "dist", "nodejs-toolchain.car"),
+  process.argv[2] ??
+    join(packageDirectory, "dist", "nodejs-toolchain-legacy.car"),
 );
 assert.ok(
   process.argv[3],
@@ -132,18 +133,18 @@ const samples = [
   {
     name: "portable-nvm-unmanaged-tools",
     context: context([unmanaged]),
-    codes: ["management-mismatch", "management-mismatch"],
+    codes: ["tool-managed", "tool-managed"],
   },
   {
     name: "portable-nvm-unmanaged-npm",
     context: context([npmOnly, current], npmOnly),
-    codes: ["pairing-mismatch", "management-mismatch"],
+    codes: ["node-npm-paired", "tool-managed"],
   },
   {
     name: "portable-nvm-version-observation",
     context: context([current]),
     requirements: { tools: { nvm: { minimumVersion: "999" } } },
-    codes: ["version-too-low"],
+    codes: ["tool-version-minimum"],
   },
 ];
 let evidence;
@@ -265,7 +266,7 @@ try {
       assert.match(result.problems[0].brief, /当前 1\.2\.2，/);
     const documents = [
       result.documentation,
-      ...(result.problems ?? []).map((problem) => problem.documentation),
+      ...result.references.map((reference) => reference.documentation),
     ];
     for (const path of new Set(documents)) {
       const file = await exporter(path, {
@@ -287,7 +288,7 @@ try {
             car.tree,
             path === result.documentation
               ? "resources/references/check.md"
-              : `resources/references/problems/${result.problems.find((problem) => problem.documentation === path).code}.md`,
+              : `resources/references/checkpoints/${result.references.find((reference) => reference.documentation === path).checkpoint}.md`,
             262144,
           ),
         ),

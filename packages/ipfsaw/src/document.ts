@@ -105,7 +105,22 @@ export function parseTaskDocument(
     throw new Error("Document exceeds 1 MiB.");
   let value: unknown;
   const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  if (extension === ".json") {
+  if (extension === ".jsonl") {
+    const lines = source.split("\n");
+    if (lines.at(-1) === "") lines.pop();
+    const records: unknown[] = [];
+    for (const [index, line] of lines.entries()) {
+      try {
+        records.push(JSON.parse(line));
+      } catch (error) {
+        throw new Error(
+          `Invalid JSONL syntax at line ${String(index + 1)}. Correct the record and save again.`,
+          { cause: error },
+        );
+      }
+    }
+    value = { records };
+  } else if (extension === ".json") {
     try {
       value = JSON.parse(source);
     } catch (error) {
@@ -155,9 +170,9 @@ export function readDocument(
 ): Promise<{ document: unknown; schema: string }>;
 export async function readDocument(path: string, task = false) {
   const extension = extname(path).toLowerCase();
-  if (![".json", ".yaml", ".yml"].includes(extension))
+  if (![".json", ".jsonl", ".yaml", ".yml"].includes(extension))
     throw new InputError(
-      "Document must be a .yaml, .yml or .json file (not stdin).",
+      "Document must be a .yaml, .yml, .json or .jsonl file (not stdin).",
     );
   let bytes: Uint8Array;
   try {

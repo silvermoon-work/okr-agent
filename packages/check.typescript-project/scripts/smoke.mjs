@@ -16,7 +16,11 @@ import {
 import { exporter } from "ipfs-unixfs-exporter";
 
 const carPath = resolve(process.argv[2] ?? "dist\\typescript-project.car");
-const directories = process.argv.slice(3).map((path) => resolve(path));
+const legacy = process.argv.includes("--legacy");
+const directories = process.argv
+  .slice(3)
+  .filter((value) => value !== "--legacy")
+  .map((path) => resolve(path));
 if (!directories.length)
   throw new Error("Provide absolute project directories.");
 const bytes = await readFile(carPath);
@@ -117,22 +121,21 @@ try {
     assert.equal(task.stage, "completed", JSON.stringify(task));
     const payload = task.result;
     const result = payload.data;
-    assert.deepEqual(
-      Object.keys(result).sort(),
-      result.pass
-        ? ["assets", "documentation", "pass"]
-        : ["assets", "documentation", "pass", "problems"],
-    );
-    assert.deepEqual(
-      payload.cidPaths,
-      result.pass
-        ? ['$["assets"]', '$["documentation"]']
-        : [
-            '$["assets"]',
-            '$["documentation"]',
-            '$["problems"][*]["documentation"]',
-          ],
-    );
+    const expectedFields = ["assets", "documentation", "pass"];
+    if (!legacy) expectedFields.push("references");
+    if (!result.pass) expectedFields.push("problems");
+    assert.deepEqual(Object.keys(result).sort(), expectedFields.sort());
+    assert.deepEqual(payload.cidPaths, [
+      '$["assets"]',
+      '$["documentation"]',
+      ...(legacy
+        ? result.pass
+          ? []
+          : ['$["problems"][*]["documentation"]']
+        : result.references.length
+          ? ['$["references"][*]["documentation"]']
+          : []),
+    ]);
     assert.match(
       (await document(result.documentation)).toString("utf8"),
       /TypeScript 项目/,
@@ -145,24 +148,28 @@ try {
           await readBytes(car.tree, `resources/assets/${name}`, 262_144),
         ),
       );
-    for (const problem of result.problems ?? []) {
-      const text = (await document(problem.documentation)).toString("utf8");
+    for (const reference of legacy
+      ? (result.problems ?? [])
+      : result.references) {
+      const text = (await document(reference.documentation)).toString("utf8");
       assert.ok(text.trim());
       assert.deepEqual(
-        await document(problem.documentation),
+        await document(reference.documentation),
         Buffer.from(
           await readBytes(
             car.tree,
-            `resources/references/problems/${problem.code}.md`,
+            legacy
+              ? `resources/references/problems/${reference.code}.md`
+              : `resources/references/checkpoints/${reference.checkpoint}.md`,
             262_144,
           ),
         ),
       );
-      if (problem.code.startsWith("document-")) {
+      if (legacy && reference.code.startsWith("document-")) {
         assert.match(text, /\.\.\/\.\.\/assets\/AGENTS\.md/);
         const path = posix.normalize(
           posix.join(
-            posix.dirname(`references/problems/${problem.code}.md`),
+            posix.dirname(`references/problems/${reference.code}.md`),
             "../../assets/AGENTS.md",
           ),
         );

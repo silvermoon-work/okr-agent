@@ -1,24 +1,6 @@
 /** Serialized into the first-party host page; no renderer code runs in this realm. */
 export function hostClient(): void {
   const protocol = "ipfsaw-browser/v1";
-  // Keep the capability in this origin-bound history entry, not a persistent credential store.
-  const saved = history.state as {
-    protocol?: unknown;
-    origin?: unknown;
-    capability?: unknown;
-  } | null;
-  const token =
-    location.hash.slice(1) ||
-    (saved?.protocol === protocol &&
-    saved.origin === location.origin &&
-    typeof saved.capability === "string"
-      ? saved.capability
-      : "");
-  history.replaceState(
-    { protocol, origin: location.origin, capability: token },
-    "",
-    "/",
-  );
   const status = document.querySelector<HTMLElement>("#status")!;
   const panel = document.querySelector<HTMLElement>("#renderer")!;
   let latest = 0;
@@ -70,6 +52,7 @@ export function hostClient(): void {
   const fail = (message: string) => {
     reset();
     panel.hidden = true;
+    status.hidden = false;
     status.textContent = message;
     status.setAttribute("role", "alert");
   };
@@ -116,6 +99,7 @@ export function hostClient(): void {
       panel.hidden = false;
       status.textContent = `Revision ${String(latest)}`;
       status.setAttribute("role", "status");
+      status.hidden = true;
     };
     frame.contentWindow!.postMessage({ protocol, type: "connect" }, "*", [
       channel.port2,
@@ -130,6 +114,7 @@ export function hostClient(): void {
       return;
     latest = state.revision as number;
     panel.hidden = true;
+    status.hidden = false;
     if (state.type === "loading") {
       status.textContent = `Loading revision ${String(latest)}…`;
       if (pending) reset();
@@ -179,7 +164,8 @@ export function hostClient(): void {
   void (async () => {
     try {
       const response = await fetch("/events", {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "X-IPFSAW-Client": "browser" },
+        mode: "same-origin",
         cache: "no-store",
       });
       if (!response.ok || !response.body) throw new Error();

@@ -38,9 +38,8 @@ afterEach(() => {
 });
 
 describe("private host/opaque-frame communication", () => {
-  function host(reload = false) {
+  function host() {
     document.body.innerHTML = '<p id="status"></p><main id="renderer"></main>';
-    if (!reload) history.replaceState(null, "", "/#CAPABILITY");
     const callbacks = listeners();
     const ports: Port[] = [];
     vi.stubGlobal(
@@ -111,55 +110,60 @@ describe("private host/opaque-frame communication", () => {
       styles: [],
     },
   });
-  it("retains origin-bound capability in this history entry across reload, never renderer messages", async () => {
+  it("starts from a bare URL and reloads without history or stored credentials", async () => {
     const first = await host();
     expect(location.hash).toBe("");
+    expect(history.state).toBeNull();
     first.close();
     await Promise.resolve();
-    const reloaded = await host(true);
+    const reloaded = await host();
     try {
       expect(reloaded.fetch).toHaveBeenCalledWith(
         "/events",
         expect.objectContaining({
-          headers: { Authorization: "Bearer CAPABILITY" },
+          headers: { "X-IPFSAW-Client": "browser" },
+          mode: "same-origin",
+          cache: "no-store",
         }),
       );
       await reloaded.send(state(1));
       const connect = reloaded.hello();
-      expect(JSON.stringify(connect.mock.calls)).not.toContain("CAPABILITY");
-      expect(
-        JSON.stringify(reloaded.ports[0]!.postMessage.mock.calls),
-      ).not.toContain("CAPABILITY");
+      expect(connect).toHaveBeenCalledOnce();
+      expect(history.state).toBeNull();
       expect(localStorage.length).toBe(0);
       expect(sessionStorage.length).toBe(0);
     } finally {
       reloaded.close();
     }
   });
-  it("does not reuse history capability from another origin or invalid state", async () => {
+  it("does not use legacy history credentials when opening a local preview", async () => {
     for (const saved of [
       { protocol, origin: "https://another.test", capability: "FOREIGN" },
       { protocol, origin: location.origin, capability: 123 },
       { protocol: "wrong", origin: location.origin, capability: "FOREIGN" },
     ]) {
       history.replaceState(saved, "", "/");
-      const preview = await host(true);
+      const preview = await host();
       expect(preview.fetch).toHaveBeenCalledWith(
         "/events",
-        expect.objectContaining({ headers: { Authorization: "Bearer " } }),
+        expect.objectContaining({
+          headers: { "X-IPFSAW-Client": "browser" },
+          mode: "same-origin",
+        }),
       );
       preview.close();
       await Promise.resolve();
     }
   });
-  it("uses capability only for first-party fetch, authenticates handshake source/origin and ignores stale/wrong replies", async () => {
+  it("uses first-party fetch, validates handshake source/origin and ignores stale/wrong replies", async () => {
     const preview = await host();
     try {
       expect(location.hash).toBe("");
       expect(preview.fetch).toHaveBeenCalledWith(
         "/events",
         expect.objectContaining({
-          headers: { Authorization: "Bearer CAPABILITY" },
+          headers: { "X-IPFSAW-Client": "browser" },
+          mode: "same-origin",
         }),
       );
       await preview.send({ type: "loading", revision: 1 });
@@ -177,7 +181,6 @@ describe("private host/opaque-frame communication", () => {
         "*",
         expect.any(Array),
       );
-      expect(JSON.stringify(post.mock.calls)).not.toContain("CAPABILITY");
       const port = preview.ports[0]!;
       expect(port.postMessage).toHaveBeenCalledWith(
         expect.objectContaining({ type: "mount", revision: 1 }),
@@ -189,9 +192,13 @@ describe("private host/opaque-frame communication", () => {
       expect(document.querySelector("main")!.hidden).toBe(true);
       port.send({ protocol, type: "ready", revision: 1 });
       expect(document.querySelector("main")!.hidden).toBe(false);
+      expect(document.querySelector<HTMLElement>("#status")!.hidden).toBe(true);
       await preview.send(state(0));
       expect(document.querySelector("#status")!.textContent).toBe("Revision 1");
       await preview.send({ type: "loading", revision: 2 });
+      expect(document.querySelector<HTMLElement>("#status")!.hidden).toBe(
+        false,
+      );
       await preview.send(state(2));
       expect(document.querySelector("iframe")).toBe(frame);
       expect(port.postMessage).toHaveBeenLastCalledWith(
@@ -218,6 +225,9 @@ describe("private host/opaque-frame communication", () => {
       await preview.send(state(2));
       preview.hello();
       preview.ports[2]!.send({ protocol, type: "error", revision: 2 });
+      expect(document.querySelector<HTMLElement>("#status")!.hidden).toBe(
+        false,
+      );
       expect(document.querySelector("#status")!.textContent).toContain(
         "Renderer failed",
       );

@@ -11,26 +11,38 @@ import {
   MemoryStore,
   newId,
 } from "@silvermoon-work/task-engine";
-import type { Input } from "./contract.js";
+import { Operation, Target, type Input, type Runtime } from "./contract.js";
+import type { CommitTarget, Input as CommitInput } from "./commit-contract.js";
+import {
+  ProjectTarget,
+  type Input as ProjectInput,
+} from "./project-contract.js";
+import { SetupTarget, type Input as SetupInput } from "./setup-contract.js";
+import { currentDevice } from "./device.js";
 import { invariant, text, SilvermoonError } from "./domain.js";
 
 export interface Artifact {
   readonly cid: string;
   readonly path: string;
+  readonly kind?: "idea" | "commit" | "project" | "setup";
 }
 export interface Result {
   readonly pass: boolean;
   readonly documentation: string;
+  readonly references: readonly {
+    readonly checkpoint: string;
+    readonly documentation: string;
+  }[];
   readonly problems?: readonly {
+    readonly checkpoint: string;
     readonly code: string;
     readonly brief: string;
-    readonly documentation: string;
   }[];
 }
 export interface Report {
-  readonly schema: "silvermoon/v1";
+  readonly schema: "silvermoon/v2";
   readonly checkCid: string;
-  readonly target: Input;
+  readonly target: Target | CommitTarget | ProjectTarget | SetupTarget;
   readonly result: Result;
   readonly documents: readonly {
     readonly cid: string;
@@ -40,20 +52,29 @@ export interface Report {
 const resultSchema = Type.Object({
   pass: Type.Boolean(),
   documentation: Type.String(),
+  references: Type.Array(
+    Type.Object({
+      checkpoint: Type.String(),
+      documentation: Type.String(),
+    }),
+  ),
   problems: Type.Optional(
     Type.Array(
       Type.Object({
         code: Type.String(),
         brief: Type.String(),
-        documentation: Type.String(),
+        checkpoint: Type.String(),
       }),
       { minItems: 1 },
     ),
   ),
 });
-export async function bundledArtifact(): Promise<Artifact> {
+export async function bundledArtifact(
+  kind: "idea" | "commit" | "project" | "setup" = "idea",
+): Promise<Artifact> {
+  const name = kind === "idea" ? "check" : `${kind}-check`;
   const binding: unknown = JSON.parse(
-    await readFile(new URL("../dist/check.json", import.meta.url), "utf8"),
+    await readFile(new URL(`../dist/${name}.json`, import.meta.url), "utf8"),
   );
   invariant(
     binding &&
@@ -68,7 +89,8 @@ export async function bundledArtifact(): Promise<Artifact> {
   CID.parse(binding.cid);
   return {
     cid: binding.cid,
-    path: fileURLToPath(new URL("../dist/check.car", import.meta.url)),
+    path: fileURLToPath(new URL(`../dist/${name}.car`, import.meta.url)),
+    kind,
   };
 }
 export async function readDocument(
@@ -109,22 +131,147 @@ export async function readDocument(
   }
   return text(Buffer.concat(chunks));
 }
+export async function getReference(
+  cid: string,
+  options: {
+    readonly artifacts?: readonly Artifact[];
+    readonly signal?: AbortSignal;
+  } = {},
+): Promise<string> {
+  const selected = CID.parse(cid);
+  const artifacts =
+    options.artifacts ??
+    (await Promise.all([
+      bundledArtifact("idea"),
+      bundledArtifact("commit"),
+      bundledArtifact("project"),
+      bundledArtifact("setup"),
+    ]));
+  for (const artifact of artifacts) {
+    options.signal?.throwIfAborted();
+    const car = await readTaskBundleCar(
+      new Blob([Uint8Array.from(await readFile(artifact.path))]).stream(),
+    );
+    try {
+      invariant(
+        car.cid === artifact.cid,
+        "artifact",
+        "CAR root differs from its fixed Check CID.",
+      );
+      const store = IpfsStore.fromClient({ block: car.block });
+      try {
+        const find = async (path: string): Promise<boolean> => {
+          for (const entry of await car.tree.list(path, options)) {
+            options.signal?.throwIfAborted();
+            const child = `${path}/${entry.name}`;
+            if (entry.kind === "directory") {
+              if (await find(child)) return true;
+            } else if (
+              selected.equals(
+                await store.resolveContent(CID.parse(car.cid), child, options),
+              )
+            )
+              return true;
+          }
+          return false;
+        };
+        if (await find("resources/references"))
+          return await readDocument(store, cid, 65_536, options.signal);
+      } finally {
+        await store.close();
+      }
+    } finally {
+      await car.close();
+    }
+  }
+  throw new SilvermoonError(
+    "reference-unavailable",
+    "Reference CID is unavailable in the trusted Check Bundles.",
+  );
+}
 export async function observe(
-  target: Input,
+  target: Target | ProjectTarget | SetupTarget,
   options: {
     readonly cid?: string;
     readonly artifacts?: readonly Artifact[];
     readonly signal?: AbortSignal;
     readonly timeoutMs?: number;
+    readonly operation?: Operation;
+    readonly runtime?: Runtime;
   } = {},
 ): Promise<Report> {
-  const artifacts = options.artifacts ?? [await bundledArtifact()];
+  const operation = options.operation ?? { mode: "lifecycle" };
+  invariant(
+    Value.Check(Operation, operation),
+    "input",
+    "Unsupported Check operation.",
+  );
+  const kind =
+    operation.mode === "lifecycle"
+      ? "idea"
+      : operation.mode === "snapshot"
+        ? "commit"
+        : operation.mode;
+  invariant(
+    Value.Check(
+      kind === "idea" ? Target : kind === "setup" ? SetupTarget : ProjectTarget,
+      target,
+    ),
+    "input",
+    kind === "idea"
+      ? "Idea validation requires userHome, repoRoot and idea."
+      : kind === "setup"
+        ? "Setup validation requires userHome only."
+        : "Project and change validation require userHome and repoRoot only.",
+  );
+  const device = currentDevice();
+  const runtime = options.runtime ?? {
+    entry: device.entry,
+    path: device.path,
+    ...(process.env.SSH_AUTH_SOCK
+      ? { sshAuthSock: process.env.SSH_AUTH_SOCK }
+      : {}),
+  };
+  const input: Input | CommitInput | ProjectInput | SetupInput =
+    kind === "commit"
+      ? {
+          target: {
+            userHome: target.userHome,
+            repoRoot: Value.Decode(ProjectTarget, target).repoRoot,
+            snapshot: operation.snapshot ?? "HEAD",
+            ...(operation.allowDelete
+              ? { allowDelete: operation.allowDelete }
+              : {}),
+          },
+          runtime,
+        }
+      : kind === "setup"
+        ? {
+            target: Value.Decode(SetupTarget, target),
+            runtime,
+          }
+        : {
+            target:
+              kind === "idea"
+                ? Value.Decode(Target, target)
+                : Value.Decode(ProjectTarget, target),
+            runtime,
+            ...(operation.refresh === undefined
+              ? {}
+              : { refresh: operation.refresh }),
+          };
+  const artifacts = options.artifacts ?? [await bundledArtifact(kind)];
   const selectedCid = options.cid ?? artifacts[0]?.cid;
   const artifact = artifacts.find((item) => item.cid === selectedCid);
   invariant(
     artifact,
     "untrusted-check",
     "The pinned Check CID is unavailable or not explicitly trusted by this host; never fall back to the current default.",
+  );
+  invariant(
+    artifact.kind === undefined || artifact.kind === kind,
+    "untrusted-check",
+    "The selected Check artifact belongs to a different task.",
   );
   const car = await readTaskBundleCar(
     new Blob([Uint8Array.from(await readFile(artifact.path))]).stream(),
@@ -170,7 +317,7 @@ export async function observe(
       {
         requestId: newId(),
         bundle: artifact.cid,
-        parameters: { data: target, cidPaths: [] },
+        parameters: { data: input, cidPaths: [] },
         timeoutMs: options.timeoutMs ?? 60_000,
       },
       caller,
@@ -197,7 +344,7 @@ export async function observe(
     invariant(
       task.stage === "completed" && task.result,
       "engine",
-      `Check execution did not complete: ${task.stage}.`,
+      `Check execution did not complete: ${task.stage}.${task.error ? ` ${task.error.code}: ${task.error.message}` : ""}`,
     );
     invariant(
       typeof task.result === "object" &&
@@ -217,7 +364,7 @@ export async function observe(
     const references = [
       ...new Set([
         result.documentation,
-        ...(result.problems ?? []).map((problem) => problem.documentation),
+        ...result.references.map((reference) => reference.documentation),
       ]),
     ];
     invariant(
@@ -237,9 +384,9 @@ export async function observe(
         ),
       });
     return {
-      schema: "silvermoon/v1",
+      schema: "silvermoon/v2",
       checkCid: artifact.cid,
-      target,
+      target: input.target,
       result,
       documents,
     };
