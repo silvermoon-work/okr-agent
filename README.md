@@ -173,10 +173,15 @@ upstream 就绪或 Idea 完成。新 Idea 仅位于 `.silvermoon/i`，使用五�
 JSONL 手工报告；详见[Events 设计](docs/silvermoon-events.md)。
 继续 review 使用[最新 Idea Check 设计 Spec](docs/silvermoon-idea-check-design.yaml)；
 [生成的运行时 Spec](docs/silvermoon-single-checker.yaml)与原设计候选保持各自原语义。
-本轮 Events review 提议取消事件 id/version、按 object + revision 确认，
-相同内容及依赖的 submit 幂等归并；文档包含统一 JSON Schema 和 TypeScript 类型。
-目标模型另以 eventSchemaCid 固定数据契约，按 RFC 8785 → SHA-256 → CIDv1
-生成 Schema 身份；Checker 执行身份单独记录，不混同于事件格式。
+最新 Events review 将标准化前提与 checkpoint 推进分开：
+推进关口统一 submit → accept，以验收范围的 Git tree/blob 对象和单个直接前置版本
+measure，版本改变时自然退化，不写 rollback。项目级 checkpointAcceptance
+默认将 test-cases（tests）和 implementation 委托 Agent，其余关口要求用户共识；
+accept.authority 区分 user/delegate，模式收紧不把旧自验误当用户接受。
+目标模型取消事件 id/version 及独立 signOff/verify 分支，按 object + revision
+接受内容；相同材料及依赖的提交幂等。文档包含目标统一 JSON Schema，
+另以 eventSchemaCid 固定数据契约，按 RFC 8785 → SHA-256 → CIDv1 生成身份；
+Checker 执行身份单独记录，不混同于事件格式。
 当前运行时仍要求 id 和 `version: 1`，并以 submit ID 配对确认；
 created 仍以 checkCid 固定 Check Bundle；目标模型示例仅供设计讨论，
 尚不能写入现有日志。
