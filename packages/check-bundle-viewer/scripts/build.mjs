@@ -1,8 +1,6 @@
-import { pnpm } from "../../../scripts/lib/tools.mjs";
 import { writeFile } from "node:fs/promises";
 import { build } from "vite";
 
-pnpm(["exec", "tsc", "--project", "tsconfig.build.json"]);
 const { typescriptProjectDesignSpec } =
   await import("../dist/typescript-project-design.js");
 await writeFile(

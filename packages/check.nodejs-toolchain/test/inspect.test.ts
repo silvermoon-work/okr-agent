@@ -1107,7 +1107,9 @@ process.stdout.write("11.22.0\\n");`,
         script,
         `const {spawn}=require('node:child_process'); const fs=require('node:fs');
 const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});
-fs.writeFileSync(${JSON.stringify(marker)},String(child.pid)); setInterval(()=>{},1000);`,
+const marker=${JSON.stringify(marker)};
+fs.writeFileSync(marker+'.tmp',String(child.pid)); fs.renameSync(marker+'.tmp',marker);
+setInterval(()=>{},1000);`,
       );
       const controller = new AbortController();
       const running = execute(
@@ -1132,23 +1134,26 @@ fs.writeFileSync(${JSON.stringify(marker)},String(child.pid)); setInterval(()=>{
             : "timed out",
       );
       let childPid: number | undefined;
-      for (let i = 0; i < 100; i++) {
-        try {
-          childPid = Number(await readFile(marker, "utf8"));
-          break;
-        } catch (error) {
-          if (!(
-            error instanceof Error &&
-            "code" in error &&
-            error.code === "ENOENT"
-          ))
-            throw error;
-          await new Promise((done) => setTimeout(done, 10));
+      try {
+        for (let i = 0; i < 100; i++) {
+          try {
+            childPid = Number(await readFile(marker, "utf8"));
+            break;
+          } catch (error) {
+            if (!(
+              error instanceof Error &&
+              "code" in error &&
+              error.code === "ENOENT"
+            ))
+              throw error;
+            await new Promise((done) => setTimeout(done, 10));
+          }
         }
+        expect(childPid).toBeGreaterThan(0);
+      } finally {
+        if (mode === "cancel") controller.abort();
+        await expected;
       }
-      expect(childPid).toBeGreaterThan(0);
-      if (mode === "cancel") controller.abort();
-      await expected;
       let terminated = false;
       for (let attempt = 0; attempt < 100; attempt++) {
         try {
