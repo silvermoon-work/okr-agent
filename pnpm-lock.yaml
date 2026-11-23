@@ -61,8 +61,8 @@ catalogs:
       specifier: 8.20.0
       version: 8.20.0
     commander:
-      specifier: 14.0.2
-      version: 14.0.2
+      specifier: 15.1.0
+      version: 15.1.0
     eslint:
       specifier: ^10.15.0
       version: 10.15.0
@@ -249,7 +249,7 @@ importers:
         version: 0.2.1-rc.0(supports-color@10.2.2)
       commander:
         specifier: 'catalog:'
-        version: 14.0.2
+        version: 15.1.0
       yaml:
         specifier: 'catalog:'
         version: 2.9.1
@@ -403,7 +403,7 @@ importers:
     dependencies:
       commander:
         specifier: 'catalog:'
-        version: 14.0.2
+        version: 15.1.0
       semver:
         specifier: 'catalog:'
         version: 7.8.6
@@ -434,7 +434,7 @@ importers:
         version: 0.2.1-rc.1
       commander:
         specifier: 'catalog:'
-        version: 14.0.2
+        version: 15.1.0
       ipfs-unixfs-importer:
         specifier: 'catalog:'
         version: 17.1.1(supports-color@10.2.2)
@@ -489,7 +489,7 @@ importers:
         version: 0.34.52
       commander:
         specifier: 'catalog:'
-        version: 14.0.2
+        version: 15.1.0
       multiformats:
         specifier: 'catalog:'
         version: 14.0.5
@@ -1444,6 +1444,10 @@ packages:
   commander@14.0.3:
     resolution: {integrity: sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==}
     engines: {node: '>=20'}
+
+  commander@15.1.0:
+    resolution: {integrity: sha512-cgnQ88TRrWcC7pVq46RzJVRMktu3W2RcbnoidnfBsl1bmDCBwJS/udcIZpKoCrbAYYaCqsz1yZCVIgbIaU3ddQ==}
+    engines: {node: '>=22.12.0'}
 
   commander@8.3.0:
     resolution: {integrity: sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww==}
@@ -3998,6 +4002,8 @@ snapshots:
   commander@14.0.2: {}
 
   commander@14.0.3: {}
+
+  commander@15.1.0: {}
 
   commander@8.3.0: {}
 

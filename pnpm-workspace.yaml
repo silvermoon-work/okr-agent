@@ -31,7 +31,7 @@ catalog:
   "@silvermoon-work/ipfs-store": 0.1.0
   "@silvermoon-work/ipfs-payload": 0.1.0
   "@sinclair/typebox": 0.34.52
-  commander: 14.0.2
+  commander: 15.1.0
   yaml: ^2.8.1
   acorn: ^8.15.0
   ipfs-unixfs-exporter: 16.2.3
