@@ -18,6 +18,12 @@ rc.3 已通过旧框架和固定的 rc.1 门禁发布；现已移除根清单和
 正式版须取得针对准确包、版本和提交的明确确认，RC 授权不涵盖正式版。
 组织内开发工具包使用 `@silvermoon-work/devtool.<name>` 命名。
 
+`devtool.publish-gate@0.2.0-rc.0` 的重复 `--workflow` 参数已在 IPAB 五包真实
+发布中验证：同一准确 SHA 的日常 CI 与完整 Release validation 必须全部成功。
+`0.2.0` 正式候选保持 RC 运行时不变，等待准确 main SHA 的 CI 和正式发布授权；
+本仓库仍固定消费已发布的 `0.1.0`，不使用同仓候选自验。详情见
+[包说明与消费证据](packages/devtool.publish-gate/README.md#rc-的真实消费证据)。
+
 ## Check Task 作者入口
 
 - [`@silvermoon-work/check-task-sdk`](packages/check-task-sdk/README.md)：TypeBox 输入契约、有序 Checkpoints、Rule 定义与类型化成功输出、按检查点聚合的参考文档。
