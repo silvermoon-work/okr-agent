@@ -27,7 +27,7 @@ catalog:
   "@silvermoon-work/task-protocol": 0.2.1-rc.1
   "@silvermoon-work/task-builder": 0.2.1-rc.0
   "@silvermoon-work/task-builder-cli": 0.2.1-rc.0
-  "@silvermoon-work/task-engine": 0.2.2-rc.0
+  "@silvermoon-work/task-engine": 0.2.2
   "@silvermoon-work/ipfs-store": 0.1.0
   "@silvermoon-work/ipfs-payload": 0.1.0
   "@sinclair/typebox": 0.34.52
