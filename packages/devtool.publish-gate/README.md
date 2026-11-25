@@ -27,6 +27,34 @@ rc.4 仅递增版本、更新接入说明，运行时代码与 rc.3 相同，已
 不支持此接口。新版仍通过根包固定消费的已发布 `0.1.0` 门禁发布，
 不以候选实现替换自身发布门禁；RC 使用 `rc`，不改变 `latest`。
 
+`0.2.0` 正式候选保持已发布 `0.2.0-rc.0` 的运行时源码、依赖和协议不变，
+仅更新版本及说明。本仓库根依赖仍固定 `0.1.0`，自身 `prepublishOnly`
+仍为 `publish-gate check`。正式发布到 `latest` 需要准确正式版 SHA 的
+main-push CI 成功及用户单独授权；准备候选不代表已发布，也不改变 `rc`。
+
+### RC 的真实消费证据
+
+IPAB 固定安装 `0.2.0-rc.0`，五个交付包采用下面的双 workflow 生命周期脚本，
+通过 native pnpm 目录发布和标准 `PNPM_CONFIG_*` / `GITHUB_TOKEN` 接入。
+准确提交 `2d9d3b4d02591c522b27d99ee3ff60d6fcc2fe04` 的
+[日常 CI](https://github.com/silvermoon-work/ipab/actions/runs/45626411468) 和
+[完整 Release validation](https://github.com/silvermoon-work/ipab/actions/runs/45627074642)
+均成功。下列发布日志均记录共享生命周期的 `Publish gate passed` 和
+`Published package`，版本均为 `0.1.0-rc.0`：
+
+| IPAB 包                | 成功发布 run                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------ |
+| `@ipab/ipfs-store`     | [45629729550](https://github.com/silvermoon-work/ipab/actions/runs/45629729550)            |
+| `@ipab/bundle`         | [45630012876](https://github.com/silvermoon-work/ipab/actions/runs/45630012876)，attempt 2 |
+| `@ipab/bundle-builder` | [45631822688](https://github.com/silvermoon-work/ipab/actions/runs/45631822688)，attempt 2 |
+| `@ipab/web-app`        | [45632801114](https://github.com/silvermoon-work/ipab/actions/runs/45632801114)            |
+| `@ipab/cli`            | [45633518751](https://github.com/silvermoon-work/ipab/actions/runs/45633518751)            |
+
+Bundle / Builder 的首次 attempt 被 IPAB 自有 `requireDependencies` 检查阻断：
+刚发布的内部依赖尚未出现在 registry metadata 中，获授权等待后重试成功。
+这些负面拦截不是共享 publish-gate 自己执行的；上表证明共享双 workflow
+生命周期的正面真实消费，不混同两者职责。
+
 ## 接入方式
 
 首次发布后，在消费仓库根包的 devDependencies 中固定已发布的准确版本。
@@ -129,7 +157,7 @@ publish-gate target --json
 上下文；不能当作本机离线预检命令。
 帮助、版本和成功摘要写 stdout；参数及门禁错误写 stderr，不输出 token。
 
-### 按 workflow 整体结果检查（0.2.0 RC）
+### 按 workflow 整体结果检查（0.2.0）
 
 不引入配置文件。在实际发布包的生命周期脚本中声明必须通过的 workflow：
 
@@ -145,7 +173,8 @@ publish-gate target --json
 当前待发布版本对应的同一个完整 SHA 必须同时有 `ci.yaml` 和
 `release-validation.yaml` 的成功结果，日常 CI 不能替代完整 release validation。
 参数不包含 shell 引号或 JSON 数据；npm/pnpm 仍按前述标准发布入口执行脚本。
-接入先确认该 RC 已成功发布，再固定安装准确的 `0.2.0-rc.0`。
+当前可固定安装已发布的 `0.2.0-rc.0`；正式版发布成功后才能固定安装 `0.2.0`。
+不要把未发布的正式候选或浮动 dist-tag 当作已验证的准确依赖。
 
 - `--workflow <filename>` 可重复，1..8 项全部必须通过（AND）。
   接受 `.yaml` / `.yml` 文件名，或 `.github/workflows/<filename>`；
