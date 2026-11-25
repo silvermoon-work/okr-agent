@@ -540,6 +540,323 @@ describe("authorized release context", () => {
   );
 });
 
+describe("explicit workflow AND evidence", () => {
+  interface Evidence {
+    workflow: Record<string, unknown>;
+    runs: Record<string, unknown>[];
+    afterRun?: Record<string, unknown>;
+    afterHistory?: Record<string, unknown>[];
+    afterWorkflow?: Record<string, unknown>;
+  }
+
+  const filenames = ["ci.yaml", "release-validation.yaml"];
+  let evidence: Evidence[];
+  let override: ((url: string) => Response | undefined) | undefined;
+
+  const checkWorkflows = (workflows = filenames) =>
+    checkPublishContext(cwd, env, workflows);
+  const requestUrls = () =>
+    fetcher.mock.calls.map(([url]) => {
+      if (typeof url !== "string")
+        throw new Error("Expected a string request URL.");
+      return url;
+    });
+
+  beforeEach(() => {
+    evidence = filenames.map((filename, index) => ({
+      workflow: {
+        id: 11 + index,
+        path: `.github/workflows/${filename}`,
+        name: "Same display name",
+      },
+      runs: [
+        {
+          id: 7 + index,
+          run_attempt: 2,
+          workflow_id: 11 + index,
+          path: `.github/workflows/${filename}`,
+          repository: { full_name: env.GITHUB_REPOSITORY },
+          head_repository: { full_name: env.GITHUB_REPOSITORY },
+          head_sha: sha,
+          head_branch: index === 0 ? "main" : "release-candidate",
+          event: index === 0 ? "push" : "workflow_dispatch",
+          status: "completed",
+          conclusion: "success",
+        },
+      ],
+    }));
+    override = undefined;
+    const reads = new Map<string, number>();
+    responder = (url) => {
+      const overridden = override?.(url);
+      if (overridden) return overridden;
+      const count = reads.get(url) ?? 0;
+      reads.set(url, count + 1);
+      for (const [index, filename] of filenames.entries()) {
+        const entry = evidence[index]!;
+        const api = `https://api.github.com/repos/${env.GITHUB_REPOSITORY}/actions`;
+        if (url === `${api}/workflows/${filename}`)
+          return response(
+            count > 0 && entry.afterWorkflow
+              ? entry.afterWorkflow
+              : entry.workflow,
+          );
+        if (url.startsWith(`${api}/workflows/${11 + index}/runs?`)) {
+          const runs =
+            count > 0 && entry.afterHistory ? entry.afterHistory : entry.runs;
+          return response({ total_count: runs.length, workflow_runs: runs });
+        }
+        if (url.startsWith(`${api}/runs/`)) {
+          const run = entry.runs.find(
+            (run) => url === `${api}/runs/${String(run.id)}`,
+          );
+          if (run)
+            return response(count > 0 && entry.afterRun ? entry.afterRun : run);
+        }
+      }
+      if (url === `${registry}${encodeURIComponent(name)}`)
+        return response({ error: "Not found" }, 404);
+      if (url === `${registry}semver`) return response(dependency);
+      throw new Error(`Unexpected configured-workflow request: ${url}`);
+    };
+  });
+
+  it("requires both exact-SHA workflows, without restricting event/branch or inspecting jobs", async () => {
+    await rm(join(root, ".github", "workflows", "ci.yaml"));
+    jobs = [];
+    await expect(checkWorkflows()).resolves.toMatchObject({ sha, name });
+    const urls = requestUrls();
+    expect(urls.some((url) => url.includes("/jobs"))).toBe(false);
+    const historyUrls = urls.filter((url) => url.includes("/runs?"));
+    expect(historyUrls).toHaveLength(4);
+    for (const url of historyUrls) {
+      const parameters = new URL(url).searchParams;
+      expect(parameters.get("head_sha")).toBe(sha);
+      expect(parameters.has("event")).toBe(false);
+      expect(parameters.has("branch")).toBe(false);
+      expect(parameters.has("status")).toBe(false);
+    }
+    expect(urls.slice(-2)).toEqual([
+      `https://api.github.com/repos/${env.GITHUB_REPOSITORY}/actions/runs/8`,
+      `https://api.github.com/repos/${env.GITHUB_REPOSITORY}/actions/workflows/12/runs?head_sha=${sha}&per_page=100`,
+    ]);
+    expect(
+      urls.indexOf(`${registry}semver`) <
+        urls.lastIndexOf(
+          `https://api.github.com/repos/${env.GITHUB_REPOSITORY}/actions/workflows/11/runs?head_sha=${sha}&per_page=100`,
+        ),
+    ).toBe(true);
+  });
+
+  it("accepts a single full workflow path and ignores display names", async () => {
+    await expect(
+      checkWorkflows([".github/workflows/release-validation.yaml"]),
+    ).resolves.toMatchObject({ name });
+    expect(
+      requestUrls().some(
+        (url) =>
+          url.endsWith("/workflows/ci.yaml") || url.includes("/workflows/11/"),
+      ),
+    ).toBe(false);
+  });
+
+  it.each([
+    [],
+    ["ci.yaml", ".github/workflows/ci.yaml"],
+    ["CI"],
+    [""],
+    ["ci.yaml "],
+    ["../ci.yaml"],
+    [".github/workflows/../ci.yaml"],
+    ["ci.yaml@main"],
+    ["https://github.com/owner/repo/ci.yaml"],
+    ["ci\\workflow.yaml"],
+    ["12"],
+    [`${"a".repeat(251)}.yaml`],
+    Array.from({ length: 9 }, (_, index) => `ci-${index}.yaml`),
+  ])(
+    "rejects invalid or duplicate requirements %j before network access",
+    async (...workflows) => {
+      await expect(checkWorkflows(workflows)).rejects.toThrow();
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
+
+  it("blocks missing workflow evidence even when daily CI succeeds", async () => {
+    evidence[1]!.runs = [];
+    await expect(checkWorkflows()).rejects.toThrow("history is missing");
+    expect(requestUrls().some((url) => url.startsWith(registry))).toBe(false);
+  });
+
+  it.each([{ id: 0 }, { id: 11, path: ".github/workflows/other.yaml" }])(
+    "rejects workflow metadata identity %j",
+    async (change) => {
+      Object.assign(evidence[1]!.workflow, change);
+      await expect(checkWorkflows()).rejects.toThrow("Workflow identity");
+    },
+  );
+
+  it.each([
+    { head_sha: "b".repeat(40) },
+    { repository: { full_name: "other/repository" } },
+    { head_repository: { full_name: "fork/repository" } },
+    { workflow_id: 11 },
+    { path: ".github/workflows/ci.yaml" },
+    { id: 0 },
+    { run_attempt: 0 },
+    { run_attempt: 1.5 },
+  ])("rejects mismatching or invalid exact-SHA evidence %j", async (change) => {
+    Object.assign(evidence[1]!.runs[0]!, change);
+    await expect(checkWorkflows()).rejects.toThrow("run identity");
+  });
+
+  it.each([
+    { conclusion: "failure" },
+    { conclusion: "skipped" },
+    { conclusion: "cancelled" },
+    { conclusion: "neutral" },
+    { conclusion: null },
+    { status: "in_progress" },
+    { status: "queued" },
+  ])("blocks one unsuccessful workflow %j", async (change) => {
+    Object.assign(evidence[1]!.runs[0]!, change);
+    await expect(checkWorkflows()).rejects.toThrow("must have succeeded");
+  });
+
+  it("does not fall back to an old successful run when the newest run fails", async () => {
+    const entry = evidence[1]!;
+    entry.runs = [
+      { ...entry.runs[0], id: 3 },
+      { ...entry.runs[0], id: 9, conclusion: "failure" },
+      { ...entry.runs[0], id: 8 },
+    ];
+    await expect(checkWorkflows()).rejects.toThrow("must have succeeded");
+    expect(requestUrls().some((url) => url.endsWith("/runs/3"))).toBe(false);
+  });
+
+  it("blocks a mismatching run detail rather than trusting the history response", async () => {
+    override = (url) =>
+      url.endsWith("/runs/8")
+        ? response({ ...evidence[1]!.runs[0], head_sha: "b".repeat(40) })
+        : undefined;
+    await expect(checkWorkflows()).rejects.toThrow("run identity");
+  });
+
+  it("rejects a rerun between history selection and the initial run read", async () => {
+    override = (url) =>
+      url.endsWith("/runs/8")
+        ? response({ ...evidence[1]!.runs[0], run_attempt: 3 })
+        : undefined;
+    await expect(checkWorkflows()).rejects.toThrow("run/attempt changed");
+  });
+
+  it.each([
+    { run_attempt: 3 },
+    { id: 9 },
+    { status: "in_progress", conclusion: null },
+    { conclusion: "failure" },
+  ])("rejects evidence changing during registry checks %j", async (change) => {
+    evidence[0]!.afterRun = { ...evidence[0]!.runs[0], ...change };
+    await expect(checkWorkflows()).rejects.toThrow();
+  });
+
+  it("blocks a newly created run even when the selected old run still succeeds", async () => {
+    evidence[0]!.afterHistory = [
+      ...evidence[0]!.runs,
+      { ...evidence[0]!.runs[0], id: 99, conclusion: "failure" },
+    ];
+    await expect(checkWorkflows()).rejects.toThrow("run/attempt changed");
+  });
+
+  it("blocks an attempt change observed only by the final history read", async () => {
+    evidence[1]!.afterHistory = [{ ...evidence[1]!.runs[0], run_attempt: 3 }];
+    await expect(checkWorkflows()).rejects.toThrow("run/attempt changed");
+  });
+
+  it("blocks a workflow deleted and recreated under the same filename", async () => {
+    evidence[1]!.afterWorkflow = { ...evidence[1]!.workflow, id: 99 };
+    await expect(checkWorkflows()).rejects.toThrow("identity changed");
+  });
+
+  it.each([
+    ["partial count", 2, false],
+    ["duplicate runs", 2, true],
+  ])("rejects %s history", async (_label, totalCount, duplicate) => {
+    override = (url) =>
+      url.includes("/workflows/12/runs?")
+        ? response({
+            total_count: totalCount,
+            workflow_runs: duplicate
+              ? [evidence[1]!.runs[0], evidence[1]!.runs[0]]
+              : evidence[1]!.runs,
+          })
+        : undefined;
+    await expect(checkWorkflows()).rejects.toThrow("history");
+  });
+
+  it("accepts the complete 100-run budget but refuses 101 runs", async () => {
+    evidence[0]!.runs = Array.from({ length: 100 }, (_, index) => ({
+      ...evidence[0]!.runs[0],
+      id: 100 + index,
+    }));
+    await expect(checkWorkflows()).resolves.toMatchObject({ name });
+    evidence[0]!.runs.push({ ...evidence[0]!.runs[0], id: 200 });
+    await expect(checkWorkflows()).rejects.toThrow("history");
+  });
+
+  it.each([
+    [() => response({}, 403), "HTTP 403"],
+    [() => response({}, 404), "HTTP 404"],
+    [
+      () =>
+        new Response("invalid JSON", {
+          headers: { date: new Date().toUTCString() },
+        }),
+      "JSON",
+    ],
+    [
+      () => response({ workflow_runs: null, total_count: 1 }),
+      "Expected a list",
+    ],
+    [() => response({}, 200, { age: "3601" }), "freshness"],
+    [
+      () =>
+        response({ total_count: 1, workflow_runs: [] }, 200, {
+          link: '<https://api.github.com/next>; rel="next"',
+        }),
+      "pagination",
+    ],
+  ])(
+    "fails closed on unavailable or incomplete workflow responses",
+    async (reply, message) => {
+      override = (url) =>
+        url.includes("/workflows/12/runs?") ? reply() : undefined;
+      await expect(checkWorkflows()).rejects.toThrow(message);
+    },
+  );
+
+  it("propagates network errors in configured mode", async () => {
+    fetcher.mockRejectedValueOnce(new Error("network unavailable"));
+    await expect(checkWorkflows()).rejects.toThrow("network unavailable");
+  });
+
+  it("does not waive main ancestry or manual dry-run requirements", async () => {
+    env.GITHUB_EVENT_NAME = "workflow_dispatch";
+    env.PACKAGE_INPUT = name;
+    await expect(checkWorkflows()).rejects.toThrow("dry-run only");
+    env.npm_config_dry_run = "true";
+    await expect(checkWorkflows()).resolves.toMatchObject({ dryRun: true });
+    command.mockImplementation((file, args) => {
+      if (file !== "git") return scopeRegistry;
+      if (args[1] === "--show-toplevel") return root;
+      if (args[0] === "status") return "";
+      if (args[1] === "HEAD^{commit}") return sha;
+      throw new Error("not reachable from main");
+    });
+    await expect(checkWorkflows()).rejects.toThrow("not reachable from main");
+  });
+});
+
 describe("exact-commit CI evidence", () => {
   it("selects the latest CI run rather than accepting an older success", async () => {
     history = { total_count: 2, workflow_runs: [{ id: 2 }, { id: 7 }] };

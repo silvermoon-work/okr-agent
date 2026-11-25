@@ -53,13 +53,20 @@ it.each([
   async (...args) => {
     const output = streams();
     expect(await main(args)).toBe(0);
-    expect(output.out).toMatch(/publish-gate|0\.1\.0/);
+    expect(output.out).toMatch(/publish-gate|\d+\.\d+\.\d+(?:-rc\.\d+)?/);
     expect(output.err).toBe("");
     expect(check).not.toHaveBeenCalled();
   },
 );
 
-it.each([["--wat"], ["publish"], ["check", "--force"], ["check", "other"]])(
+it.each([
+  ["--wat"],
+  ["publish"],
+  ["check", "--force"],
+  ["check", "other"],
+  ["check", "--workflow"],
+  ["check", "--workflow", "--force"],
+])(
   "rejects invalid arguments without running the gate: %j",
   async (...args) => {
     const output = streams();
@@ -81,6 +88,32 @@ it.each([false, true])("reports gate success, dryRun=%s", async (dryRun) => {
   expect(output.out).toContain(
     `widget@1.0.0 (latest${dryRun ? ", dry-run" : ""})`,
   );
+  expect(output.err).toBe("");
+  expect(check).toHaveBeenCalledWith(process.cwd(), process.env, undefined);
+});
+
+it("passes repeated workflow filenames as one AND requirement without shell-dependent JSON", async () => {
+  const output = streams();
+  check.mockResolvedValue({
+    name: "widget",
+    version: "1.0.0",
+    channel: "latest",
+    dryRun: false,
+  });
+  expect(
+    await main([
+      "check",
+      "--workflow",
+      "ci.yaml",
+      "--workflow",
+      ".github/workflows/release-validation.yaml",
+    ]),
+  ).toBe(0);
+  expect(check).toHaveBeenCalledWith(process.cwd(), process.env, [
+    "ci.yaml",
+    ".github/workflows/release-validation.yaml",
+  ]);
+  expect(output.out).toContain("Publish gate passed");
   expect(output.err).toBe("");
 });
 
@@ -127,4 +160,22 @@ it("runs the built executable with useful no-argument help and fails outside the
   expect(result.status).toBe(1);
   expect(result.stdout).toBe("");
   expect(result.stderr).toContain("prepublishOnly");
+  const configured = spawnSync(
+    process.execPath,
+    [
+      bin,
+      "check",
+      "--workflow",
+      "ci.yaml",
+      "--workflow",
+      "release-validation.yaml",
+    ],
+    {
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_ACTIONS: "false" },
+    },
+  );
+  expect(configured.status).toBe(1);
+  expect(configured.stdout).toBe("");
+  expect(configured.stderr).toContain("prepublishOnly");
 });
