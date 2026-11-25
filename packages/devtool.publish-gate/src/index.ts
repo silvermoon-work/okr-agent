@@ -67,6 +67,10 @@ async function request(
     "Registry/API freshness could not be confirmed.",
   );
   requireValue(response.body, "Registry/API response body is missing.");
+  requireValue(
+    !token || !/rel\s*=\s*"?next\b/i.test(response.headers.get("link") ?? ""),
+    "Registry/API pagination is incomplete.",
+  );
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -304,6 +308,167 @@ function verifyRun(run: Record<string, unknown>, sha: string): void {
   );
 }
 
+function workflowFilenames(workflows: readonly string[]): string[] {
+  requireValue(
+    Array.isArray(workflows) && workflows.length >= 1 && workflows.length <= 8,
+    "Declare 1..8 required workflows with repeated --workflow <filename>.",
+  );
+  const filenames = workflows.map((workflow) => {
+    requireValue(
+      typeof workflow === "string",
+      "Each --workflow must be a workflow filename or .github/workflows/<filename>.",
+    );
+    const filename = workflow.startsWith(".github/workflows/")
+      ? workflow.slice(".github/workflows/".length)
+      : workflow;
+    requireValue(
+      filename.length <= 255 &&
+        /^[A-Za-z0-9_][A-Za-z0-9._-]*\.ya?ml$/.test(filename),
+      `Invalid workflow filename: ${workflow}. Use a .yaml/.yml filename, not a display name, URL or ref.`,
+    );
+    return filename;
+  });
+  requireValue(
+    new Set(filenames).size === filenames.length,
+    "Duplicate required workflow filenames are not allowed.",
+  );
+  return filenames;
+}
+
+interface WorkflowIdentity {
+  readonly id: number;
+  readonly path: string;
+}
+
+function workflowIdentity(
+  metadata: Record<string, unknown>,
+  path: string,
+): WorkflowIdentity {
+  requireValue(
+    Number.isSafeInteger(metadata.id) &&
+      Number(metadata.id) > 0 &&
+      metadata.path === path,
+    `Workflow identity could not be confirmed: ${path}`,
+  );
+  return { id: Number(metadata.id), path };
+}
+
+function verifyWorkflowRun(
+  run: Record<string, unknown>,
+  workflow: WorkflowIdentity,
+  sha: string,
+  repo: string,
+): void {
+  requireValue(
+    Number.isSafeInteger(run.id) &&
+      Number(run.id) > 0 &&
+      Number.isSafeInteger(run.run_attempt) &&
+      Number(run.run_attempt) > 0 &&
+      run.workflow_id === workflow.id &&
+      run.path === workflow.path &&
+      run.head_sha === sha &&
+      object(run.repository).full_name === repo &&
+      object(run.head_repository).full_name === repo,
+    `Exact-SHA workflow run identity could not be confirmed: ${workflow.path}`,
+  );
+}
+
+function successfulWorkflowRun(
+  run: Record<string, unknown>,
+  workflow: WorkflowIdentity,
+): void {
+  requireValue(
+    run.status === "completed" && run.conclusion === "success",
+    `The latest exact-SHA workflow run must have succeeded: ${workflow.path}`,
+  );
+}
+
+async function latestWorkflowRun(
+  api: string,
+  workflow: WorkflowIdentity,
+  sha: string,
+  repo: string,
+  token: string,
+): Promise<Record<string, unknown>> {
+  const history = object(
+    await request(
+      `${api}/workflows/${workflow.id}/runs?head_sha=${sha}&per_page=100`,
+      token,
+    ),
+  );
+  const runs = list(history.workflow_runs).map(object);
+  requireValue(
+    runs.length > 0 &&
+      runs.length <= 100 &&
+      history.total_count === runs.length &&
+      new Set(runs.map((run) => run.id)).size === runs.length,
+    `Exact-SHA workflow history is missing, duplicate or incomplete: ${workflow.path}`,
+  );
+  for (const run of runs) verifyWorkflowRun(run, workflow, sha, repo);
+  return runs.reduce((a, b) => (Number(a.id) > Number(b.id) ? a : b));
+}
+
+function unchangedWorkflowRun(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  workflow: WorkflowIdentity,
+): void {
+  requireValue(
+    after.id === before.id && after.run_attempt === before.run_attempt,
+    `Workflow run/attempt changed during verification: ${workflow.path}. Retry after the evidence is stable.`,
+  );
+}
+
+async function verifyWorkflows(
+  filenames: readonly string[],
+  sha: string,
+  repo: string,
+  token: string,
+): Promise<() => Promise<void>> {
+  const api = `https://api.github.com/repos/${repo}/actions`;
+  const snapshots: {
+    filename: string;
+    workflow: WorkflowIdentity;
+    before: Record<string, unknown>;
+  }[] = [];
+  for (const filename of filenames) {
+    const workflow = workflowIdentity(
+      object(await request(`${api}/workflows/${filename}`, token)),
+      `.github/workflows/${filename}`,
+    );
+    const latest = await latestWorkflowRun(api, workflow, sha, repo, token);
+    successfulWorkflowRun(latest, workflow);
+    const before = object(
+      await request(`${api}/runs/${String(latest.id)}`, token),
+    );
+    verifyWorkflowRun(before, workflow, sha, repo);
+    unchangedWorkflowRun(latest, before, workflow);
+    successfulWorkflowRun(before, workflow);
+    snapshots.push({ filename, workflow, before });
+  }
+  return async () => {
+    for (const { filename, workflow, before } of snapshots) {
+      const identity = workflowIdentity(
+        object(await request(`${api}/workflows/${filename}`, token)),
+        workflow.path,
+      );
+      requireValue(
+        identity.id === workflow.id,
+        `Workflow identity changed during verification: ${workflow.path}`,
+      );
+      const after = object(
+        await request(`${api}/runs/${String(before.id)}`, token),
+      );
+      verifyWorkflowRun(after, workflow, sha, repo);
+      unchangedWorkflowRun(before, after, workflow);
+      successfulWorkflowRun(after, workflow);
+      const latest = await latestWorkflowRun(api, workflow, sha, repo, token);
+      unchangedWorkflowRun(before, latest, workflow);
+      successfulWorkflowRun(latest, workflow);
+    }
+  };
+}
+
 async function verifyCi(
   root: string,
   sha: string,
@@ -449,7 +614,10 @@ export interface PublishContext {
 export async function checkPublishContext(
   cwd = process.cwd(),
   env = process.env,
+  workflows?: readonly string[],
 ): Promise<PublishContext> {
+  const filenames =
+    workflows === undefined ? undefined : workflowFilenames(workflows);
   requireValue(
     env.GITHUB_ACTIONS === "true" &&
       env.npm_command === "publish" &&
@@ -548,7 +716,12 @@ export async function checkPublishContext(
       "Manual dispatch is dry-run only and must select this full npm package name.",
     );
   }
-  await verifyCi(root, sha, repo, env.GITHUB_TOKEN);
+  const confirmWorkflows =
+    filenames === undefined
+      ? undefined
+      : await verifyWorkflows(filenames, sha, repo, env.GITHUB_TOKEN);
+  if (filenames === undefined)
+    await verifyCi(root, sha, repo, env.GITHUB_TOKEN);
   const metadata = await request(
     `${registry}${encodeURIComponent(name)}`,
     undefined,
@@ -596,5 +769,6 @@ export async function checkPublishContext(
       );
     }
   }
+  await confirmWorkflows?.();
   return { name, version, channel, sha, dryRun };
 }

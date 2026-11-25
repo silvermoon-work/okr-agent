@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { Command, CommanderError } from "commander";
+import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { checkPublishContext, selectPublishTarget } from "./index.js";
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {
@@ -34,8 +34,27 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     .description(
       "Require verified CI, an authorized release context and registry eligibility.",
     )
-    .action(async () => {
-      const result = await checkPublishContext();
+    .option(
+      "--workflow <filename>",
+      "require this workflow's latest exact-SHA run to succeed (repeat for AND; no event/branch/job restrictions)",
+      (value: string, previous: string[] = []) => {
+        if (value.startsWith("-"))
+          throw new InvalidArgumentError(
+            "Expected a workflow filename, not another option.",
+          );
+        return [...previous, value];
+      },
+    )
+    .addHelpText(
+      "after",
+      "\nWithout --workflow, require the legacy ci.yaml main-push jobs and aggregate.\nExample: publish-gate check --workflow ci.yaml --workflow release-validation.yaml",
+    )
+    .action(async (options: { workflow?: string[] }) => {
+      const result = await checkPublishContext(
+        process.cwd(),
+        process.env,
+        options.workflow,
+      );
       process.stdout.write(
         `Publish gate passed: ${result.name}@${result.version} (${result.channel}${result.dryRun ? ", dry-run" : ""}).\n`,
       );

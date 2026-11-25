@@ -23,6 +23,10 @@ rc.4 仅递增版本、更新接入说明，运行时代码与 rc.3 相同，已
 `0.1.0` 正式版保持 rc.4 的运行时代码不变，继续由已安装的 rc.3 门禁检查，
 使用 `@silvermoon-work/devtool.publish-gate@0.1.0` tag 发布到 `latest`。
 
+`0.2.0-rc.0` 是新增重复 `--workflow` 参数的首个 RC；已发布的 `0.1.0`
+不支持此接口。新版仍通过根包固定消费的已发布 `0.1.0` 门禁发布，
+不以候选实现替换自身发布门禁；RC 使用 `rc`，不改变 `latest`。
+
 ## 接入方式
 
 首次发布后，在消费仓库根包的 devDependencies 中固定已发布的准确版本。
@@ -125,7 +129,60 @@ publish-gate target --json
 上下文；不能当作本机离线预检命令。
 帮助、版本和成功摘要写 stdout；参数及门禁错误写 stderr，不输出 token。
 
-## 首版固定约定
+### 按 workflow 整体结果检查（0.2.0 RC）
+
+不引入配置文件。在实际发布包的生命周期脚本中声明必须通过的 workflow：
+
+```json
+{
+  "scripts": {
+    "prepublishOnly": "publish-gate check --workflow ci.yaml --workflow release-validation.yaml"
+  }
+}
+```
+
+这是 IPAB 双层验证的配置示例，不修改 IPAB 仓库：
+当前待发布版本对应的同一个完整 SHA 必须同时有 `ci.yaml` 和
+`release-validation.yaml` 的成功结果，日常 CI 不能替代完整 release validation。
+参数不包含 shell 引号或 JSON 数据；npm/pnpm 仍按前述标准发布入口执行脚本。
+接入先确认该 RC 已成功发布，再固定安装准确的 `0.2.0-rc.0`。
+
+- `--workflow <filename>` 可重复，1..8 项全部必须通过（AND）。
+  接受 `.yaml` / `.yml` 文件名，或 `.github/workflows/<filename>`；
+  规范化后重复、空值、显示名称、URL、ref、越界路径和未知参数明确拒绝。
+- 每个 workflow 只读取当前仓库、当前准确完整 SHA 的 run，不限制证据的
+  event 或 branch，也不检查内部 job、矩阵或 aggregate step。
+  这与默认固定模式不同：明确选择整体 workflow 结果作为证据；
+  被 workflow 自身允许跳过的内部 job 不会再由门禁单独检查。
+- 使用文件路径与 API workflow ID 确认身份，不使用 workflow 显示名称。
+  run 的 repository、head repository、SHA、workflow ID/path 均必须准确匹配。
+  发布提交属于 main 历史的 Git 保护仍保留，证据来自其他 branch 并不豁免它。
+- 对该 SHA 的完整 history 取最大 run ID（最新创建的 run），读取它当前的准确
+  attempt。只有整体 `completed` / `success` 才通过。最新 run 失败不接受旧成功，
+  也不以旧 attempt 的成功背书；整个 workflow 缺失、失败、取消、skipped、
+  queued、in-progress 或无有效结论均阻断。
+- 完成 registry/依赖检查后，再读取每个 workflow 身份、run 和最新 history。
+  workflow 被重建、新增 run 或 attempt 变化均拒绝，即使变化后的 run 已成功。
+  这是当次只读观测，不是原子锁或之后可复用的发布许可；
+  不启动、等待或重跑 workflow。
+- history 保持单页 100 个 run 的预算；超过预算、计数不完整、重复 ID、
+  API 声明还有下一页、网络/权限/解析错误均明确失败，不默认为成功。
+  仍使用共同的一小时新鲜度、10 秒请求超时与 16MiB 响应体预算。
+
+只要求一个 workflow：
+
+```sh
+publish-gate check --workflow .github/workflows/release-validation.yaml
+```
+
+**不传 `--workflow`** 时，完整保留首版固定 `ci.yaml` main-push 模式，包括
+Node 矩阵、v1 aggregate 及确认步骤；参数无效时绝不回退到默认模式。
+`target` 命令仍只选择发布包，不接收 workflow 要求，也不批准发布。
+API 调用方可用
+`checkPublishContext(cwd, env, ["ci.yaml", "release-validation.yaml"])`；
+省略第三个参数沿用默认模式，显式空数组拒绝。
+
+## 默认模式与共同约定
 
 - 当前目录是被发布包的非重定向目录，Git 根是受信任的工作区；
   当前目录的 `deliverable.yaml` 显式声明 `type: npm`。
@@ -142,7 +199,8 @@ publish-gate target --json
   `@silvermoon-work/widget@0.1.0-rc.0`，tag 解引用后等于当前 SHA；
   手动 dispatch 必须 `--dry-run` 且 `PACKAGE_INPUT` 等于选中包的完整 npm 包名。
   发布 workflow 的 tag 过滤需覆盖 scope 中的 `/`，例如 `tags: ["**@*"]`。
-- GitHub API 上该准确 SHA 最新的 `ci.yaml` main push run 必须成功，
+- 无 `--workflow` 参数时，GitHub API 上该准确 SHA 最新的 `ci.yaml` main push
+  run 必须成功，
   `Quality default`、兼容矩阵中每个 `Node.js <version>`、
   `Release verification (v1)` 和其中的
   `Confirm required checks succeeded` 步骤都必须唯一且成功。
@@ -158,6 +216,9 @@ publish-gate target --json
   不自动发布依赖，最多核验 64 个依赖声明。
 - API 使用超时、响应体预算和一小时的新鲜度检查。网络/权限/解析失败不被当作
   “版本不存在”；不等待或重跑 CI。
+
+显式 workflow 模式只替换上述固定 CI 证据要求，不替换发布入口、完整 SHA、
+main 祖先关系、Git/tag、OIDC、交付声明、registry、RC 历史或消费者依赖约束。
 
 ## 信任与非职责
 
