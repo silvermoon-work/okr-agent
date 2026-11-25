@@ -24,7 +24,7 @@ catalog:
   react-markdown: 10.1.0
   remark-gfm: 4.0.1
   "@silvermoon-work/task-sdk": 0.2.0
-  "@silvermoon-work/task-protocol": 0.2.1-rc.1
+  "@silvermoon-work/task-protocol": 0.2.1
   "@silvermoon-work/task-builder": 0.2.1-rc.0
   "@silvermoon-work/task-builder-cli": 0.2.1-rc.0
   "@silvermoon-work/task-engine": 0.2.2-rc.0
